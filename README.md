@@ -4,7 +4,7 @@
 
 # zeroRL
 
-`rl-template` provides a structured foundation for building and training reinforcement learning agents. Instead of writing boilerplate code for training loops, rollouts, and PPO optimization, you extend the provided abstract base classes and focus on defining your agent and environment.
+`zeroRL` provides a structured foundation for building and training reinforcement learning agents. Instead of writing boilerplate code for training loops, rollouts, and PPO optimization, you extend the provided abstract base classes and focus on defining your agent and environment.
 
 The package includes:
 
