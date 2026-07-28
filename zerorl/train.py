@@ -46,7 +46,7 @@ class BaseTrain:
         self.env = env
         self.buffer = buffer
         self.ppo_trainer = ppo_trainer
-        self.last_value = 0.0
+        self.last_value = torch.zeros(1, dtype=torch.float32)
         self.cumulative_reward = 0.0
         self.require_buffer_size = require_buffer_size
 
@@ -63,8 +63,8 @@ class BaseTrain:
         for _ in range(self.train_config.rollout_steps):
             state_tensor = torch.tensor(state, dtype=torch.float32, device=self.train_config.device)
             with torch.inference_mode():
-                action_t, log_prob, _, value = self.agent.get_action(state_tensor)
-                action_np = action_t.cpu().numpy()
+                action, log_prob, _, value = self.agent.get_action(state_tensor)
+                action_np = action.cpu().numpy()
 
             # Convention: truncate = terminated (episode naturally ended)
             #             done = truncated (episode cut short by time limit)
@@ -72,11 +72,11 @@ class BaseTrain:
             done_casted = 1 if done else 0
 
             self.buffer.insert(
-                state=state,
-                action=action_np,
-                old_log_prob=log_prob.cpu().item(),
+                state=state_tensor,
+                action=action,
+                old_log_prob=log_prob,
                 reward=reward,
-                value=value.cpu().item(),
+                value=value,
                 dones=done_casted,
             )
             self.cumulative_reward += reward
@@ -89,7 +89,7 @@ class BaseTrain:
         with torch.inference_mode():
             state_tensor = torch.tensor(state, dtype=torch.float32, device=self.train_config.device)
             _, _, _, next_value = self.agent.get_action(state_tensor)
-        self.last_value = next_value.item()
+        self.last_value[0] = next_value
 
 
     def update_weights(self, step: int) -> tuple[Tensor, Tensor, Tensor, Tensor]:
@@ -119,7 +119,7 @@ class BaseTrain:
         loss, policy_loss, value_loss, entropy_loss = self.ppo_trainer.update(
                 memory = self.buffer,
                 total_steps =self.train_config.timestamp,
-                step =step,
+                step = step,
                 batch_size = self.train_config.batch_size,
                 device=self.train_config.device
         )

@@ -6,13 +6,13 @@ import torch.nn as nn
 import pytest
 
 from gymnasium import spaces
-from rl_template.agent import BaseAgent
-from rl_template.env import BaseEnv
-from rl_template.train import BaseTrain
-from rl_template.common import Buffer
-from rl_template.config import TrainConfig, PPOConfig
-from rl_template.algorithms.ppo.ppo import PPOTrainer
-from rl_template.errors import EmptyBufferError
+from zerorl.agent import BaseAgent
+from zerorl.env import BaseEnv
+from zerorl.train import BaseTrain
+from zerorl.common import Buffer
+from zerorl.config import TrainConfig, PPOConfig
+from zerorl.algorithms.ppo.ppo import PPOTrainer
+from zerorl.errors import EmptyBufferError
 
 
 class MockAgent(BaseAgent):

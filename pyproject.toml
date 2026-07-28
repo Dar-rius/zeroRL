@@ -1,5 +1,5 @@
 [project]
-name = "rl-template"
+name = "zeroRl"
 version = "0.1.27"
 description = "A type-safe, algorithm-agnostic Reinforcement Learning framework"
 readme = "README.md"

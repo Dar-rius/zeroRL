@@ -8,6 +8,7 @@ Reference: Schulman et al., "Proximal Policy Optimization Algorithms" (2017)
 import torch
 import torch.nn as nn
 import numpy as np
+from torch import Tensor
 from torch import optim
 from ...common import Buffer
 from ...config import PPOConfig
@@ -39,10 +40,10 @@ class PPOTrainer:
         self.mse_loss = nn.MSELoss()
 
     def compute_gae(self,
-                    rewards: np.ndarray,
-                    values: np.ndarray,
-                    last_value: float,
-                    dones: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+                    rewards: Tensor,
+                    values: Tensor,
+                    last_value: Tensor,
+                    dones: Tensor) -> tuple[Tensor, Tensor, Tensor]:
         """Compute Generalized Advantage Estimation.
 
         Works backwards through the trajectory, accumulating TD errors
@@ -60,9 +61,10 @@ class PPOTrainer:
         gae = 0.0
         # Mask: 0.0 at episode boundaries (no bootstrapping across episodes)
         mask = 1.0 - dones
-        next_values = np.concatenate((values[1:], [last_value]), axis=0)
+        next_values = torch.cat((values[1:], last_value), 0)
+        print(next_values.shape)
         total_size = rewards.shape[0]
-        advantages = np.zeros_like(rewards)
+        advantages = torch.zeros_like(rewards)
 
         delta = rewards + self.ppo_config.gamma * next_values * mask - values
 

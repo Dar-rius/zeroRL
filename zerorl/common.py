@@ -5,6 +5,7 @@ and converts them to PyTorch tensors for the PPO update step.
 """
 
 import torch
+from torch import Tensor
 import numpy as np
 
 
@@ -41,17 +42,17 @@ class Buffer:
         """
         self.step = step
         self.slice: int = 0
-        self.states = np.zeros((self.step, *state_shape), dtype=np.float32)
-        self.actions = np.zeros((self.step, *action_shape), dtype=np.float32)
-        self.old_log_probs = np.zeros(self.step, dtype=np.float32)
-        self.returns = np.zeros(self.step, dtype=np.float32)
-        self.adv = np.zeros(self.step, dtype=np.float32)
-        self.rewards = np.zeros(self.step, dtype=np.float32)
-        self.values = np.zeros(self.step, dtype=np.float32)
-        self.dones = np.zeros(self.step, dtype=np.float32)
+        self.states = torch.zeros((self.step, *state_shape), dtype=torch.float32)
+        self.actions = torch.zeros((self.step, *action_shape), dtype=torch.float32)
+        self.old_log_probs = torch.zeros(self.step, dtype=torch.float32)
+        self.returns = torch.zeros(self.step, dtype=torch.float32)
+        self.adv = torch.zeros(self.step, dtype=torch.float32)
+        self.rewards = torch.zeros(self.step, dtype=torch.float32)
+        self.values = torch.zeros(self.step, dtype=torch.float32)
+        self.dones = torch.zeros(self.step, dtype=torch.float32)
         self.extra_shapes = extra_shapes
         self.extras = {
-                name: np.zeros((self.step, *shape), dtype=np.float32)
+                name: torch.zeros((self.step, *shape), dtype=torch.float32)
                 for name, shape in extra_shapes.items()
                 }
 
@@ -61,11 +62,11 @@ class Buffer:
         return self.slice
 
     def insert(self,
-               state: np.ndarray,
-               action: int | float | np.ndarray,
-               old_log_prob: float,
+               state: Tensor,
+               action: float | Tensor,
+               old_log_prob: Tensor,
                reward: float,
-               value: float,
+               value: Tensor,
                dones: int,
                **kwargs):
         """Store a single timestep of rollout data.
@@ -118,16 +119,16 @@ class Buffer:
             advantages, rewards, values, dones). States are float32,
             dones are long (integer), everything else is float32.
         """
-        core_tensor = (torch.as_tensor(self.states[:self.slice], dtype=torch.float32, device=device),
-                torch.as_tensor(self.actions[:self.slice], dtype=torch.float32, device=device),
-                torch.as_tensor(self.old_log_probs[:self.slice], dtype=torch.float32, device=device),
-                torch.as_tensor(self.returns[:self.slice], dtype=torch.float32, device=device),
-                torch.as_tensor(self.adv[:self.slice], dtype=torch.float32, device=device),
-                torch.as_tensor(self.rewards[:self.slice], dtype=torch.float32, device=device),
-                torch.as_tensor(self.values[:self.slice], dtype=torch.float32, device=device),
-                torch.as_tensor(self.dones[:self.slice], dtype=torch.long, device=device))
+        core_tensor = (self.states[:self.slice],
+                self.actions[:self.slice],
+                self.old_log_probs[:self.slice],
+                self.returns[:self.slice],
+                self.adv[:self.slice],
+                self.rewards[:self.slice],
+                self.values[:self.slice],
+                self.dones[:self.slice])
         extra_tensor = {
-                name: torch.as_tensor(val[:self.slice], dtype=torch.float32, device=device)
+                name: val[:self.slice]
                 for name, val in self.extras.items()
                 }
         return *core_tensor, extra_tensor
