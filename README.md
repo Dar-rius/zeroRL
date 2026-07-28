@@ -2,7 +2,7 @@
 [![Python](https://img.shields.io/pypi/pyversions/rl-template.svg)](https://pypi.org/project/rl-template/)
 [![License](https://img.shields.io/pypi/l/rl-template.svg)](https://pypi.org/project/rl-template/)
 
-# rl-template
+# zeroRL
 
 `rl-template` provides a structured foundation for building and training reinforcement learning agents. Instead of writing boilerplate code for training loops, rollouts, and PPO optimization, you extend the provided abstract base classes and focus on defining your agent and environment.
 
