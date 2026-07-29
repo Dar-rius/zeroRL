@@ -28,16 +28,12 @@ exclude = [
     "venv",
 ]
 
-# Same as Black.
-# line-length = 88
-# indent-width = 4
-
 target-version = "py311"
 
 [lint]
 # Enable Pyflakes (`F`) and a subset of the pycodestyle (`E`) codes by default.
 select = ["F"]
-ignore = []
+ignore = ["E501", "B008"]
 
 # Allow fix for all enabled rules (when `--fix`) is provided.
 fixable = ["ALL"]

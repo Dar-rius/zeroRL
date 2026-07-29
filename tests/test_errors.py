@@ -5,7 +5,6 @@ insufficiently filled buffer.
 """
 
 import pytest
-
 from rl_template.errors import EmptyBufferError
 
 

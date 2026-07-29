@@ -6,10 +6,8 @@ Reference: Schulman et al., "Proximal Policy Optimization Algorithms" (2017)
 """
 
 import torch
-import torch.nn as nn
-import numpy as np
-from torch import Tensor
-from torch import optim
+from torch import nn
+from torch import Tensor, optim
 from ...common import Buffer
 from ...config import PPOConfig
 

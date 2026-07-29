@@ -6,9 +6,9 @@ implementations must extend.
 
 import gymnasium as gym
 import numpy as np
-from gymnasium import spaces
 from abc import ABC, abstractmethod
 from typing import Any
+from gymnasium import spaces
 
 
 class BaseEnv(gym.Env, ABC):

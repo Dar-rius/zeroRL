@@ -5,17 +5,16 @@ learning rate decay. Uses SimpleTestModel as a concrete nn.Module.
 """
 
 import numpy as np
+import pytest
 import torch
 import torch.nn as nn
-import pytest
-
 from rl_template.algorithms.ppo.ppo import PPOTrainer
 from rl_template.config import PPOConfig
-
 
 # =============================================================================
 # Test Helper: SimpleTestModel
 # =============================================================================
+
 
 class SimpleTestModel(nn.Module):
     """Minimal policy+value network for testing PPOTrainer.
@@ -56,13 +55,24 @@ class SimpleTestModel(nn.Module):
 # Test PPOTrainer Initialization
 # =============================================================================
 
+
 class TestPPOTrainerInit:
     """Verify PPOTrainer.__init__() stores all hyperparameters correctly."""
 
     def test_stores_hyperparams(self):
         """All constructor arguments should be stored as instance attributes."""
         model = SimpleTestModel()
-        trainer = PPOTrainer(model, PPOConfig(lr=1e-3, gamma=0.95, gae_lambda=0.8, clip_eps=0.2, value_coef=1.0, ent_coef=0.05))
+        trainer = PPOTrainer(
+            model,
+            PPOConfig(
+                lr=1e-3,
+                gamma=0.95,
+                gae_lambda=0.8,
+                clip_eps=0.2,
+                value_coef=1.0,
+                ent_coef=0.05,
+            ),
+        )
         assert trainer.ppo_config.lr == 1e-3
         assert trainer.ppo_config.gamma == 0.95
         assert trainer.ppo_config.gae_lambda == 0.8
@@ -105,6 +115,7 @@ class TestPPOTrainerInit:
 # Test GAE (Generalized Advantage Estimation)
 # =============================================================================
 
+
 class TestComputeGAE:
     """Verify compute_gae() produces correct advantages via hand-calculated examples."""
 
@@ -131,7 +142,9 @@ class TestComputeGAE:
         values = np.array([0.0])
         dones = np.array([0.0])
         last_value = 0.0
-        returns, advantages, delta = trainer.compute_gae(rewards, values, last_value, dones)
+        returns, advantages, delta = trainer.compute_gae(
+            rewards, values, last_value, dones
+        )
         expected_delta = 1.0 + 0.99 * 0.0 * 1.0 - 0.0
         expected_gae = expected_delta
         np.testing.assert_allclose(delta, [expected_delta])
@@ -150,7 +163,9 @@ class TestComputeGAE:
         values = np.array([0.0, 0.0])
         dones = np.array([0.0, 0.0])
         last_value = 0.0
-        returns, advantages, delta = trainer.compute_gae(rewards, values, last_value, dones)
+        returns, advantages, delta = trainer.compute_gae(
+            rewards, values, last_value, dones
+        )
         expected_gae_1 = 1.0
         expected_gae_0 = 1.0 + 0.99 * 0.95 * expected_gae_1
         np.testing.assert_allclose(advantages[1], expected_gae_1, atol=1e-6)
@@ -202,6 +217,7 @@ class TestComputeGAE:
 # Test Learning Rate Decay
 # =============================================================================
 
+
 class TestLRDecay:
     """Verify lr_decay() applies linear learning rate scheduling.
 
@@ -241,7 +257,9 @@ class TestLRDecay:
         """lr_decay should update ALL param groups, not just the first."""
         model = SimpleTestModel()
         trainer = PPOTrainer(model, PPOConfig(lr=0.01))
-        trainer.optimizer.add_param_group({"params": [torch.zeros(1, requires_grad=True)], "lr": 0.02})
+        trainer.optimizer.add_param_group(
+            {"params": [torch.zeros(1, requires_grad=True)], "lr": 0.02}
+        )
         trainer.lr_decay(lr=0.01, total_steps=100, step=50)
         for pg in trainer.optimizer.param_groups:
             assert pg["lr"] == pytest.approx(0.005)

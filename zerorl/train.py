@@ -5,15 +5,15 @@ collect experience, compute GAE, run PPO, and repeat.
 """
 
 import os
-import torch
 import numpy as np
-from .env import BaseEnv
+import torch
+from torch import Tensor
 from .agent import BaseAgent
 from .algorithms.ppo.ppo import PPOTrainer
 from .common import Buffer
 from .config import TrainConfig
+from .env import BaseEnv
 from .errors import EmptyBufferError
-from torch import Tensor
 
 
 class BaseTrain:

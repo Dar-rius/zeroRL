@@ -7,15 +7,14 @@ action distributions (Gaussian/Normal) instead of discrete (Categorical).
 import numpy as np
 import torch
 import torch.nn as nn
-
 from rl_template.algorithms.ppo.ppo import PPOTrainer
 from rl_template.common import Buffer
 from rl_template.config import PPOConfig
 
-
 # =============================================================================
 # Test Helper: ContinuousTestModel
 # =============================================================================
+
 
 class ContinuousTestModel(nn.Module):
     """Minimal continuous-policy network for testing PPO with Gaussian actions.
@@ -69,6 +68,7 @@ class ContinuousTestModel(nn.Module):
 # Test Continuous Action Buffer
 # =============================================================================
 
+
 class TestContinuousBuffer:
     """Verify Buffer handles continuous (float) actions correctly."""
 
@@ -81,7 +81,14 @@ class TestContinuousBuffer:
         """Continuous float actions should be stored correctly."""
         buf = Buffer(step=5, state_shape=(4,), action_shape=(2,))
         action = np.array([0.5, -0.3])
-        buf.insert(state=np.zeros(4), action=action, old_log_prob=-0.1, reward=1.0, value=0.5, dones=0)
+        buf.insert(
+            state=np.zeros(4),
+            action=action,
+            old_log_prob=-0.1,
+            reward=1.0,
+            value=0.5,
+            dones=0,
+        )
         np.testing.assert_array_almost_equal(buf.actions[0], action)
 
     def test_get_all_continuous_actions(self):
@@ -89,7 +96,14 @@ class TestContinuousBuffer:
         buf = Buffer(step=5, state_shape=(4,), action_shape=(2,))
         for i in range(5):
             action = np.array([float(i), float(i) * -0.5])
-            buf.insert(state=np.ones(4) * i, action=action, old_log_prob=float(i), reward=float(i), value=float(i), dones=0)
+            buf.insert(
+                state=np.ones(4) * i,
+                action=action,
+                old_log_prob=float(i),
+                reward=float(i),
+                value=float(i),
+                dones=0,
+            )
         states, actions, _, _, _, _, _, _, _ = buf.get_all()
         assert actions.shape == (5, 2)
         assert actions.dtype == torch.float32
@@ -99,7 +113,14 @@ class TestContinuousBuffer:
         """Buffer with action_shape=(1,) for 1D continuous actions."""
         buf = Buffer(step=5, state_shape=(4,), action_shape=(1,))
         for i in range(5):
-            buf.insert(state=np.ones(4), action=np.array([float(i) * 0.1]), old_log_prob=0.0, reward=0.0, value=0.0, dones=0)
+            buf.insert(
+                state=np.ones(4),
+                action=np.array([float(i) * 0.1]),
+                old_log_prob=0.0,
+                reward=0.0,
+                value=0.0,
+                dones=0,
+            )
         _, actions, _, _, _, _, _, _, _ = buf.get_all()
         assert actions.shape == (5, 1)
         assert actions.dtype == torch.float32
@@ -108,6 +129,7 @@ class TestContinuousBuffer:
 # =============================================================================
 # Test Continuous Model Distribution
 # =============================================================================
+
 
 class TestContinuousModel:
     """Verify ContinuousTestModel produces valid distributions and outputs."""
@@ -165,6 +187,7 @@ class TestContinuousModel:
 # Test PPO Update with Continuous Actions
 # =============================================================================
 
+
 class TestPPOContinuousUpdate:
     """Test the full PPO update pipeline with continuous actions."""
 
@@ -189,8 +212,13 @@ class TestPPOContinuousUpdate:
         trainer = PPOTrainer(model, PPOConfig(lr=3e-4))
         buf = Buffer(step=128, state_shape=(4,), action_shape=(2,))
         self._fill_buffer_with_continuous_data(buf, model, obs_dim=4)
-        buf.insert_returns(np.random.randn(128).astype(np.float32), np.random.randn(128).astype(np.float32))
-        total_loss, pi_loss, v_loss, entropy = trainer.update(buf, total_steps=1000, step=0, batch_size=32, epochs=2)
+        buf.insert_returns(
+            np.random.randn(128).astype(np.float32),
+            np.random.randn(128).astype(np.float32),
+        )
+        total_loss, pi_loss, v_loss, entropy = trainer.update(
+            buf, total_steps=1000, step=0, batch_size=32, epochs=2
+        )
         assert np.isfinite(total_loss)
         assert np.isfinite(pi_loss)
         assert np.isfinite(v_loss)
@@ -209,7 +237,9 @@ class TestPPOContinuousUpdate:
         buf.insert_returns(returns, adv)
         losses = []
         for step in range(5):
-            total_loss, _, _, _ = trainer.update(buf, total_steps=100, step=step, batch_size=64, epochs=5)
+            total_loss, _, _, _ = trainer.update(
+                buf, total_steps=100, step=step, batch_size=64, epochs=5
+            )
             losses.append(total_loss)
         assert losses[-1] < losses[0] + 1.0
 
@@ -219,7 +249,10 @@ class TestPPOContinuousUpdate:
         trainer = PPOTrainer(model, PPOConfig(lr=1e-3))
         buf = Buffer(step=64, state_shape=(4,), action_shape=(2,))
         self._fill_buffer_with_continuous_data(buf, model, obs_dim=4)
-        buf.insert_returns(np.random.randn(64).astype(np.float32), np.random.randn(64).astype(np.float32))
+        buf.insert_returns(
+            np.random.randn(64).astype(np.float32),
+            np.random.randn(64).astype(np.float32),
+        )
         w_before = model.mean.weight.data.clone()
         trainer.update(buf, total_steps=100, step=0, batch_size=32, epochs=5)
         w_after = model.mean.weight.data.clone()
@@ -247,7 +280,9 @@ class TestPPOContinuousUpdate:
         dones = buf.dones
         returns, advantages, _ = trainer.compute_gae(rewards, values, 0.0, dones)
         buf.insert_returns(returns, advantages)
-        total_loss, pi_loss, v_loss, entropy = trainer.update(buf, total_steps=1000, step=0, batch_size=32, epochs=3)
+        total_loss, pi_loss, v_loss, entropy = trainer.update(
+            buf, total_steps=1000, step=0, batch_size=32, epochs=3
+        )
         assert np.isfinite(total_loss)
         assert buf.size == 128
 
@@ -272,7 +307,9 @@ class TestPPOContinuousUpdate:
         returns = np.random.randn(64).astype(np.float32)
         adv = np.random.randn(64).astype(np.float32)
         buf.insert_returns(returns, adv)
-        total_loss, _, _, _ = trainer.update(buf, total_steps=100, step=0, batch_size=32, epochs=2)
+        total_loss, _, _, _ = trainer.update(
+            buf, total_steps=100, step=0, batch_size=32, epochs=2
+        )
         assert np.isfinite(total_loss)
 
     def test_single_dim_continuous_action(self):
@@ -295,5 +332,7 @@ class TestPPOContinuousUpdate:
         returns = np.random.randn(64).astype(np.float32)
         adv = np.random.randn(64).astype(np.float32)
         buf.insert_returns(returns, adv)
-        total_loss, _, _, _ = trainer.update(buf, total_steps=100, step=0, batch_size=32, epochs=2)
+        total_loss, _, _, _ = trainer.update(
+            buf, total_steps=100, step=0, batch_size=32, epochs=2
+        )
         assert np.isfinite(total_loss)

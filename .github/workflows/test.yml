@@ -1,0 +1,47 @@
+name: test
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+    strategy:
+      matrix:
+        python-version: [3.11, 3.12, 3.13]
+
+  jobs:
+    cpu-tests:
+      name: Check code Quality and run some tests
+      runs-on: ubuntu-latest
+
+      steps:
+        - name: Check code quality
+          uses: action/checkout@v6
+
+        - name: Configure for python ${{matrix.python-version}}
+          uses: action/setup-python@v6
+          with:
+            python-version: ${{matrix.python-version}}
+
+        - name: Install uv and dependancies
+          run: |
+            pip install uv
+            uv pip install --system -r requirements.txt
+            uv pip install --system ruff mypy pytest
+
+        - name: unit test run in cpu
+          rund: |
+            pytest tests/test_common.py tests/test_env.py
+
+    gpu-tests:
+      name: Run tests in GPU
+      needs: cpu-tests
+      runs-on: [self.hosted, jetson, gpu]
+
+      steps:
+        - name: run test
+          runs: |
+            docker run --rm --gpus all \
+          -v ${{github.workspace}}:/workspace -w /workspace \
+          nvcr.io/nvidia/pytorch:25.08-py3 \
+          bash -c "pip install -r requirements.txt && pytest"

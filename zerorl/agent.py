@@ -5,12 +5,12 @@ policy/value interface for all RL agent implementations.
 """
 
 import torch
-import torch.nn as nn
 import torch.distributions as dists
-from torch.distributions import Distribution
-from torch import Tensor
+import torch.nn as nn
 from abc import ABC, abstractmethod
 from typing import Any
+from torch import Tensor
+from torch.distributions import Distribution
 
 
 class BaseAgent(nn.Module, ABC):

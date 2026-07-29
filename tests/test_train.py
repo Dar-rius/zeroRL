@@ -1,18 +1,19 @@
 """Unit tests for BaseTrain (rl_template.train)."""
 
 import os
+
+import pytest
 import torch
 import torch.nn as nn
-import pytest
-
 from gymnasium import spaces
+
 from zerorl.agent import BaseAgent
-from zerorl.env import BaseEnv
-from zerorl.train import BaseTrain
-from zerorl.common import Buffer
-from zerorl.config import TrainConfig, PPOConfig
 from zerorl.algorithms.ppo.ppo import PPOTrainer
+from zerorl.common import Buffer
+from zerorl.config import PPOConfig, TrainConfig
+from zerorl.env import BaseEnv
 from zerorl.errors import EmptyBufferError
+from zerorl.train import BaseTrain
 
 
 class MockAgent(BaseAgent):
@@ -30,6 +31,7 @@ class MockAgent(BaseAgent):
         logits, value = self.forward(state)
         dist = torch.distributions.Categorical(logits=logits)
         return dist, value.squeeze(-1)
+
 
 class MockEnv(BaseEnv):
     """Minimal environment for testing BaseTrain."""
@@ -61,7 +63,7 @@ class TestBaseTrainInit:
         cfg = TrainConfig(model_name="test", model_saved_path=str(tmp_path))
         ppo = PPOTrainer(agent, PPOConfig())
 
-        #Check type
+        # Check type
         trainer = BaseTrain(agent, env, buf, cfg, ppo)
         assert trainer.agent is agent
         assert trainer.env is env
@@ -108,7 +110,9 @@ class TestBaseTrainUpdateWeights:
         agent = MockAgent()
         env = MockEnv()
         buf = Buffer(step=2048, state_shape=(4,))
-        cfg = TrainConfig(device="cpu", model_name="test", model_saved_path=str(tmp_path))
+        cfg = TrainConfig(
+            device="cpu", model_name="test", model_saved_path=str(tmp_path)
+        )
         ppo = PPOTrainer(agent, PPOConfig())
         trainer = BaseTrain(agent, env, buf, cfg, ppo, 1)
         for step in range(5):

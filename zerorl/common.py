@@ -4,9 +4,9 @@ Provides Buffer, which stores trajectory data in fixed-size numpy arrays
 and converts them to PyTorch tensors for the PPO update step.
 """
 
+import numpy as np
 import torch
 from torch import Tensor
-import numpy as np
 
 
 class Buffer:

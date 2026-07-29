@@ -2,7 +2,6 @@
 
 import numpy as np
 import pytest
-
 from rl_template.env import BaseEnv
 
 
@@ -34,6 +33,7 @@ class TestBaseEnvAbstract:
 
     def test_is_abstract(self):
         from abc import ABC
+
         assert ABC in BaseEnv.__mro__
 
     def test_cannot_instantiate_directly(self):
@@ -44,6 +44,7 @@ class TestBaseEnvAbstract:
         class IncompleteEnv(BaseEnv):
             def step(self, action):
                 pass
+
             def close(self):
                 pass
 
@@ -54,6 +55,7 @@ class TestBaseEnvAbstract:
         class IncompleteEnv(BaseEnv):
             def reset(self, seed=None):
                 pass
+
             def close(self):
                 pass
 
@@ -64,6 +66,7 @@ class TestBaseEnvAbstract:
         class IncompleteEnv(BaseEnv):
             def reset(self, seed=None):
                 pass
+
             def step(self, action):
                 pass
 

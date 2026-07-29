@@ -5,15 +5,14 @@ GAE return insertion, and buffer clearing/reuse.
 """
 
 import numpy as np
-import torch
 import pytest
-
+import torch
 from rl_template.common import Buffer
-
 
 # =============================================================================
 # Test Initialization
 # =============================================================================
+
 
 class TestBufferInit:
     """Verify Buffer.__init__() creates arrays with correct shapes and types."""
@@ -62,6 +61,7 @@ class TestBufferInit:
 # Test Size Property
 # =============================================================================
 
+
 class TestBufferSize:
     """Verify the size property tracks the current element count."""
 
@@ -73,20 +73,35 @@ class TestBufferSize:
     def test_increments_after_insert(self):
         """Size should increase by 1 after each insert."""
         buf = Buffer(step=10, state_shape=(4,))
-        buf.insert(state=np.zeros(4), action=0, old_log_prob=0.0, reward=1.0, value=0.5, dones=0)
+        buf.insert(
+            state=np.zeros(4),
+            action=0,
+            old_log_prob=0.0,
+            reward=1.0,
+            value=0.5,
+            dones=0,
+        )
         assert buf.size == 1
 
     def test_increments_correctly_multi_insert(self):
         """Size should match the number of inserts performed."""
         buf = Buffer(step=10, state_shape=(4,))
         for i in range(5):
-            buf.insert(state=np.ones(4) * i, action=i, old_log_prob=float(i), reward=float(i), value=float(i), dones=0)
+            buf.insert(
+                state=np.ones(4) * i,
+                action=i,
+                old_log_prob=float(i),
+                reward=float(i),
+                value=float(i),
+                dones=0,
+            )
         assert buf.size == 5
 
 
 # =============================================================================
 # Test Insert Method
 # =============================================================================
+
 
 class TestBufferInsert:
     """Verify Buffer.insert() stores data at the correct index."""
@@ -95,19 +110,35 @@ class TestBufferInsert:
         """Inserted state should be stored at index 0."""
         buf = Buffer(step=10, state_shape=(4,))
         state = np.array([1.0, 2.0, 3.0, 4.0])
-        buf.insert(state=state, action=0, old_log_prob=0.0, reward=0.0, value=0.0, dones=0)
+        buf.insert(
+            state=state, action=0, old_log_prob=0.0, reward=0.0, value=0.0, dones=0
+        )
         np.testing.assert_array_equal(buf.states[0], state)
 
     def test_single_insert_action(self):
         """Inserted action should be stored as a float in the actions array."""
         buf = Buffer(step=10, state_shape=(4,))
-        buf.insert(state=np.zeros(4), action=3, old_log_prob=0.0, reward=0.0, value=0.0, dones=0)
+        buf.insert(
+            state=np.zeros(4),
+            action=3,
+            old_log_prob=0.0,
+            reward=0.0,
+            value=0.0,
+            dones=0,
+        )
         assert buf.actions[0] == 3.0
 
     def test_single_insert_metadata(self):
         """Log prob, reward, value, and done flag should all be stored correctly."""
         buf = Buffer(step=10, state_shape=(4,))
-        buf.insert(state=np.zeros(4), action=0, old_log_prob=-0.5, reward=2.5, value=1.0, dones=1)
+        buf.insert(
+            state=np.zeros(4),
+            action=0,
+            old_log_prob=-0.5,
+            reward=2.5,
+            value=1.0,
+            dones=1,
+        )
         assert buf.old_log_probs[0] == pytest.approx(-0.5)
         assert buf.rewards[0] == pytest.approx(2.5)
         assert buf.values[0] == pytest.approx(1.0)
@@ -117,7 +148,14 @@ class TestBufferInsert:
         """Each insert should go to the next index; slice should track the count."""
         buf = Buffer(step=10, state_shape=(3,))
         for i in range(7):
-            buf.insert(state=np.full(3, i), action=i, old_log_prob=float(i), reward=float(i * 10), value=float(i), dones=0)
+            buf.insert(
+                state=np.full(3, i),
+                action=i,
+                old_log_prob=float(i),
+                reward=float(i * 10),
+                value=float(i),
+                dones=0,
+            )
         np.testing.assert_array_equal(buf.states[6], np.full(3, 6))
         assert buf.rewards[6] == pytest.approx(60.0)
         assert buf.slice == 7
@@ -127,6 +165,7 @@ class TestBufferInsert:
 # Test Buffer Full (Bounds Checking)
 # =============================================================================
 
+
 class TestBufferInsertFull:
     """Verify that inserting into a full buffer raises ValueError."""
 
@@ -134,14 +173,29 @@ class TestBufferInsertFull:
         """After filling the buffer, one more insert should raise ValueError."""
         buf = Buffer(step=3, state_shape=(2,))
         for _ in range(3):
-            buf.insert(state=np.zeros(2), action=0, old_log_prob=0.0, reward=0.0, value=0.0, dones=0)
+            buf.insert(
+                state=np.zeros(2),
+                action=0,
+                old_log_prob=0.0,
+                reward=0.0,
+                value=0.0,
+                dones=0,
+            )
         with pytest.raises(ValueError, match="Buffer is full"):
-            buf.insert(state=np.zeros(2), action=0, old_log_prob=0.0, reward=0.0, value=0.0, dones=0)
+            buf.insert(
+                state=np.zeros(2),
+                action=0,
+                old_log_prob=0.0,
+                reward=0.0,
+                value=0.0,
+                dones=0,
+            )
 
 
 # =============================================================================
 # Test Get All (Tensor Conversion)
 # =============================================================================
+
 
 class TestBufferGetAll:
     """Verify Buffer.get_all() returns correct tensors for PPO training."""
@@ -155,7 +209,9 @@ class TestBufferGetAll:
     def test_tensor_dtypes(self):
         """Actions and dones should be long (integer); everything else float32."""
         buf = Buffer(step=5, state_shape=(4,))
-        states, actions, old_log_probs, returns, adv, rewards, values, dones = buf.get_all()
+        states, actions, old_log_probs, returns, adv, rewards, values, dones = (
+            buf.get_all()
+        )
         assert states.dtype == torch.float32
         assert actions.dtype == torch.float32
         assert old_log_probs.dtype == torch.float32
@@ -168,7 +224,9 @@ class TestBufferGetAll:
     def test_tensor_shapes(self):
         """Tensor shapes should match the buffer dimensions."""
         buf = Buffer(step=5, state_shape=(4,))
-        states, actions, old_log_probs, returns, adv, rewards, values, dones = buf.get_all()
+        states, actions, old_log_probs, returns, adv, rewards, values, dones = (
+            buf.get_all()
+        )
         assert states.shape == (5, 4)
         assert actions.shape == (5,)
         assert old_log_probs.shape == (5,)
@@ -181,7 +239,14 @@ class TestBufferGetAll:
     def test_get_all_reflects_inserted_data(self):
         """Tensor values should match the data inserted into the buffer."""
         buf = Buffer(step=3, state_shape=(2,))
-        buf.insert(state=np.array([1.0, 2.0]), action=1, old_log_prob=-0.1, reward=0.5, value=0.3, dones=0)
+        buf.insert(
+            state=np.array([1.0, 2.0]),
+            action=1,
+            old_log_prob=-0.1,
+            reward=0.5,
+            value=0.3,
+            dones=0,
+        )
         states, actions, old_log_probs, _, _, rewards, values, dones = buf.get_all()
         assert states[0].tolist() == [1.0, 2.0]
         assert actions[0].item() == 1
@@ -194,6 +259,7 @@ class TestBufferGetAll:
 # =============================================================================
 # Test Insert Returns (GAE Output)
 # =============================================================================
+
 
 class TestBufferInsertReturns:
     """Verify insert_returns() stores GAE-computed returns and advantages."""
@@ -220,6 +286,7 @@ class TestBufferInsertReturns:
 # Test Clear (Buffer Reuse)
 # =============================================================================
 
+
 class TestBufferClear:
     """Verify clear() resets the buffer for reuse."""
 
@@ -227,7 +294,14 @@ class TestBufferClear:
         """After clear(), the slice pointer and size should both be 0."""
         buf = Buffer(step=10, state_shape=(4,))
         for i in range(5):
-            buf.insert(state=np.ones(4), action=0, old_log_prob=0.0, reward=0.0, value=0.0, dones=0)
+            buf.insert(
+                state=np.ones(4),
+                action=0,
+                old_log_prob=0.0,
+                reward=0.0,
+                value=0.0,
+                dones=0,
+            )
         buf.clear()
         assert buf.slice == 0
         assert buf.size == 0
@@ -235,10 +309,31 @@ class TestBufferClear:
     def test_allows_reuse_after_clear(self):
         """After clear(), new inserts should start from index 0."""
         buf = Buffer(step=3, state_shape=(2,))
-        buf.insert(state=np.array([1.0, 1.0]), action=0, old_log_prob=0.0, reward=0.0, value=0.0, dones=0)
-        buf.insert(state=np.array([2.0, 2.0]), action=1, old_log_prob=0.0, reward=0.0, value=0.0, dones=0)
+        buf.insert(
+            state=np.array([1.0, 1.0]),
+            action=0,
+            old_log_prob=0.0,
+            reward=0.0,
+            value=0.0,
+            dones=0,
+        )
+        buf.insert(
+            state=np.array([2.0, 2.0]),
+            action=1,
+            old_log_prob=0.0,
+            reward=0.0,
+            value=0.0,
+            dones=0,
+        )
         buf.clear()
-        buf.insert(state=np.array([9.0, 9.0]), action=2, old_log_prob=0.0, reward=0.0, value=0.0, dones=0)
+        buf.insert(
+            state=np.array([9.0, 9.0]),
+            action=2,
+            old_log_prob=0.0,
+            reward=0.0,
+            value=0.0,
+            dones=0,
+        )
         assert buf.size == 1
         np.testing.assert_array_equal(buf.states[0], np.array([9.0, 9.0]))
         assert buf.actions[0] == 2.0

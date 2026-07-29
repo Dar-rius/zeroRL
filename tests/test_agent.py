@@ -1,11 +1,11 @@
 """Unit tests for BaseAgent abstract interface (rl_template.agent)."""
 
-import numpy as np
-import torch
-import torch.nn as nn
-import pytest
 from abc import ABC
 
+import numpy as np
+import pytest
+import torch
+import torch.nn as nn
 from rl_template.agent import BaseAgent
 
 

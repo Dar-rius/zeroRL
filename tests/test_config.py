@@ -4,13 +4,12 @@ Tests PPOConfig (frozen hyperparameters) and TrainConfig (computed fields).
 """
 
 import pytest
-
 from rl_template.config import PPOConfig, TrainConfig
-
 
 # =============================================================================
 # Test PPOConfig (Frozen Dataclass)
 # =============================================================================
+
 
 class TestPPOConfig:
     """Tests for the immutable PPOConfig dataclass."""
@@ -27,7 +26,14 @@ class TestPPOConfig:
 
     def test_custom_values(self):
         """PPOConfig should accept and store custom hyperparameter values."""
-        cfg = PPOConfig(lr=1e-3, gamma=0.95, gae_lambda=0.8, clip_eps=0.2, ent_coef=0.05, value_coef=1.0)
+        cfg = PPOConfig(
+            lr=1e-3,
+            gamma=0.95,
+            gae_lambda=0.8,
+            clip_eps=0.2,
+            ent_coef=0.05,
+            value_coef=1.0,
+        )
         assert cfg.lr == 1e-3
         assert cfg.gamma == 0.95
         assert cfg.gae_lambda == 0.8
@@ -54,6 +60,7 @@ class TestPPOConfig:
 # Test TrainConfig (Mutable with Computed Fields)
 # =============================================================================
 
+
 class TestTrainConfig:
     """Tests for TrainConfig with __post_init__ computed fields."""
 
@@ -64,12 +71,19 @@ class TestTrainConfig:
 
     def test_num_update_computed(self):
         """num_update should equal timestamp // rollout_steps."""
-        cfg = TrainConfig(model_name="m", model_saved_path="/tmp", timestamp=6_000_000, rollout_steps=2048)
+        cfg = TrainConfig(
+            model_name="m",
+            model_saved_path="/tmp",
+            timestamp=6_000_000,
+            rollout_steps=2048,
+        )
         assert cfg.num_update == 6_000_000 // 2048
 
     def test_num_update_custom_values(self):
         """num_update computation should work with any timestamp/rollout_steps."""
-        cfg = TrainConfig(model_name="m", model_saved_path="/tmp", timestamp=1000, rollout_steps=100)
+        cfg = TrainConfig(
+            model_name="m", model_saved_path="/tmp", timestamp=1000, rollout_steps=100
+        )
         assert cfg.num_update == 10
 
     def test_no_print_on_init(self, capsys):
