@@ -19,7 +19,6 @@ classifiers = [
 dependencies = [
     "torch>=2.0.0",
     "numpy>=1.24.0",
-    "mypy>=2.3.0",
 ]
 
 [tool.ruff]
@@ -33,6 +32,7 @@ ignore = ["E501", "B008"]
 
 [tool.mypy]
 python_version="3.11"
+files=["zerorl"]
 exclude=[
     "build/",
     "dist/",

@@ -25,7 +25,7 @@ class BaseEnv(gym.Env, ABC):
 
 
     @abstractmethod
-    def reset(self, seed: int | None = None) -> tuple[np.ndarray, dict[str, Any]]:
+    def reset(self, *, seed: int | None = None, options: dict[str, Any] | None = None) -> tuple[np.ndarray, dict[str, Any]]:
         """Reset the environment to its initial state.
 
         Args:
