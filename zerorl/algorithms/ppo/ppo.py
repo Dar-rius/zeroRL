@@ -9,6 +9,7 @@ import torch
 from torch import nn
 from torch import Tensor, optim
 from ...common import Buffer
+from ...agent import BaseAgent
 from ...config import PPOConfig
 
 
@@ -28,7 +29,7 @@ class PPOTrainer:
     """
 
     def __init__(self,
-                 model: nn.Module,
+                 model: BaseAgent,
                  ppo_config: PPOConfig,
                  ):
        
@@ -56,7 +57,7 @@ class PPOTrainer:
         Returns:
             Tuple of (returns, advantages, deltas), each shape (T,).
         """
-        gae = 0.0
+        gae = torch.zeros(1, dtype=torch.float32)
         # Mask: 0.0 at episode boundaries (no bootstrapping across episodes)
         mask = 1.0 - dones
         next_values = torch.cat((values[1:], last_value), 0)
@@ -69,6 +70,7 @@ class PPOTrainer:
         for step in reversed(range(total_size)):
             gae = delta[step] + self.ppo_config.gamma * self.ppo_config.gae_lambda * mask[step] * gae
             advantages[step] = gae
+            print(gae)
 
         returns = advantages + values
         return (returns, advantages, delta)

@@ -4,7 +4,6 @@ Provides Buffer, which stores trajectory data in fixed-size numpy arrays
 and converts them to PyTorch tensors for the PPO update step.
 """
 
-import numpy as np
 import torch
 from torch import Tensor
 
@@ -99,7 +98,7 @@ class Buffer:
 
         self.slice += 1
 
-    def insert_returns(self, returns: np.ndarray, adv: np.ndarray):
+    def insert_returns(self, returns: Tensor, adv: Tensor):
         """Write GAE-computed returns and advantages into the buffer.
 
         Called after the rollout phase when GAE has been computed.

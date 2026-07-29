@@ -32,6 +32,7 @@ ignore = ["E501", "B008"]
 
 [tool.mypy]
 python_version="3.11"
+check_untyped_defs=true
 files=["zerorl"]
 exclude=[
     "build/",
