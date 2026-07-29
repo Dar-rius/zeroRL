@@ -20,8 +20,8 @@ class BaseEnv(gym.Env, ABC):
     """
 
     def __init__(self):
-        self.observation_space: spaces.Space = None
-        self.action_space: spaces.Space = None
+        self.observation_space: spaces.Space
+        self.action_space: spaces.Space
 
 
     @abstractmethod
