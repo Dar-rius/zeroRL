@@ -8,10 +8,11 @@ import os
 import numpy as np
 import torch
 from torch import Tensor
+from torch import optim
 from .agent import BaseAgent
-from .algorithms.ppo.ppo import PPOTrainer
+from .algorithms.ppo import ppo, gae
 from .common import Buffer
-from .config import TrainConfig
+from .config import TrainConfig, PPOConfig
 from .env import BaseEnv
 from .errors import EmptyBufferError
 
@@ -29,7 +30,8 @@ class BaseTrain:
                  env: BaseEnv,
                  buffer: Buffer,
                  train_config: TrainConfig,
-                 ppo_trainer: PPOTrainer,
+                 ppo_config = PPOConfig,
+                 optimizer: optim.Optimizer | None = None,
                  require_buffer_size: int = 10):
         """Initialize the training loop.
 
@@ -42,11 +44,16 @@ class BaseTrain:
         """
         super().__init__()
         self.train_config = train_config
-        self.agent = agent.to(self.train_config.device)
+        self.ppo_config = ppo_config
+        self.agent = agent
         self.env = env
         self.buffer = buffer
-        self.ppo_trainer = ppo_trainer
-        self.last_value = torch.zeros(1, dtype=torch.float32)
+        self.optimizer: optim.Optimizer
+        if optimizer is None:
+            self.optimizer = optim.Adam(self.agent.parameters(), lr=self.ppo_config.lr)
+        else:
+            self.optimizer = optimizer
+        self.last_value = torch.zeros(1, dtype=torch.float32, device=self.train_config.device)
         self.cumulative_reward = 0.0
         self.require_buffer_size = require_buffer_size
 
@@ -110,16 +117,20 @@ class BaseTrain:
         dones_list = self.buffer.dones
 
         with torch.inference_mode():
-            returns, adv, _ = self.ppo_trainer.compute_gae(rewards_list,
-                                                          values_list,
-                                                          self.last_value,
-                                                          dones_list)
+            returns, adv, _ = gae(rewards_list,
+                            values_list,
+                            self.last_value,
+                            dones_list,
+                            self.ppo_config)
             self.buffer.insert_returns(returns, adv)
 
-        loss, policy_loss, value_loss, entropy_loss = self.ppo_trainer.update(
-                memory = self.buffer,
-                total_steps =self.train_config.timestamp,
+        loss, policy_loss, value_loss, entropy_loss = ppo(
+                model = self.agent,
+                ppo_config = self.ppo_config,
+                optimizer = self.optimizer,
+                buffer = self.buffer,
                 step = step,
+                num_update = self.train_config.num_update,
                 batch_size = self.train_config.batch_size,
                 device=self.train_config.device
         )

@@ -8,7 +8,7 @@ import torch.nn as nn
 from gymnasium import spaces
 
 from zerorl.agent import BaseAgent
-from zerorl.algorithms.ppo.ppo import PPOTrainer
+from zerorl.algorithms.ppo import ppo
 from zerorl.common import Buffer
 from zerorl.config import PPOConfig, TrainConfig
 from zerorl.env import BaseEnv
@@ -21,16 +21,16 @@ class MockAgent(BaseAgent):
 
     def __init__(self, obs_dim=4, act_dim=2):
         super().__init__()
-        self.linear = nn.Linear(obs_dim, act_dim)
+        self.actor = nn.Linear(obs_dim, act_dim)
         self.val = nn.Linear(obs_dim, 1)
 
     def forward(self, state, **kwargs):
-        return self.linear(state), self.val(state)
+        logits = self.actor(state)
+        val = self.val(state)
+        return logits, val.squeeze(-1)
 
-    def get_distribution(self, state, **kwargs):
-        logits, value = self.forward(state)
-        dist = torch.distributions.Categorical(logits=logits)
-        return dist, value.squeeze(-1)
+    def build_distributions(self, logits):
+        return torch.distributions.Categorical(logits=logits)
 
 
 class MockEnv(BaseEnv):
@@ -42,8 +42,8 @@ class MockEnv(BaseEnv):
         self.action_space = spaces.Discrete(2)
         self._env = __import__("gymnasium").make("CartPole-v1")
 
-    def reset(self, seed=None):
-        return self._env.reset(seed=seed)
+    def reset(self):
+        return self._env.reset()
 
     def step(self, action):
         return self._env.step(action)
@@ -61,25 +61,25 @@ class TestBaseTrainInit:
         env = MockEnv()
         buf = Buffer(step=10, state_shape=(obs_dim,))
         cfg = TrainConfig(model_name="test", model_saved_path=str(tmp_path))
-        ppo = PPOTrainer(agent, PPOConfig())
+        ppo_cfg = PPOConfig()
 
         # Check type
-        trainer = BaseTrain(agent, env, buf, cfg, ppo)
+        trainer = BaseTrain(agent, env, buf, cfg, ppo_cfg)
         assert trainer.agent is agent
         assert trainer.env is env
         assert trainer.buffer is buf
         assert trainer.train_config is cfg
-        assert trainer.ppo_trainer is ppo
+        assert trainer.ppo_config is ppo_cfg
 
     def test_default_last_value(self, tmp_path):
         agent = MockAgent()
         env = MockEnv()
         buf = Buffer(step=10, state_shape=(4,))
         cfg = TrainConfig(model_name="test", model_saved_path=str(tmp_path))
-        ppo = PPOTrainer(agent, PPOConfig())
+        ppo_cfg = PPOConfig()
 
-        trainer = BaseTrain(agent, env, buf, cfg, ppo)
-        assert trainer.last_value == 0.0
+        trainer = BaseTrain(agent, env, buf, cfg, ppo_cfg)
+        assert trainer.last_value == torch.tensor(0.0, device=cfg.device)
 
     def test_default_cumulative_reward(self, tmp_path):
         agent = MockAgent()

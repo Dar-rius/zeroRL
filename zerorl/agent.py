@@ -5,12 +5,21 @@ policy/value interface for all RL agent implementations.
 """
 
 import torch
-import torch.distributions as dists
-import torch.nn as nn
+from torch import nn
 from abc import ABC, abstractmethod
 from typing import Any
 from torch import Tensor
 from torch.distributions import Distribution
+
+
+#Function to calcul the action distribution
+def eval_action(dist: Distribution, action: Tensor) -> tuple[Tensor, Tensor]:
+    log_prob = dist.log_prob(action)
+    dist_entropy = dist.entropy()
+    if log_prob.dim() > 1:
+        log_prob = log_prob.sum(dim=-1)
+        dist_entropy = dist_entropy.sum(dim=-1)
+    return log_prob, dist_entropy
 
 
 class BaseAgent(nn.Module, ABC):
@@ -43,18 +52,11 @@ class BaseAgent(nn.Module, ABC):
             Tuple of (policy_logits, value) tensors.
         """
         pass
-
+    
+    @staticmethod
     @abstractmethod
-    def get_distribution(self, state: Tensor, **kwargs: Any) -> tuple[Distribution, Tensor]:
-        """Build a distribution over actions for the given state.
-
-        Args:
-            state: Environment observation.
-
-        Returns:
-            Tuple of (distribution, value) where distribution is a
-            torch.distributions.Distribution instance.
-        """
+    def build_distribution(logits: Tensor) -> Distribution:
+        """Transforme les logits en distribution. Doit être statique."""
         pass
 
     def get_action(self, state: Tensor, action: Tensor | None = None, **kwargs: Any) -> tuple[Tensor, Tensor, Tensor, Tensor]:
@@ -71,22 +73,10 @@ class BaseAgent(nn.Module, ABC):
         Returns:
             Tuple of (action, log_prob, entropy, value).
         """
-        dist, value = self.get_distribution(state, **kwargs)
-        if action is None:
-            action = dist.sample()
-        log_prob = dist.log_prob(action)
-        dist_entropy = dist.entropy()
-
-        is_categorical = isinstance(dist, dists.Categorical)
-        # Gestion des cas particuliers (ex: distributions indépendantes enveloppant du Categorical ou du Normal)
-        if isinstance(dist, dists.Independent):
-            if isinstance(dist.base_dist, dists.Categorical):
-                is_categorical = True
-
-        if not is_categorical:
-            # Espace continu ou multi-dimensionnel indépendant : on somme les log_probs et entropies par échantillon
-            if log_prob.dim() > 1 and log_prob.shape[-1] > 1:
-                log_prob = log_prob.sum(dim=-1)
-            if dist_entropy.dim() > 1 and dist_entropy.shape[-1] > 1:
-                dist_entropy = dist_entropy.sum(dim=-1)
+        logits, value = self.forward(state, **kwargs)
+        dist = self.build_distribution(logits)
+        if action is None: action = dist.sample()
+        log_prob, dist_entropy = eval_action(dist, action)
         return (action, log_prob, dist_entropy, value)
+
+    
