@@ -105,7 +105,7 @@ class BaseTrain:
             if self.buffer.size < self.require_buffer_size:
                 raise EmptyBufferError(self.buffer.size, self.require_buffer_size)
 
-            losses = self.update_weights(
+            self.update_weights(
                         agent = self.agent,
                         buffer = self.buffer,
                         optimizer = self.optimizer,
@@ -113,7 +113,6 @@ class BaseTrain:
                         config = self.param_config
                     )
             self.buffer.clear()
-            return losses
 
 
     def save_model(self):
