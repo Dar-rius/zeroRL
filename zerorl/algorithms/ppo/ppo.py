@@ -9,10 +9,11 @@ import torch
 from torch import nn
 from torch import Tensor
 from torch.optim import Optimizer
+from torch.optim.lr_scheduler import LambdaLR
 from ...common import Buffer
 from ...agent import BaseAgent, eval_action
 from ...config import PPOConfig
-from ..general import lr_decay, get_buffer_params_model
+from ..general import get_buffer_params_model
 
 
 @torch.compile
