@@ -59,7 +59,7 @@ class BaseAgent(nn.Module, ABC):
         """Transforme les logits en distribution. Doit être statique."""
         pass
 
-    def get_action(self, state: Tensor, action: Tensor | None = None, **kwargs: Any) -> tuple[Tensor, Tensor, Tensor, Tensor]:
+    def get_action(self, state: Tensor, action: Tensor | None = None, **kwargs: Any) -> dict[str, Tensor]:
         """Sample or evaluate an action under the current policy.
 
         Template method: calls get_distribution(), then samples if no
@@ -77,6 +77,5 @@ class BaseAgent(nn.Module, ABC):
         dist = self.build_distribution(logits)
         if action is None: action = dist.sample()
         log_prob, dist_entropy = eval_action(dist, action)
-        return (action, log_prob, dist_entropy, value)
-
-    
+        return {"action": action, "log_prob": log_prob,
+                "entropy":dist_entropy, "value":value}

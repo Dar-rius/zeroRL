@@ -7,10 +7,10 @@ collect experience, compute GAE, run PPO, and repeat.
 import os
 import numpy as np
 import torch
-from torch import Tensor
+import tqdm
+from typing import Callable
 from torch import optim
 from .agent import BaseAgent
-from .algorithms.ppo import ppo, gae
 from .common import Buffer
 from .config import TrainConfig, PPOConfig
 from .env import BaseEnv
@@ -29,8 +29,9 @@ class BaseTrain:
                  agent: BaseAgent,
                  env: BaseEnv,
                  buffer: Buffer,
+                 update_weights: Callable,
+                 param_config: PPOConfig,
                  train_config: TrainConfig,
-                 ppo_config = PPOConfig,
                  optimizer: optim.Optimizer | None = None,
                  require_buffer_size: int = 10):
         """Initialize the training loop.
@@ -43,21 +44,21 @@ class BaseTrain:
             ppo_trainer: PPO trainer handling GAE and weight updates.
         """
         super().__init__()
-        self.train_config = train_config
-        self.ppo_config = ppo_config
         self.agent = agent
         self.env = env
         self.buffer = buffer
+        self.update_weights = update_weights()
+        self.train_config = train_config
+        self.param_config = param_config
         self.optimizer: optim.Optimizer
         if optimizer is None:
-            self.optimizer = optim.Adam(self.agent.parameters(), lr=self.ppo_config.lr)
+            self.optimizer = optim.Adam(self.agent.parameters(), lr=self.param_config.lr)
         else:
             self.optimizer = optimizer
-        self.last_value = torch.zeros(1, dtype=torch.float32, device=self.train_config.device)
         self.cumulative_reward = 0.0
         self.require_buffer_size = require_buffer_size
 
-
+    @torch.compile
     def rollout_phase(self, state: np.ndarray):
         """Collect experience by running the agent in the environment.
 
@@ -70,21 +71,19 @@ class BaseTrain:
         for _ in range(self.train_config.rollout_steps):
             state_tensor = torch.tensor(state, dtype=torch.float32, device=self.train_config.device)
             with torch.inference_mode():
-                action, log_prob, _, value = self.agent.get_action(state_tensor)
-                action_np = action.cpu().numpy()
+                outputs = self.agent.get_action(state_tensor)
+                action_np = outputs["action"].cpu().numpy()
 
             # Convention: truncate = terminated (episode naturally ended)
             #             done = truncated (episode cut short by time limit)
             next_state, reward, done, truncate, _ = self.env.step(action_np)
-            done_casted = 1 if done else 0
+            done_casted = 1.0 if done else 0.0
 
             self.buffer.insert(
-                state=state_tensor,
-                action=action,
-                old_log_prob=log_prob,
-                reward=reward,
-                value=value,
-                dones=done_casted,
+                state = state_tensor,
+                reward = reward,
+                done = done_casted,
+                **outputs
             )
             self.cumulative_reward += reward
 
@@ -95,47 +94,26 @@ class BaseTrain:
 
         with torch.inference_mode():
             state_tensor = torch.tensor(state, dtype=torch.float32, device=self.train_config.device)
-            _, _, _, next_value = self.agent.get_action(state_tensor)
-        self.last_value[0] = next_value
+            next_output = self.agent.get_action(state_tensor)
+        return next_output
 
+    def train(self):
+        state, _ = self.env.reset()
+        for step in tqdm(range(self.train_config.num_update)):
+            last_output = self.rollout_phase(state)
 
-    def update_weights(self, step: int) -> tuple[Tensor, Tensor, Tensor, Tensor]:
-        """Compute GAE and update agent weights via PPO.
+            if self.buffer.size < self.require_buffer_size:
+                raise EmptyBufferError(self.buffer.size, self.require_buffer_size)
 
-        Args:
-            step: Current training step (used for learning rate decay).
-
-        Raises:
-            EmptyBufferError: If the buffer has fewer entries than
-                             require_buffer_size.
-        """
-        if self.buffer.size < self.require_buffer_size:
-            raise EmptyBufferError(self.buffer.size, self.require_buffer_size)
-
-        rewards_list = self.buffer.rewards
-        values_list = self.buffer.values
-        dones_list = self.buffer.dones
-
-        with torch.inference_mode():
-            returns, adv, _ = gae(rewards_list,
-                            values_list,
-                            self.last_value,
-                            dones_list,
-                            self.ppo_config)
-            self.buffer.insert_returns(returns, adv)
-
-        loss, policy_loss, value_loss, entropy_loss = ppo(
-                model = self.agent,
-                ppo_config = self.ppo_config,
-                optimizer = self.optimizer,
-                buffer = self.buffer,
-                step = step,
-                num_update = self.train_config.num_update,
-                batch_size = self.train_config.batch_size,
-                device=self.train_config.device
-        )
-        self.buffer.clear()
-        return (loss, policy_loss, value_loss, entropy_loss)
+            losses = self.update_weights(
+                        agent = self.agent,
+                        buffer = self.buffer,
+                        optimizer = self.optimizer,
+                        last_output = last_output,
+                        config = self.param_config
+                    )
+            self.buffer.clear()
+            return losses
 
 
     def save_model(self):

@@ -15,6 +15,7 @@ from ...config import PPOConfig
 from ..general import lr_decay, get_buffer_params_model
 
 
+@torch.compile
 def gae(rewards: Tensor,
         values: Tensor,
         last_value: Tensor,
@@ -94,11 +95,11 @@ def ppo(model: BaseAgent,
         ) ->  tuple[Tensor, Tensor, Tensor, Tensor]:
     lr_decay(ppo_config.lr, optimizer, step, num_update)
     params, buffers = get_buffer_params_model(model)
-    states, actions, old_log_probs, returns, adv, _, _, _, _ = buffer.get_all(device)
-    adv_norm = (adv - adv.mean()) / (adv.std() + 1e-8)
-    returns = (returns - returns.mean()) / (returns.std() + 1e-8)
+    all_data = buffer.get_all()
+    adv_norm = (all_data["adv"] - all_data["adv"].mean()) / (all_data["adv"].std() + 1e-8)
+    returns = (all_data["returns"] - all_data["returns"].mean()) / (all_data["returns"].std() + 1e-8)
 
-    dataset_size = actions.size(0)
+    dataset_size = all_data["actions"].size(0)
     num_batches_per_epoch = (dataset_size + batch_size - 1) // batch_size
     size_total = num_batches_per_epoch * epochs
 
@@ -124,6 +125,7 @@ def ppo(model: BaseAgent,
         loss.backward()
         return loss, policy_loss, value_loss, ent_loss
 
+    @torch.compile
     def update():
         """Run a PPO update on collected rollout data.
 
@@ -151,8 +153,8 @@ def ppo(model: BaseAgent,
                     continue  # Skip empty batches
                 
                 optimizer.zero_grad(set_to_none=True)
-                loss, policy_loss, value_loss, entropy_loss = ppo_backward(model, params, buffers, states[idx],
-                                actions[idx], old_log_probs[idx], adv_norm[idx],
+                loss, policy_loss, value_loss, entropy_loss = ppo_backward(model, params, buffers, all_data["state"][idx],
+                                all_data["actions"][idx], all_data["old_log_probs"][idx], adv_norm[idx],
                                 returns[idx], ppo_config)
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
                 optimizer.step()
