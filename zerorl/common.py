@@ -26,9 +26,10 @@ class Buffer:
         buf.clear()
     """
 
-    def __init__(self, 
+    def __init__(self,
                  step: int,
-                 data: dict[str, tuple] = {}):
+                 data: dict[str, tuple],
+                 device: torch.device = torch.device("cpu")):
         """Initialize pre-allocated arrays.
 
         Args:
@@ -37,7 +38,7 @@ class Buffer:
         self.step = step
         self.slice: int = 0
         self.data = {
-                name: torch.zeros((self.step, *shape), dtype=torch.float32)
+                name: torch.zeros((self.step, *shape), dtype = torch.float32, device = device)
                 for name, shape in data.items()
                 }
 

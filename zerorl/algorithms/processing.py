@@ -3,7 +3,10 @@ from torch import Tensor
 
 
 class NormMeanStd:
-    def __init__(self, shape: tuple[int,...], device: str = "cpu", epsilon: float = 1e-4):
+    def __init__(self,
+                 shape: tuple[int,...],
+                 device: torch.device = torch.device("cpu"),
+                 epsilon: float = 1e-4):
         self.mean = torch.zeros(shape, device=device)
         self.var = torch.ones(shape, device=device)
         self.count = epsilon

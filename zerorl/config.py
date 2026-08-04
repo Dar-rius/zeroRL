@@ -8,28 +8,6 @@ import torch
 from dataclasses import dataclass, field
 
 
-@dataclass(frozen=True)
-class PPOConfig:
-    """Immutable PPO hyperparameters.
-
-    Frozen to prevent accidental modification during training.
-
-    Attributes:
-        lr: Adam optimizer learning rate.
-        gamma: Discount factor for future rewards.
-        gae_lambda: GAE lambda parameter (bias-variance tradeoff).
-        clip_eps: Clipping range for the PPO surrogate loss.
-        ent_coef: Entropy bonus coefficient.
-        value_coef: Value loss coefficient.
-    """
-    lr: float = 3e-5
-    gamma: float = 0.999
-    gae_lambda: float = 0.95
-    clip_eps: float = 0.1
-    ent_coef: float = 0.01
-    value_coef: float = 0.5
-
-
 @dataclass
 class TrainConfig:
     """Training configuration with computed fields.
@@ -49,13 +27,40 @@ class TrainConfig:
     """
     model_name: str
     model_saved_path: str
-    device: str = "cuda:0" if torch.cuda.is_available() else "cpu"
-    model_path: str = field(init=False)
     timestamp: int = 1_000_000
-    batch_size: int = 64
     rollout_steps: int = 2048
+    device: torch.device = field(init=False)
+
     num_update: int = field(init=False)
+    model_path: str = field(init=False)
 
     def __post_init__(self) -> None:
+        self.device: torch.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.model_path = f"{self.model_saved_path}/{self.model_name}.pt"
         self.num_update = self.timestamp // self.rollout_steps
+
+
+@dataclass(init=False)
+class AlgoConfig:
+    lr: float = 3e-4
+    gamma: float = 0.99
+    batch_size: int = 64
+
+    #For on-policy
+    gae_lambda: float = 0.95
+    clip_eps: float = 0.2
+    ent_coef: float = 0.01
+    value_coef: float = 0.5
+    epochs: int = 10
+
+    #For off-policy
+    tau: float = 0.005
+
+    def __init__(self, **kwargs):
+        for key in self.__annotations__:
+            setattr(self, key, getattr(self.__class__, key, None))
+
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+
+    def to_dict(self): self.__dict__

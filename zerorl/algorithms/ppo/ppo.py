@@ -10,18 +10,18 @@ from torch import nn
 from torch import Tensor
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LambdaLR
-from ...common import Buffer
-from ...agent import BaseAgent, eval_action
-from ...config import PPOConfig
-from ..general import get_buffer_params_model
+from zerorl.common import Buffer
+from zerorl.agent import BaseAgent, eval_action
+from zerorl.config import AlgoConfig
+from zerorl.algorithms.general import get_buffer_params_model
 
 
 @torch.compile
-def gae(rewards: Tensor,
+def gae_compute(rewards: Tensor,
         values: Tensor,
         last_value: Tensor,
         dones: Tensor,
-        hyper_params: PPOConfig) -> tuple[Tensor, Tensor, Tensor]:
+        hyper_params: AlgoConfig) -> tuple[Tensor, Tensor, Tensor]:
     """Compute Generalized Advantage Estimation.
 
     Works backwards through the trajectory, accumulating TD errors
@@ -59,7 +59,7 @@ def ppo_loss(model: BaseAgent,
         old_log_probs: Tensor,
         advantages: Tensor,
         returns: Tensor,
-        hyper_params: PPOConfig) -> tuple[Tensor, Tensor, Tensor, Tensor]:
+        hyper_params: AlgoConfig) -> tuple[Tensor, Tensor, Tensor, Tensor]:
     logits, new_values = torch.func.functional_call(model, (params, buffers), (states,))
     dist = model.build_distribution(logits)
     new_log_probs, dist_entropy = eval_action(dist, actions)
@@ -85,7 +85,7 @@ def ppo_loss(model: BaseAgent,
 
 
 def ppo(model: BaseAgent,
-        hyper_params: PPOConfig,
+        hyper_params: AlgoConfig,
         optimizer: Optimizer,
         buffer: Buffer,
         step: int,
@@ -93,7 +93,7 @@ def ppo(model: BaseAgent,
         scheduler: LambdaLR,
         batch_size: int = 64,
         epochs: int = 10,
-        device: str = "cpu"
+        device: torch.device = torch.device("cpu")
         ) ->  tuple[Tensor, Tensor, Tensor, Tensor]:
     params, buffers = get_buffer_params_model(model)
     all_data = buffer.get_all()
@@ -120,7 +120,7 @@ def ppo(model: BaseAgent,
             old_log_probs: Tensor,
             advantages: Tensor,
             returns: Tensor,
-            hyper_params: PPOConfig) -> tuple[Tensor, Tensor, Tensor, Tensor]:
+            hyper_params: AlgoConfig) -> tuple[Tensor, Tensor, Tensor, Tensor]:
         loss, policy_loss, value_loss, ent_loss = ppo_loss(model, params, buffers, states, actions,
                     old_log_probs, advantages, returns, hyper_params)
         loss.backward()

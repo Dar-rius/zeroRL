@@ -12,7 +12,7 @@ from typing import Callable
 from torch import optim
 from zerorl.agent import BaseAgent
 from zerorl.common import Buffer
-from zerorl.config import TrainConfig, PPOConfig
+from zerorl.config import TrainConfig, AlgoConfig
 from zerorl.env import BaseEnv
 from zerorl.algorithms.processing import NormMeanStd
 from zerorl.errors import EmptyBufferError
@@ -31,8 +31,8 @@ class BaseTrain:
                  env: BaseEnv,
                  buffer: Buffer,
                  update_weights: Callable,
-                 param_config: PPOConfig,
                  train_config: TrainConfig,
+                 algo_config: AlgoConfig | None = None,
                  optimizer: optim.Optimizer | None = None,
                  require_buffer_size: int = 10):
         """Initialize the training loop.
@@ -45,22 +45,24 @@ class BaseTrain:
             ppo_trainer: PPO trainer handling GAE and weight updates.
         """
         super().__init__()
-        self.agent = agent
+        self.train_config = train_config
+        self.agent = agent.to(self.train_config.device)
         self.env = env
         self.buffer = buffer
         self.update_weights = update_weights
-        self.train_config = train_config
-        self.param_config = param_config
+        self.algo_config = algo_config
         self.optimizer: optim.Optimizer
         if optimizer is None:
-            self.optimizer = optim.Adam(self.agent.parameters(), lr=self.param_config.lr)
+            lr = getattr(self.algo_config, 'lr', 3e-4)
+            self.optimizer = optim.Adam(self.agent.parameters(), lr=lr)
         else:
             self.optimizer = optimizer
         obs_shape = env.observation_space.shape
-        assert obs_shape is not None
+        assert obs_shape is not None, "NormMeanStd requires environment with a defined observation shape"
         self.normalizer = NormMeanStd(obs_shape, train_config.device)
         self.cumulative_reward = 0.0
         self.require_buffer_size = require_buffer_size
+
 
     def rollout_phase(self, state: np.ndarray):
         """Collect experience by running the agent in the environment.
@@ -104,6 +106,7 @@ class BaseTrain:
             next_output = self.agent.get_action(state_normalized)
         return next_output
 
+
     def train(self):
         state, _ = self.env.reset()
         for step in tqdm(range(self.train_config.num_update)):
@@ -117,7 +120,7 @@ class BaseTrain:
                         buffer = self.buffer,
                         optimizer = self.optimizer,
                         last_output = last_output,
-                        config = self.param_config
+                        config = self.algo_config
                     )
             self.buffer.clear()
 
