@@ -7,8 +7,10 @@ collect experience, compute GAE, run PPO, and repeat.
 import os
 import numpy as np
 import torch
+import wandb
 import tqdm
 from typing import Callable
+from torch import Tensor
 from torch import optim
 from zerorl.agent import BaseAgent
 from zerorl.common import Buffer
@@ -16,6 +18,7 @@ from zerorl.config import TrainConfig, AlgoConfig
 from zerorl.env import BaseEnv
 from zerorl.algorithms.processing import NormMeanStd
 from zerorl.errors import EmptyBufferError
+from torch.utils.tensorboard import SummaryWriter
 
 
 class BaseTrain:
@@ -30,7 +33,9 @@ class BaseTrain:
                  agent: BaseAgent,
                  env: BaseEnv,
                  buffer: Buffer,
-                 update_weights: Callable,
+                 update_weights: Callable[[BaseAgent, Buffer,
+                                           optim.Optimizer, dict[str,Tensor],
+                                           AlgoConfig | None], dict[str, Tensor]],
                  train_config: TrainConfig,
                  algo_config: AlgoConfig | None = None,
                  optimizer: optim.Optimizer | None = None,
@@ -60,7 +65,10 @@ class BaseTrain:
         obs_shape = env.observation_space.shape
         assert obs_shape is not None, "NormMeanStd requires environment with a defined observation shape"
         self.normalizer = NormMeanStd(obs_shape, train_config.device)
-        self.cumulative_reward = 0.0
+        tb_log_dir = os.path.join(self.train_config.model_save_path, "tensobaord", self.train_config.model_name)
+        self.tb_writer = SummaryWriter(tb_log_dir)
+        self.current_episode_reward = 0.0
+        self.episode_rewards: list[float] = []
         self.require_buffer_size = require_buffer_size
 
 
@@ -92,9 +100,11 @@ class BaseTrain:
                 done = done_casted,
                 **outputs
             )
-            self.cumulative_reward += reward
+            self.current_episode_reward += reward
 
             if done or truncate:
+                self.episode_rewards.append(self.current_episode_reward)
+                self.current_episode_reward = 0.0
                 state, _ = self.env.reset()
             else:
                 state = next_state
@@ -107,7 +117,32 @@ class BaseTrain:
         return next_output
 
 
-    def train(self):
+    def _log_metrics(self, metrics: dict, step: int, use_wandb: bool, use_tb: bool):
+        clean_metrics: dict[str, float] = {}
+        tensor_keys: list[str]  = []
+        tensor_vals: list[Tensor] = []
+
+        for k, v in metrics.items():
+            if isinstance(v, Tensor):
+                tensor_keys.append(k)
+                tensor_vals.append(v.detach())
+            else:
+                clean_metrics[k] = float(v)
+            
+        if tensor_vals:
+            cpu_vals = torch.stack(tensor_vals).cpu().numpy()
+            for k, v in zip(tensor_keys, cpu_vals):
+                clean_metrics[k] = float(v)        
+
+        if use_wandb: wandb.log(clean_metrics, step=step)
+
+        if use_tb:
+            for key, value in clean_metrics.items():
+                self.tb_writer.add_scalar(key, value, step)
+
+
+
+    def train(self, use_wandb: bool = False, use_tb: bool = False):
         state, _ = self.env.reset()
         for step in tqdm(range(self.train_config.num_update)):
             last_output = self.rollout_phase(state)
@@ -115,13 +150,26 @@ class BaseTrain:
             if self.buffer.size < self.require_buffer_size:
                 raise EmptyBufferError(self.buffer.size, self.require_buffer_size)
 
-            self.update_weights(
-                        agent = self.agent,
-                        buffer = self.buffer,
-                        optimizer = self.optimizer,
-                        last_output = last_output,
-                        config = self.algo_config
+            losses = self.update_weights(self.agent,
+                        self.buffer,
+                        self.optimizer,
+                        last_output,
+                        self.algo_config
                     )
+
+            if len(self.episode_rewards) > 0:
+                recent = self.episode_rewards[-10:]
+                mean_reward = sum(recent) / len(recent)
+            else:
+                mean_reward = 0.0
+
+            metrics = {
+                "mean_episode_reward": mean_reward,
+                "learning_rate": self.optimizer.param_groups[0]['lr']
+            }
+            for k, v in losses.items(): metrics[k] = v
+            self._log_metrics(metrics, step, use_wandb, use_tb)
+
             self.buffer.clear()
 
 
