@@ -10,11 +10,12 @@ import torch
 import tqdm
 from typing import Callable
 from torch import optim
-from .agent import BaseAgent
-from .common import Buffer
-from .config import TrainConfig, PPOConfig
-from .env import BaseEnv
-from .errors import EmptyBufferError
+from zerorl.agent import BaseAgent
+from zerorl.common import Buffer
+from zerorl.config import TrainConfig, PPOConfig
+from zerorl.env import BaseEnv
+from zerorl.algorithms.processing import NormMeanStd
+from zerorl.errors import EmptyBufferError
 
 
 class BaseTrain:
@@ -47,7 +48,7 @@ class BaseTrain:
         self.agent = agent
         self.env = env
         self.buffer = buffer
-        self.update_weights = update_weights()
+        self.update_weights = update_weights
         self.train_config = train_config
         self.param_config = param_config
         self.optimizer: optim.Optimizer
@@ -55,10 +56,12 @@ class BaseTrain:
             self.optimizer = optim.Adam(self.agent.parameters(), lr=self.param_config.lr)
         else:
             self.optimizer = optimizer
+        obs_shape = env.observation_space.shape
+        assert obs_shape is not None
+        self.normalizer = NormMeanStd(obs_shape, train_config.device)
         self.cumulative_reward = 0.0
         self.require_buffer_size = require_buffer_size
 
-    @torch.compile
     def rollout_phase(self, state: np.ndarray):
         """Collect experience by running the agent in the environment.
 
@@ -69,9 +72,11 @@ class BaseTrain:
             state: Initial observation to start the rollout from.
         """
         for _ in range(self.train_config.rollout_steps):
-            state_tensor = torch.tensor(state, dtype=torch.float32, device=self.train_config.device)
+            state_tensor = torch.as_tensor(state, dtype=torch.float32, device=self.train_config.device)
+            self.normalizer.update(state_tensor)
+            state_normalized = self.normalizer.normalize(state_tensor)
             with torch.inference_mode():
-                outputs = self.agent.get_action(state_tensor)
+                outputs = self.agent.get_action(state_normalized)
                 action_np = outputs["action"].cpu().numpy()
 
             # Convention: truncate = terminated (episode naturally ended)
@@ -80,7 +85,7 @@ class BaseTrain:
             done_casted = 1.0 if done else 0.0
 
             self.buffer.insert(
-                state = state_tensor,
+                state = state_normalized,
                 reward = reward,
                 done = done_casted,
                 **outputs
@@ -93,8 +98,10 @@ class BaseTrain:
                 state = next_state
 
         with torch.inference_mode():
-            state_tensor = torch.tensor(state, dtype=torch.float32, device=self.train_config.device)
-            next_output = self.agent.get_action(state_tensor)
+            state_tensor = torch.as_tensor(state, dtype=torch.float32, device=self.train_config.device)
+            self.normalizer.update(state_tensor)
+            state_normalized = self.normalizer.normalize(state_tensor)
+            next_output = self.agent.get_action(state_normalized)
         return next_output
 
     def train(self):

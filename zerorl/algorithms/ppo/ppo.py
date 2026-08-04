@@ -21,7 +21,7 @@ def gae(rewards: Tensor,
         values: Tensor,
         last_value: Tensor,
         dones: Tensor,
-        ppo_config: PPOConfig) -> tuple[Tensor, Tensor, Tensor]:
+        hyper_params: PPOConfig) -> tuple[Tensor, Tensor, Tensor]:
     """Compute Generalized Advantage Estimation.
 
     Works backwards through the trajectory, accumulating TD errors
@@ -42,9 +42,9 @@ def gae(rewards: Tensor,
     next_values = torch.cat((values[1:], last_value), 0)
     total_size = rewards.shape[0]
     advantages = torch.zeros_like(rewards)
-    delta = rewards + ppo_config.gamma * next_values * mask - values
+    delta = rewards + hyper_params.gamma * next_values * mask - values
     for step in reversed(range(total_size)):
-        gae = delta[step] + ppo_config.gamma * ppo_config.gae_lambda * mask[step] * gae
+        gae = delta[step] + hyper_params.gamma * hyper_params.gae_lambda * mask[step] * gae
         advantages[step] = gae
 
     returns = advantages + values
@@ -59,7 +59,7 @@ def ppo_loss(model: BaseAgent,
         old_log_probs: Tensor,
         advantages: Tensor,
         returns: Tensor,
-        ppo_config: PPOConfig) -> tuple[Tensor, Tensor, Tensor, Tensor]:
+        hyper_params: PPOConfig) -> tuple[Tensor, Tensor, Tensor, Tensor]:
     logits, new_values = torch.func.functional_call(model, (params, buffers), (states,))
     dist = model.build_distribution(logits)
     new_log_probs, dist_entropy = eval_action(dist, actions)
@@ -72,29 +72,29 @@ def ppo_loss(model: BaseAgent,
 
     surr1 = ratio * idx_adv
     surr2 = torch.clamp(ratio,
-                        1.0 - ppo_config.clip_eps,
-                        1.0 + ppo_config.clip_eps) * idx_adv
+                        1.0 - hyper_params.clip_eps,
+                        1.0 + hyper_params.clip_eps) * idx_adv
 
     policy_loss = -torch.min(surr1, surr2).mean()
     value_loss = nn.functional.mse_loss(new_values.view(-1), idx_return)
     entropy_loss = dist_entropy.mean()
     loss = policy_loss + \
-            (ppo_config.value_coef * value_loss) - \
-            (ppo_config.ent_coef * entropy_loss)
+            (hyper_params.value_coef * value_loss) - \
+            (hyper_params.ent_coef * entropy_loss)
     return (loss, policy_loss, value_loss, entropy_loss)
 
 
 def ppo(model: BaseAgent,
-        ppo_config: PPOConfig,
+        hyper_params: PPOConfig,
         optimizer: Optimizer,
         buffer: Buffer,
         step: int,
         num_update: int,
+        scheduler: LambdaLR,
         batch_size: int = 64,
         epochs: int = 10,
         device: str = "cpu"
         ) ->  tuple[Tensor, Tensor, Tensor, Tensor]:
-    lr_decay(ppo_config.lr, optimizer, step, num_update)
     params, buffers = get_buffer_params_model(model)
     all_data = buffer.get_all()
     adv_norm = (all_data["adv"] - all_data["adv"].mean()) / (all_data["adv"].std() + 1e-8)
@@ -120,9 +120,9 @@ def ppo(model: BaseAgent,
             old_log_probs: Tensor,
             advantages: Tensor,
             returns: Tensor,
-            ppo_config: PPOConfig) -> tuple[Tensor, Tensor, Tensor, Tensor]:
+            hyper_params: PPOConfig) -> tuple[Tensor, Tensor, Tensor, Tensor]:
         loss, policy_loss, value_loss, ent_loss = ppo_loss(model, params, buffers, states, actions,
-                    old_log_probs, advantages, returns, ppo_config)
+                    old_log_probs, advantages, returns, hyper_params)
         loss.backward()
         return loss, policy_loss, value_loss, ent_loss
 
@@ -156,7 +156,7 @@ def ppo(model: BaseAgent,
                 optimizer.zero_grad(set_to_none=True)
                 loss, policy_loss, value_loss, entropy_loss = ppo_backward(model, params, buffers, all_data["state"][idx],
                                 all_data["actions"][idx], all_data["old_log_probs"][idx], adv_norm[idx],
-                                returns[idx], ppo_config)
+                                returns[idx], hyper_params)
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
                 optimizer.step()
 
@@ -168,6 +168,7 @@ def ppo(model: BaseAgent,
 
     #calcul loss and update weights
     update()
+    scheduler.step()
     # Return average losses over all actual updates ([:index_loss] excludes
     # any unused pre-allocated entries)
     return (epoch_losses[:index_loss].mean(),
