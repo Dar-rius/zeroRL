@@ -1,7 +1,7 @@
-"""Proximal Policy Optimization (PPO) trainer implementation.
+"""Proximal Policy Optimization (PPO) standalone functions.
 
-Provides PPOTrainer, which computes GAE advantages and runs the clipped
-surrogate loss optimization with linear learning rate decay.
+Provides gae_compute(), ppo_loss(), and ppo() for computing GAE
+advantages and running the clipped surrogate loss optimization.
 Reference: Schulman et al., "Proximal Policy Optimization Algorithms" (2017)
 """
 

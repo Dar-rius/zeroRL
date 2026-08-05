@@ -1,177 +1,149 @@
-"""Integration tests for Buffer (rl_template.common).
+"""Integration tests for Buffer (zerorl.common).
 
 Tests end-to-end buffer workflows: full insert cycles, various
-shape combinations, clear/refill reuse, and GAE data flow.
+shape combinations, clear/refill reuse, and multi-key data flow.
 """
 
-import numpy as np
 import pytest
-from rl_template.common import Buffer
+import torch
+from zerorl.common import Buffer
 
 
 class TestBufferIntegration:
     """End-to-end integration tests simulating real RL training workflows."""
 
-    def test_full_insert_cycle_with_get_all(self):
-        """Fill buffer, insert GAE returns, and verify tensor shapes.
-
-        Simulates a full rollout -> GAE -> PPO data preparation cycle.
-        """
+    def test_full_insert_cycle_with_get_all(self) -> None:
+        """Fill buffer with multiple keys and verify get_all() returns all of them."""
         buf = Buffer(
             step=20,
-            state_shape=(8,),
-            action_shape=(4,),
-            extra_shapes={"action_mask": (2,)},
+            data={
+                "state": (8,),
+                "action": (4,),
+                "old_log_probs": (),
+                "returns": (),
+                "adv": (),
+                "reward": (),
+                "value": (),
+                "done": (),
+            },
+            device=torch.device("cpu"),
         )
         for i in range(20):
-            state = np.random.randn(8).astype(np.float32)
-            action = np.random.randint(0, 4)
             buf.insert(
-                state=state,
-                action=action,
-                old_log_prob=np.random.randn(),
-                reward=np.random.randn(),
-                value=np.random.randn(),
-                dones=int(i == 19),
-                action_mask=np.random.randn(2).astype(np.float32),
+                state=torch.randn(8),
+                action=torch.randn(4),
+                old_log_probs=torch.tensor(float(i) * -0.1),
+                returns=torch.tensor(float(i)),
+                adv=torch.tensor(float(i) * 0.5),
+                reward=torch.tensor(float(i) * 0.1),
+                value=torch.tensor(float(i) * 0.2),
+                done=torch.tensor(1.0 if i == 19 else 0.0),
             )
-        returns = np.random.randn(20).astype(np.float32)
-        adv = np.random.randn(20).astype(np.float32)
-        buf.insert_returns(returns, adv)
-
         result = buf.get_all()
-        assert len(result) == 9
-        states, actions, old_log_probs, ret, a, rewards, values, dones, extra = result
-        assert states.shape == (20, 8)
-        assert actions.shape == (20, 4)
-        assert ret.shape == (20,)
-        assert a.shape == (20,)
-        assert extra["action_mask"].shape == (20, 2)
+        assert len(result) == 8
+        assert result["state"].shape == (20, 8)
+        assert result["action"].shape == (20, 4)
+        assert result["old_log_probs"].shape == (20,)
+        assert result["returns"].shape == (20,)
+        assert result["adv"].shape == (20,)
 
-    def test_buffer_scalar_actions(self):
-        """Buffer with action_shape=() should produce a 1D actions tensor."""
-        buf = Buffer(step=10, state_shape=(4,), action_shape=())
+    def test_buffer_scalar_actions(self) -> None:
+        """Buffer with scalar action shape should produce a 1D actions tensor."""
+        buf = Buffer(step=10, data={"state": (4,), "action": ()}, device=torch.device("cpu"))
         for i in range(10):
-            buf.insert(
-                state=np.ones(4),
-                action=i,
-                old_log_prob=0.0,
-                reward=float(i),
-                value=0.0,
-                dones=0,
-            )
-        states, actions, _, _, _, rewards, _, _, _ = buf.get_all()
-        assert actions.shape == (10,)
-        assert rewards[5].item() == pytest.approx(5.0)
+            buf.insert(state=torch.ones(4), action=torch.tensor(float(i)))
+        result = buf.get_all()
+        assert result["action"].shape == (10,)
+        assert result["action"][5].item() == pytest.approx(5.0)
 
-    def test_buffer_multidim_states(self):
+    def test_buffer_multidim_states(self) -> None:
         """Buffer should handle multi-dimensional states (e.g., images)."""
-        buf = Buffer(step=5, state_shape=(3, 3), action_shape=())
-        state = np.ones((3, 3), dtype=np.float32)
+        buf = Buffer(step=5, data={"state": (3, 3), "action": ()}, device=torch.device("cpu"))
+        state = torch.ones((3, 3))
         for i in range(5):
-            buf.insert(
-                state=state * i,
-                action=0,
-                old_log_prob=0.0,
-                reward=0.0,
-                value=0.0,
-                dones=0,
-            )
-        states, _, _, _, _, _, _, _, _ = buf.get_all()
-        assert states.shape == (5, 3, 3)
-        np.testing.assert_array_equal(states[2].numpy(), state * 2)
+            buf.insert(state=state * i, action=torch.tensor(0))
+        result = buf.get_all()
+        assert result["state"].shape == (5, 3, 3)
+        torch.testing.assert_close(result["state"][2], state * 2)
 
-    def test_clear_and_refill(self):
-        """Buffer should be fully reusable after clear().
-
-        New data should start at index 0 after clearing.
-        """
-        buf = Buffer(step=5, state_shape=(2,))
+    def test_clear_and_refill(self) -> None:
+        """Buffer should be fully reusable after clear()."""
+        buf = Buffer(step=5, data={"state": (2,)}, device=torch.device("cpu"))
         for i in range(5):
-            buf.insert(
-                state=np.array([float(i), float(i)]),
-                action=i,
-                old_log_prob=0.0,
-                reward=0.0,
-                value=0.0,
-                dones=0,
-            )
+            buf.insert(state=torch.tensor([float(i), float(i)]))
         buf.clear()
         assert buf.size == 0
         for i in range(3):
-            buf.insert(
-                state=np.array([float(i + 10), float(i + 10)]),
-                action=i,
-                old_log_prob=0.0,
-                reward=0.0,
-                value=0.0,
-                dones=0,
-            )
+            buf.insert(state=torch.tensor([float(i + 10), float(i + 10)]))
         assert buf.size == 3
-        states, _, _, _, _, _, _, _, _ = buf.get_all()
-        np.testing.assert_array_equal(states[0].numpy(), [10.0, 10.0])
-        np.testing.assert_array_equal(states[2].numpy(), [12.0, 12.0])
+        result = buf.get_all()
+        torch.testing.assert_close(result["state"][0], torch.tensor([10.0, 10.0]))
+        torch.testing.assert_close(result["state"][2], torch.tensor([12.0, 12.0]))
 
-    def test_insert_returns_then_get_all(self):
-        """insert_returns() data should be faithfully returned by get_all()."""
-        buf = Buffer(step=3, state_shape=(2,))
-        buf.insert(
-            state=np.array([1.0, 2.0]),
-            action=0,
-            old_log_prob=-0.1,
-            reward=1.0,
-            value=0.5,
-            dones=0,
-        )
-        buf.insert(
-            state=np.array([3.0, 4.0]),
-            action=1,
-            old_log_prob=-0.2,
-            reward=2.0,
-            value=0.6,
-            dones=0,
-        )
-        buf.insert(
-            state=np.array([5.0, 6.0]),
-            action=0,
-            old_log_prob=-0.3,
-            reward=3.0,
-            value=0.7,
-            dones=1,
-        )
-        returns = np.array([1.5, 2.5, 3.5])
-        adv = np.array([1.0, 2.0, 3.0])
-        buf.insert_returns(returns, adv)
-        _, _, _, ret, a, _, _, _, _ = buf.get_all()
-        np.testing.assert_allclose(ret.numpy(), returns)
-        np.testing.assert_allclose(a.numpy(), adv)
-
-    def test_buffer_with_different_state_action_shapes(self):
+    def test_buffer_with_different_state_action_shapes(self) -> None:
         """Buffer should handle various state and action dimension combinations."""
         # Small state, small action
-        buf1 = Buffer(step=3, state_shape=(2,), action_shape=(1,))
-        buf1.insert(
-            state=np.array([1.0, 2.0]),
-            action=np.array([0.0]),
-            old_log_prob=0.0,
-            reward=0.0,
-            value=0.0,
-            dones=0,
-        )
-        s1, a1, _, _, _, _, _, _, _ = buf1.get_all()
-        assert s1.shape == (3, 2)
-        assert a1.shape == (3, 1)
+        buf1 = Buffer(step=3, data={"state": (2,), "action": (1,)}, device=torch.device("cpu"))
+        for i in range(3):
+            buf1.insert(state=torch.tensor([float(i), float(i)]), action=torch.tensor([float(i)]))
+        result1 = buf1.get_all()
+        assert result1["state"].shape == (3, 2)
+        assert result1["action"].shape == (3, 1)
 
         # Large state (image-like), scalar action
-        buf2 = Buffer(step=3, state_shape=(64, 64, 3), action_shape=())
-        buf2.insert(
-            state=np.zeros((64, 64, 3)),
-            action=0,
-            old_log_prob=0.0,
-            reward=0.0,
-            value=0.0,
-            dones=0,
+        buf2 = Buffer(step=3, data={"state": (64, 64, 3), "action": ()}, device=torch.device("cpu"))
+        for i in range(3):
+            buf2.insert(state=torch.zeros(64, 64, 3), action=torch.tensor(float(i)))
+        result2 = buf2.get_all()
+        assert result2["state"].shape == (3, 64, 64, 3)
+        assert result2["action"].shape == (3,)
+
+    def test_ppo_workflow_keys(self) -> None:
+        """Buffer should support the exact key names used by ppo()."""
+        buf = Buffer(
+            step=32,
+            data={
+                "state": (4,),
+                "actions": (),
+                "old_log_probs": (),
+                "adv": (),
+                "returns": (),
+                "value": (),
+            },
+            device=torch.device("cpu"),
         )
-        s2, a2, _, _, _, _, _, _, _ = buf2.get_all()
-        assert s2.shape == (3, 64, 64, 3)
-        assert a2.shape == (3,)
+        for _ in range(32):
+            buf.insert(
+                state=torch.randn(4),
+                actions=torch.tensor(0),
+                old_log_probs=torch.tensor(-0.5),
+                adv=torch.tensor(1.0),
+                returns=torch.tensor(2.0),
+                value=torch.tensor(0.5),
+            )
+        result = buf.get_all()
+        assert "actions" in result
+        assert "old_log_probs" in result
+        assert "adv" in result
+        assert "returns" in result
+        assert "state" in result
+
+    def test_large_buffer(self) -> None:
+        """Buffer should handle typical PPO rollout sizes."""
+        n = 2048
+        buf = Buffer(
+            step=n,
+            data={"state": (4,), "action": (), "reward": (), "done": ()},
+            device=torch.device("cpu"),
+        )
+        for i in range(n):
+            buf.insert(
+                state=torch.randn(4),
+                action=torch.tensor(0),
+                reward=torch.tensor(1.0),
+                done=torch.tensor(0.0),
+            )
+        assert buf.size == n
+        result = buf.get_all()
+        assert result["state"].shape == (n, 4)
+        assert result["reward"].shape == (n,)

@@ -1,4 +1,4 @@
-"""Custom exceptions for the rl_template project."""
+"""Custom exceptions for the zerorl project."""
 
 
 class EmptyBufferError(Exception):

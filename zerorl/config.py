@@ -1,7 +1,7 @@
-"""Configuration dataclasses for PPO training.
+"""Configuration dataclasses for RL training.
 
-Provides PPOConfig (immutable hyperparameters), TrainConfig (mutable
-training settings with computed fields), and WandbConfig (logging).
+Provides AlgoConfig (mutable hyperparameters) and TrainConfig (mutable
+training settings with computed fields).
 """
 
 import torch

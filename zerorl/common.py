@@ -1,7 +1,7 @@
-"""Pre-allocated numpy rollout buffer for RL training.
+"""Pre-allocated rollout buffer for RL training.
 
-Provides Buffer, which stores trajectory data in fixed-size numpy arrays
-and converts them to PyTorch tensors for the PPO update step.
+Provides Buffer, which stores trajectory data in fixed-size PyTorch
+tensors and converts them for the PPO update step.
 """
 
 import torch
@@ -10,17 +10,15 @@ import torch
 class Buffer:
     """Pre-allocated rollout buffer for collecting RL trajectory data.
 
-    Stores 8 arrays (states, actions, old_log_probs, returns, advantages,
-    rewards, values, dones) in pre-allocated numpy arrays with a slice
-    pointer for O(1) insertion. After a full rollout, insert_returns()
-    fills in GAE-computed returns and advantages, and get_all() converts
-    everything to PyTorch tensors for the PPO update step.
+    Stores trajectory data in pre-allocated PyTorch tensors with a slice
+    pointer for O(1) insertion. Callers insert GAE-computed returns and
+    advantages directly, then use get_all() to retrieve everything as
+    PyTorch tensors for the PPO update step.
 
     Example:
-        buf = Buffer(step=2048, state_shape=(4,), action_shape=())
+        buf = Buffer(step=2048, data={"state": (4,), "actions": ()})
         for _ in range(2048):
-            buf.insert(state, action, log_prob, reward, value, done)
-        buf.insert_returns(returns, advantages)
+            buf.insert(state=..., actions=..., reward=..., ...)
         tensors = buf.get_all()
         buf.clear()
     """

@@ -1,265 +1,278 @@
-"""Unit tests for PPOTrainer (rl_template.algorithms.ppo.ppo).
+"""Unit tests for PPO standalone functions (zerorl.algorithms.ppo.ppo).
 
-Covers initialization, GAE computation (hand-calculated), and linear
-learning rate decay. Uses SimpleTestModel as a concrete nn.Module.
+Tests gae_compute(), ppo_loss(), and ppo() as standalone functions,
+plus linear_schedule() from zerorl.function.
 """
 
-import numpy as np
 import pytest
 import torch
 import torch.nn as nn
-from rl_template.algorithms.ppo.ppo import PPOTrainer
-from rl_template.config import PPOConfig
+from torch.optim.lr_scheduler import LambdaLR
+from zerorl.agent import BaseAgent
+from zerorl.algorithms.ppo.ppo import gae_compute, ppo_loss, ppo
+from zerorl.common import Buffer
+from zerorl.config import AlgoConfig
+from zerorl.function import linear_schedule
+
 
 # =============================================================================
-# Test Helper: SimpleTestModel
+# Test Helper: DiscreteTestAgent
 # =============================================================================
 
 
-class SimpleTestModel(nn.Module):
-    """Minimal policy+value network for testing PPOTrainer.
+class DiscreteTestAgent(BaseAgent):
+    """Minimal discrete-policy agent for testing PPO functions."""
 
-    Two-layer network with a Categorical policy head and a scalar
-    value head. Implements get_action() to match PPOTrainer's interface.
-    """
-
-    def __init__(self, obs_dim=4, act_dim=2):
+    def __init__(self, obs_dim: int = 4, act_dim: int = 2):
         super().__init__()
-        self.policy = nn.Linear(obs_dim, act_dim)
-        self.value = nn.Linear(obs_dim, 1)
+        self.actor = nn.Linear(obs_dim, act_dim)
+        self.val = nn.Linear(obs_dim, 1)
 
-    def forward(self, state, **kwargs):
-        return self.policy(state), self.value(state)
+    def forward(self, state: torch.Tensor, **kwargs):
+        state_t = torch.as_tensor(state, dtype=torch.float32)
+        return self.actor(state_t), self.val(state_t)
 
-    def get_action(self, state, action=None, **kwargs):
-        """Sample or evaluate an action under the Categorical policy.
-
-        Args:
-            state: Observation tensor.
-            action: Optional action to evaluate. When None, samples.
-
-        Returns:
-            Tuple of (action, log_prob, entropy, value).
-        """
-        state = torch.as_tensor(state, dtype=torch.float32)
-        logits, value = self.forward(state)
-        dist = torch.distributions.Categorical(logits=logits)
-        if action is None:
-            action = dist.sample()
-        log_prob = dist.log_prob(action)
-        entropy = dist.entropy()
-        return action, log_prob, entropy, value.squeeze(-1)
+    @staticmethod
+    def build_distribution(logits: torch.Tensor):
+        return torch.distributions.Categorical(logits=logits)
 
 
 # =============================================================================
-# Test PPOTrainer Initialization
+# Test linear_schedule()
 # =============================================================================
 
 
-class TestPPOTrainerInit:
-    """Verify PPOTrainer.__init__() stores all hyperparameters correctly."""
+class TestLinearSchedule:
+    """Verify linear_schedule() produces correct LR multipliers."""
 
-    def test_stores_hyperparams(self):
-        """All constructor arguments should be stored as instance attributes."""
-        model = SimpleTestModel()
-        trainer = PPOTrainer(
-            model,
-            PPOConfig(
-                lr=1e-3,
-                gamma=0.95,
-                gae_lambda=0.8,
-                clip_eps=0.2,
-                value_coef=1.0,
-                ent_coef=0.05,
-            ),
-        )
-        assert trainer.ppo_config.lr == 1e-3
-        assert trainer.ppo_config.gamma == 0.95
-        assert trainer.ppo_config.gae_lambda == 0.8
-        assert trainer.ppo_config.clip_eps == 0.2
-        assert trainer.ppo_config.value_coef == 1.0
-        assert trainer.ppo_config.ent_coef == 0.05
+    def test_step_zero_returns_one(self) -> None:
+        assert linear_schedule(0, 1000) == pytest.approx(1.0)
 
-    def test_stores_model(self):
-        """The trainer should hold a reference to the model (not a copy)."""
-        model = SimpleTestModel()
-        trainer = PPOTrainer(model, PPOConfig())
-        assert trainer.model is model
+    def test_step_half(self) -> None:
+        assert linear_schedule(500, 1000) == pytest.approx(0.5)
 
-    def test_creates_optimizer(self):
-        """An Adam optimizer should be created with the specified learning rate."""
-        model = SimpleTestModel()
-        trainer = PPOTrainer(model, PPOConfig(lr=5e-4))
-        assert len(trainer.optimizer.param_groups) == 1
-        assert trainer.optimizer.param_groups[0]["lr"] == 5e-4
+    def test_step_end(self) -> None:
+        assert linear_schedule(1000, 1000) == pytest.approx(0.0)
 
-    def test_default_hyperparams(self):
-        """Default values should match the PPOConfig defaults."""
-        model = SimpleTestModel()
-        trainer = PPOTrainer(model, PPOConfig())
-        assert trainer.ppo_config.lr == 3e-5
-        assert trainer.ppo_config.gamma == 0.999
-        assert trainer.ppo_config.gae_lambda == 0.95
-        assert trainer.ppo_config.clip_eps == 0.1
-        assert trainer.ppo_config.value_coef == 0.5
-        assert trainer.ppo_config.ent_coef == 0.01
-
-    def test_mse_loss_exists(self):
-        """The trainer should have an MSELoss instance for value function loss."""
-        model = SimpleTestModel()
-        trainer = PPOTrainer(model, PPOConfig())
-        assert isinstance(trainer.mse_loss, nn.MSELoss)
+    def test_step_near_end(self) -> None:
+        result = linear_schedule(999, 1000)
+        assert result == pytest.approx(1.0 - 999 / 1000)
 
 
 # =============================================================================
-# Test GAE (Generalized Advantage Estimation)
+# Test gae_compute()
 # =============================================================================
 
 
-class TestComputeGAE:
-    """Verify compute_gae() produces correct advantages via hand-calculated examples."""
+class TestGaeCompute:
+    """Verify gae_compute() produces correct advantages via hand-calculated examples."""
 
-    def test_returns_equals_advantages_plus_values(self):
-        """By definition: returns = advantages + values (always true)."""
-        model = SimpleTestModel()
-        trainer = PPOTrainer(model, PPOConfig())
-        rewards = np.array([1.0, 2.0, 3.0])
-        values = np.array([0.5, 0.5, 0.5])
-        dones = np.array([0.0, 0.0, 0.0])
-        last_value = 1.0
-        returns, advantages, _ = trainer.compute_gae(rewards, values, last_value, dones)
-        np.testing.assert_allclose(returns, advantages + values)
+    def test_returns_equals_advantages_plus_values(self) -> None:
+        cfg = AlgoConfig()
+        rewards = torch.tensor([1.0, 2.0, 3.0])
+        values = torch.tensor([0.5, 0.5, 0.5])
+        dones = torch.tensor([0.0, 0.0, 0.0])
+        last_value = torch.tensor([1.0])
+        returns, advantages, _ = gae_compute(rewards, values, last_value, dones, cfg)
+        torch.testing.assert_close(returns, advantages + values)
 
-    def test_hand_calculated_single_step(self):
-        """Single-step GAE with known values.
-
-        Setup: r=[1.0], V=[0.0], last_value=0.0, dones=[0.0]
-        Expected: delta = 1.0, gae = 1.0
-        """
-        model = SimpleTestModel()
-        trainer = PPOTrainer(model, PPOConfig(gamma=0.99, gae_lambda=0.95))
-        rewards = np.array([1.0])
-        values = np.array([0.0])
-        dones = np.array([0.0])
-        last_value = 0.0
-        returns, advantages, delta = trainer.compute_gae(
-            rewards, values, last_value, dones
-        )
+    def test_hand_calculated_single_step(self) -> None:
+        cfg = AlgoConfig(gamma=0.99, gae_lambda=0.95)
+        rewards = torch.tensor([1.0])
+        values = torch.tensor([0.0])
+        dones = torch.tensor([0.0])
+        last_value = torch.tensor([0.0])
+        returns, advantages, delta = gae_compute(rewards, values, last_value, dones, cfg)
         expected_delta = 1.0 + 0.99 * 0.0 * 1.0 - 0.0
         expected_gae = expected_delta
-        np.testing.assert_allclose(delta, [expected_delta])
-        np.testing.assert_allclose(advantages, [expected_gae])
-        np.testing.assert_allclose(returns, [expected_gae + 0.0])
+        torch.testing.assert_close(delta, torch.tensor([expected_delta]))
+        torch.testing.assert_close(advantages, torch.tensor([expected_gae]))
+        torch.testing.assert_close(returns, torch.tensor([expected_gae + 0.0]))
 
-    def test_hand_calculated_two_steps(self):
-        """Two-step GAE verifying backward accumulation.
-
-        Setup: r=[1.0, 1.0], V=[0.0, 0.0], last_value=0.0, dones=[0.0, 0.0]
-        Expected: gae_1 = 1.0, gae_0 = 1.0 + gamma*lambda = 1.9405
-        """
-        model = SimpleTestModel()
-        trainer = PPOTrainer(model, PPOConfig(gamma=0.99, gae_lambda=0.95))
-        rewards = np.array([1.0, 1.0])
-        values = np.array([0.0, 0.0])
-        dones = np.array([0.0, 0.0])
-        last_value = 0.0
-        returns, advantages, delta = trainer.compute_gae(
-            rewards, values, last_value, dones
-        )
+    def test_hand_calculated_two_steps(self) -> None:
+        cfg = AlgoConfig(gamma=0.99, gae_lambda=0.95)
+        rewards = torch.tensor([1.0, 1.0])
+        values = torch.tensor([0.0, 0.0])
+        dones = torch.tensor([0.0, 0.0])
+        last_value = torch.tensor([0.0])
+        returns, advantages, delta = gae_compute(rewards, values, last_value, dones, cfg)
         expected_gae_1 = 1.0
         expected_gae_0 = 1.0 + 0.99 * 0.95 * expected_gae_1
-        np.testing.assert_allclose(advantages[1], expected_gae_1, atol=1e-6)
-        np.testing.assert_allclose(advantages[0], expected_gae_0, atol=1e-6)
+        assert advantages[1].item() == pytest.approx(expected_gae_1, abs=1e-6)
+        assert advantages[0].item() == pytest.approx(expected_gae_0, abs=1e-6)
 
-    def test_done_resets_gae(self):
-        """Episode boundary (done=1) should reset the GAE accumulation.
+    def test_done_resets_gae(self) -> None:
+        cfg = AlgoConfig(gamma=0.99, gae_lambda=0.95)
+        rewards = torch.tensor([1.0, 1.0])
+        values = torch.tensor([0.0, 0.0])
+        dones = torch.tensor([1.0, 0.0])
+        last_value = torch.tensor([0.0])
+        returns, advantages, _ = gae_compute(rewards, values, last_value, dones, cfg)
+        assert advantages[1].item() == pytest.approx(1.0, abs=1e-6)
+        assert advantages[0].item() == pytest.approx(1.0, abs=1e-6)
 
-        Setup: r=[1.0, 1.0], V=[0.0, 0.0], dones=[1.0, 0.0]
-        Both advantages should be 1.0 independently (no accumulation across done).
-        """
-        model = SimpleTestModel()
-        trainer = PPOTrainer(model, PPOConfig(gamma=0.99, gae_lambda=0.95))
-        rewards = np.array([1.0, 1.0])
-        values = np.array([0.0, 0.0])
-        dones = np.array([1.0, 0.0])
-        last_value = 0.0
-        returns, advantages, _ = trainer.compute_gae(rewards, values, last_value, dones)
-        np.testing.assert_allclose(advantages[1], 1.0, atol=1e-6)
-        np.testing.assert_allclose(advantages[0], 1.0, atol=1e-6)
-
-    def test_output_shapes(self):
-        """All output arrays should have the same shape as the input rewards."""
-        model = SimpleTestModel()
-        trainer = PPOTrainer(model, PPOConfig())
+    def test_output_shapes(self) -> None:
+        cfg = AlgoConfig()
         n = 10
-        rewards = np.ones(n)
-        values = np.zeros(n)
-        dones = np.zeros(n)
-        returns, advantages, delta = trainer.compute_gae(rewards, values, 0.0, dones)
+        rewards = torch.ones(n)
+        values = torch.zeros(n)
+        dones = torch.zeros(n)
+        last_value = torch.tensor([0.0])
+        returns, advantages, delta = gae_compute(rewards, values, last_value, dones, cfg)
         assert returns.shape == (n,)
         assert advantages.shape == (n,)
         assert delta.shape == (n,)
 
-    def test_with_nonzero_values(self):
-        """GAE should work correctly with non-zero value estimates."""
-        model = SimpleTestModel()
-        trainer = PPOTrainer(model, PPOConfig(gamma=0.99, gae_lambda=0.95))
-        rewards = np.array([5.0, 3.0, 2.0])
-        values = np.array([1.0, 2.0, 3.0])
-        dones = np.array([0.0, 0.0, 0.0])
-        last_value = 4.0
-        returns, advantages, _ = trainer.compute_gae(rewards, values, last_value, dones)
-        np.testing.assert_allclose(returns, advantages + values)
+    def test_with_nonzero_values(self) -> None:
+        cfg = AlgoConfig(gamma=0.99, gae_lambda=0.95)
+        rewards = torch.tensor([5.0, 3.0, 2.0])
+        values = torch.tensor([1.0, 2.0, 3.0])
+        dones = torch.tensor([0.0, 0.0, 0.0])
+        last_value = torch.tensor([4.0])
+        returns, advantages, _ = gae_compute(rewards, values, last_value, dones, cfg)
+        torch.testing.assert_close(returns, advantages + values)
         assert returns.shape == (3,)
 
 
 # =============================================================================
-# Test Learning Rate Decay
+# Test ppo_loss()
 # =============================================================================
 
 
-class TestLRDecay:
-    """Verify lr_decay() applies linear learning rate scheduling.
+class TestPpoLoss:
+    """Verify ppo_loss() returns correct loss dict with gradients."""
 
-    Formula: current_lr = lr * (1.0 - step / total_steps)
-    """
+    def test_returns_dict_with_four_keys(self) -> None:
+        agent = DiscreteTestAgent(obs_dim=4, act_dim=2)
+        params = dict(agent.named_parameters())
+        buffers = dict(agent.named_buffers())
+        cfg = AlgoConfig()
+        states = torch.randn(16, 4)
+        actions = torch.randint(0, 2, (16,))
+        old_log_probs = torch.randn(16)
+        advantages = torch.randn(16)
+        returns = torch.randn(16)
+        result = ppo_loss(agent, params, buffers, states, actions,
+                          old_log_probs, advantages, returns, cfg)
+        assert isinstance(result, dict)
+        assert set(result.keys()) == {"loss", "policy_loss", "value_loss", "entropy_loss"}
 
-    def test_step_zero_no_change(self):
-        """At step=0, the learning rate should remain unchanged."""
-        model = SimpleTestModel()
-        trainer = PPOTrainer(model, PPOConfig(lr=0.01))
-        trainer.lr_decay(lr=0.01, total_steps=1000, step=0)
-        assert trainer.optimizer.param_groups[0]["lr"] == pytest.approx(0.01)
+    def test_losses_are_finite(self) -> None:
+        agent = DiscreteTestAgent(obs_dim=4, act_dim=2)
+        params = dict(agent.named_parameters())
+        buffers = dict(agent.named_buffers())
+        cfg = AlgoConfig()
+        states = torch.randn(16, 4)
+        actions = torch.randint(0, 2, (16,))
+        old_log_probs = torch.randn(16)
+        advantages = torch.randn(16)
+        returns = torch.randn(16)
+        result = ppo_loss(agent, params, buffers, states, actions,
+                          old_log_probs, advantages, returns, cfg)
+        for v in result.values():
+            assert torch.isfinite(v)
 
-    def test_step_half(self):
-        """At step=total_steps/2, the learning rate should be halved."""
-        model = SimpleTestModel()
-        trainer = PPOTrainer(model, PPOConfig(lr=0.01))
-        trainer.lr_decay(lr=0.01, total_steps=1000, step=500)
-        assert trainer.optimizer.param_groups[0]["lr"] == pytest.approx(0.005)
+    def test_loss_has_gradient(self) -> None:
+        agent = DiscreteTestAgent(obs_dim=4, act_dim=2)
+        params = dict(agent.named_parameters())
+        buffers = dict(agent.named_buffers())
+        cfg = AlgoConfig()
+        states = torch.randn(16, 4)
+        actions = torch.randint(0, 2, (16,))
+        old_log_probs = torch.randn(16)
+        advantages = torch.randn(16)
+        returns = torch.randn(16)
+        result = ppo_loss(agent, params, buffers, states, actions,
+                          old_log_probs, advantages, returns, cfg)
+        result["loss"].backward()
+        for p in agent.parameters():
+            assert p.grad is not None
 
-    def test_final_step_near_zero(self):
-        """At step=total_steps-1, the learning rate should be near zero."""
-        model = SimpleTestModel()
-        trainer = PPOTrainer(model, PPOConfig(lr=0.01))
-        trainer.lr_decay(lr=0.01, total_steps=1000, step=999)
-        expected = 0.01 * (1.0 - 999 / 1000)
-        assert trainer.optimizer.param_groups[0]["lr"] == pytest.approx(expected)
 
-    def test_lr_zero_at_end(self):
-        """At step=total_steps, the learning rate should be exactly zero."""
-        model = SimpleTestModel()
-        trainer = PPOTrainer(model, PPOConfig(lr=0.01))
-        trainer.lr_decay(lr=0.01, total_steps=1000, step=1000)
-        assert trainer.optimizer.param_groups[0]["lr"] == pytest.approx(0.0)
+# =============================================================================
+# Test ppo() standalone function
+# =============================================================================
 
-    def test_updates_all_param_groups(self):
-        """lr_decay should update ALL param groups, not just the first."""
-        model = SimpleTestModel()
-        trainer = PPOTrainer(model, PPOConfig(lr=0.01))
-        trainer.optimizer.add_param_group(
-            {"params": [torch.zeros(1, requires_grad=True)], "lr": 0.02}
+
+class TestPpoFunction:
+    """Verify ppo() runs a full update cycle with a Buffer."""
+
+    def _make_buffer(self, n: int = 64, obs_dim: int = 4, act_dim: int = 2) -> Buffer:
+        """Create and fill a buffer with keys expected by ppo()."""
+        buf = Buffer(
+            step=n,
+            data={
+                "state": (obs_dim,),
+                "actions": (),
+                "old_log_probs": (),
+                "adv": (),
+                "returns": (),
+                "value": (),
+            },
+            device=torch.device("cpu"),
         )
-        trainer.lr_decay(lr=0.01, total_steps=100, step=50)
-        for pg in trainer.optimizer.param_groups:
-            assert pg["lr"] == pytest.approx(0.005)
+        for _ in range(n):
+            buf.insert(
+                state=torch.randn(obs_dim),
+                actions=torch.tensor(0),
+                old_log_probs=torch.tensor(-0.5),
+                adv=torch.tensor(1.0),
+                returns=torch.tensor(2.0),
+                value=torch.tensor(0.5),
+            )
+        return buf
+
+    def test_ppo_runs_without_error(self) -> None:
+        agent = DiscreteTestAgent(obs_dim=4, act_dim=2)
+        optimizer = torch.optim.Adam(agent.parameters(), lr=3e-4)
+        buf = self._make_buffer(n=64)
+        cfg = AlgoConfig()
+        scheduler = LambdaLR(optimizer, lr_lambda=lambda _: 1.0)
+        result = ppo(agent, optimizer, buf, cfg, scheduler, batch_size=32, epochs=2,
+                     device=torch.device("cpu"))
+        assert isinstance(result, dict)
+        assert "loss" in result
+
+    def test_ppo_returns_finite_losses(self) -> None:
+        agent = DiscreteTestAgent(obs_dim=4, act_dim=2)
+        optimizer = torch.optim.Adam(agent.parameters(), lr=3e-4)
+        buf = self._make_buffer(n=64)
+        cfg = AlgoConfig()
+        scheduler = LambdaLR(optimizer, lr_lambda=lambda _: 1.0)
+        result = ppo(agent, optimizer, buf, cfg, scheduler, batch_size=32, epochs=2,
+                     device=torch.device("cpu"))
+        for v in result.values():
+            assert torch.isfinite(v)
+
+    def test_ppo_updates_weights(self) -> None:
+        agent = DiscreteTestAgent(obs_dim=4, act_dim=2)
+        w_before = {k: v.clone() for k, v in agent.state_dict().items()}
+        optimizer = torch.optim.Adam(agent.parameters(), lr=3e-4)
+        buf = self._make_buffer(n=128)
+        cfg = AlgoConfig()
+        scheduler = LambdaLR(optimizer, lr_lambda=lambda _: 1.0)
+        ppo(agent, optimizer, buf, cfg, scheduler, batch_size=32, epochs=5,
+            device=torch.device("cpu"))
+        w_after = agent.state_dict()
+        changed = False
+        for k in w_before:
+            if not torch.allclose(w_before[k], w_after[k]):
+                changed = True
+                break
+        assert changed
+
+    def test_ppo_scheduler_steps(self) -> None:
+        agent = DiscreteTestAgent(obs_dim=4, act_dim=2)
+        optimizer = torch.optim.Adam(agent.parameters(), lr=3e-4)
+        buf = self._make_buffer(n=64)
+        cfg = AlgoConfig()
+        # Use a decreasing scheduler
+        scheduler = LambdaLR(optimizer, lr_lambda=lambda step: 1.0 - step * 0.01)
+        # LambdaLR may call step() on init in newer PyTorch versions,
+        # so record the lr right before calling ppo
+        pre_ppo_lr = optimizer.param_groups[0]["lr"]
+        ppo(agent, optimizer, buf, cfg, scheduler, batch_size=32, epochs=1,
+            device=torch.device("cpu"))
+        post_ppo_lr = optimizer.param_groups[0]["lr"]
+        # scheduler.step() was called inside ppo(), so lr should have decreased
+        assert post_ppo_lr < pre_ppo_lr

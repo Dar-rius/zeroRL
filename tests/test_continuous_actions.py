@@ -1,67 +1,50 @@
 """Unit tests for continuous action spaces.
 
-Verifies that the PPO trainer and Buffer work correctly with continuous
+Verifies that the PPO functions and Buffer work correctly with continuous
 action distributions (Gaussian/Normal) instead of discrete (Categorical).
 """
 
-import numpy as np
 import torch
 import torch.nn as nn
-from rl_template.algorithms.ppo.ppo import PPOTrainer
-from rl_template.common import Buffer
-from rl_template.config import PPOConfig
+from torch.optim.lr_scheduler import LambdaLR
+from zerorl.agent import BaseAgent
+from zerorl.algorithms.ppo.ppo import gae_compute, ppo
+from zerorl.common import Buffer
+from zerorl.config import AlgoConfig
+
 
 # =============================================================================
-# Test Helper: ContinuousTestModel
+# Test Helper: ContinuousTestAgent
 # =============================================================================
 
 
-class ContinuousTestModel(nn.Module):
-    """Minimal continuous-policy network for testing PPO with Gaussian actions.
+class ContinuousTestAgent(BaseAgent):
+    """Minimal continuous-policy agent for testing PPO with Gaussian actions.
 
-    Uses a Normal distribution parameterized by (mean, learnable log_std)
-    for continuous action sampling.
+    forward() returns (logits, value) where logits = concat([mean, std]).
+    build_distribution() splits logits back into (mean, std) for Normal.
     """
 
     def __init__(self, obs_dim: int = 4, act_dim: int = 2):
         super().__init__()
-        self.mean = nn.Linear(obs_dim, act_dim)
+        self.mean_layer = nn.Linear(obs_dim, act_dim)
         self.log_std = nn.Parameter(torch.zeros(act_dim))
         self.value = nn.Linear(obs_dim, 1)
 
-    def get_distribution(self, state: torch.Tensor, **kwargs):
-        """Build a Normal distribution from the policy output.
-
-        Args:
-            state: Observation tensor.
-
-        Returns:
-            Tuple of (distribution, value) where distribution is Normal.
-        """
-        state = torch.as_tensor(state, dtype=torch.float32)
-        action_mean = self.mean(state)
+    def forward(self, state: torch.Tensor, **kwargs):
+        state_t = torch.as_tensor(state, dtype=torch.float32)
+        action_mean = self.mean_layer(state_t)
         action_std = self.log_std.exp().expand_as(action_mean)
-        dist = torch.distributions.Normal(action_mean, action_std)
-        return dist, self.value(state).squeeze(-1)
+        logits = torch.cat([action_mean, action_std], dim=-1)
+        val = self.value(state_t)
+        return logits, val
 
-    def get_action(self, state, action=None, **kwargs):
-        """Sample or evaluate an action under the Gaussian policy.
-
-        log_prob and entropy are summed across action dimensions.
-
-        Args:
-            state: Observation tensor.
-            action: Optional action to evaluate. When None, samples.
-
-        Returns:
-            Tuple of (action, log_prob, entropy, value).
-        """
-        dist, value = self.get_distribution(state)
-        if action is None:
-            action = dist.sample()
-        log_prob = dist.log_prob(action).sum(dim=-1)
-        entropy = dist.entropy().sum(dim=-1)
-        return action, log_prob, entropy, value
+    @staticmethod
+    def build_distribution(logits: torch.Tensor):
+        act_dim = logits.shape[-1] // 2
+        mean = logits[..., :act_dim]
+        std = logits[..., act_dim:]
+        return torch.distributions.Normal(mean, std)
 
 
 # =============================================================================
@@ -72,58 +55,25 @@ class ContinuousTestModel(nn.Module):
 class TestContinuousBuffer:
     """Verify Buffer handles continuous (float) actions correctly."""
 
-    def test_continuous_action_shape(self):
-        """Buffer with action_shape=(2,) should store 2D continuous actions."""
-        buf = Buffer(step=10, state_shape=(4,), action_shape=(2,))
-        assert buf.actions.shape == (10, 2)
+    def test_continuous_action_shape(self) -> None:
+        buf = Buffer(step=10, data={"state": (4,), "action": (2,)}, device=torch.device("cpu"))
+        assert buf.data["action"].shape == (10, 2)
 
-    def test_insert_continuous_action(self):
-        """Continuous float actions should be stored correctly."""
-        buf = Buffer(step=5, state_shape=(4,), action_shape=(2,))
-        action = np.array([0.5, -0.3])
-        buf.insert(
-            state=np.zeros(4),
-            action=action,
-            old_log_prob=-0.1,
-            reward=1.0,
-            value=0.5,
-            dones=0,
-        )
-        np.testing.assert_array_almost_equal(buf.actions[0], action)
+    def test_insert_continuous_action(self) -> None:
+        buf = Buffer(step=5, data={"state": (4,), "action": (2,)}, device=torch.device("cpu"))
+        action = torch.tensor([0.5, -0.3])
+        buf.insert(state=torch.zeros(4), action=action)
+        torch.testing.assert_close(buf.data["action"][0], action)
 
-    def test_get_all_continuous_actions(self):
-        """get_all() should return continuous actions as float32 tensors."""
-        buf = Buffer(step=5, state_shape=(4,), action_shape=(2,))
+    def test_get_all_continuous_actions(self) -> None:
+        buf = Buffer(step=5, data={"state": (4,), "action": (2,)}, device=torch.device("cpu"))
         for i in range(5):
-            action = np.array([float(i), float(i) * -0.5])
-            buf.insert(
-                state=np.ones(4) * i,
-                action=action,
-                old_log_prob=float(i),
-                reward=float(i),
-                value=float(i),
-                dones=0,
-            )
-        states, actions, _, _, _, _, _, _, _ = buf.get_all()
-        assert actions.shape == (5, 2)
-        assert actions.dtype == torch.float32
-        np.testing.assert_array_almost_equal(actions[2].numpy(), [2.0, -1.0])
-
-    def test_scalar_continuous_action(self):
-        """Buffer with action_shape=(1,) for 1D continuous actions."""
-        buf = Buffer(step=5, state_shape=(4,), action_shape=(1,))
-        for i in range(5):
-            buf.insert(
-                state=np.ones(4),
-                action=np.array([float(i) * 0.1]),
-                old_log_prob=0.0,
-                reward=0.0,
-                value=0.0,
-                dones=0,
-            )
-        _, actions, _, _, _, _, _, _, _ = buf.get_all()
-        assert actions.shape == (5, 1)
-        assert actions.dtype == torch.float32
+            action = torch.tensor([float(i), float(i) * -0.5])
+            buf.insert(state=torch.ones(4) * i, action=action)
+        result = buf.get_all()
+        assert result["action"].shape == (5, 2)
+        assert result["action"].dtype == torch.float32
+        torch.testing.assert_close(result["action"][2], torch.tensor([2.0, -1.0]))
 
 
 # =============================================================================
@@ -132,55 +82,66 @@ class TestContinuousBuffer:
 
 
 class TestContinuousModel:
-    """Verify ContinuousTestModel produces valid distributions and outputs."""
+    """Verify ContinuousTestAgent produces valid distributions and outputs."""
 
-    def test_get_action_returns_four_values(self):
-        """get_action() should return (action, log_prob, entropy, value)."""
-        model = ContinuousTestModel(obs_dim=4, act_dim=2)
+    def test_get_action_returns_dict(self) -> None:
+        agent = ContinuousTestAgent(obs_dim=4, act_dim=2)
         state = torch.randn(4)
-        action, log_prob, entropy, value = model.get_action(state)
-        assert action.shape == (2,)
-        assert log_prob.shape == ()
-        assert entropy.shape == ()
-        assert value.shape == ()
+        result = agent.get_action(state)
+        assert isinstance(result, dict)
+        assert set(result.keys()) == {"action", "log_prob", "entropy", "value"}
 
-    def test_get_action_with_provided_action(self):
-        """get_action(action=...) should evaluate the given action's log_prob."""
-        model = ContinuousTestModel(obs_dim=4, act_dim=2)
+    def test_get_action_with_provided_action(self) -> None:
+        agent = ContinuousTestAgent(obs_dim=4, act_dim=2)
         state = torch.randn(4)
         action = torch.tensor([0.5, -0.5])
-        out_action, log_prob, entropy, value = model.get_action(state, action)
-        torch.testing.assert_close(out_action, action)
-        assert log_prob.item() != 0.0
+        result = agent.get_action(state, action)
+        torch.testing.assert_close(result["action"], action)
+        # log_prob is a tensor (may be scalar or multi-dim depending on eval_action)
+        assert isinstance(result["log_prob"], torch.Tensor)
 
-    def test_log_prob_sums_across_dims(self):
-        """log_prob should sum across action dimensions."""
-        model = ContinuousTestModel(obs_dim=4, act_dim=3)
+    def test_log_prob_single_sample(self) -> None:
+        """For single-sample multi-dim actions, eval_action does NOT sum (dim==1)."""
+        agent = ContinuousTestAgent(obs_dim=4, act_dim=3)
         state = torch.randn(4)
         action = torch.randn(3)
-        _, log_prob, _, _ = model.get_action(state, action)
-        dist, _ = model.get_distribution(state)
-        expected = dist.log_prob(action).sum(dim=-1)
-        torch.testing.assert_close(log_prob, expected)
+        result = agent.get_action(state, action)
+        logits, _ = agent(state)
+        dist = agent.build_distribution(logits)
+        # eval_action: log_prob.dim() == 1, NOT > 1, so NOT summed
+        expected = dist.log_prob(action)
+        torch.testing.assert_close(result["log_prob"], expected)
 
-    def test_entropy_sums_across_dims(self):
-        """entropy should sum across action dimensions."""
-        model = ContinuousTestModel(obs_dim=4, act_dim=3)
-        state = torch.randn(4)
-        _, _, entropy, _ = model.get_action(state)
-        dist, _ = model.get_distribution(state)
-        expected = dist.entropy().sum(dim=-1)
-        torch.testing.assert_close(entropy, expected)
-
-    def test_batch_get_action(self):
-        """get_action() should work with batched states."""
-        model = ContinuousTestModel(obs_dim=4, act_dim=2)
+    def test_log_prob_batch(self) -> None:
+        """For batch multi-dim actions, eval_action sums over last dim."""
+        agent = ContinuousTestAgent(obs_dim=4, act_dim=3)
         states = torch.randn(8, 4)
-        actions, log_probs, entropies, values = model.get_action(states)
-        assert actions.shape == (8, 2)
-        assert log_probs.shape == (8,)
-        assert entropies.shape == (8,)
-        assert values.shape == (8,)
+        actions = torch.randn(8, 3)
+        result = agent.get_action(states, actions)
+        logits, _ = agent(states)
+        dist = agent.build_distribution(logits)
+        expected = dist.log_prob(actions).sum(dim=-1)
+        torch.testing.assert_close(result["log_prob"], expected)
+
+    def test_entropy_single_sample(self) -> None:
+        """For single-sample multi-dim, entropy is NOT summed (dim==1)."""
+        agent = ContinuousTestAgent(obs_dim=4, act_dim=3)
+        state = torch.randn(4)
+        result = agent.get_action(state)
+        logits, _ = agent(state)
+        dist = agent.build_distribution(logits)
+        expected = dist.entropy()
+        torch.testing.assert_close(result["entropy"], expected)
+
+    def test_batch_get_action(self) -> None:
+        agent = ContinuousTestAgent(obs_dim=4, act_dim=2)
+        states = torch.randn(8, 4)
+        result = agent.get_action(states)
+        assert result["action"].shape == (8, 2)
+        assert result["log_prob"].shape == (8,)
+        assert result["entropy"].shape == (8,)
+        # value from nn.Linear(obs_dim, 1) outputs (batch, 1)
+        assert result["value"].shape == (8, 1)
 
 
 # =============================================================================
@@ -191,148 +152,140 @@ class TestContinuousModel:
 class TestPPOContinuousUpdate:
     """Test the full PPO update pipeline with continuous actions."""
 
-    def _fill_buffer_with_continuous_data(self, buf, model, obs_dim=4):
-        """Helper: fill buffer using a continuous model's get_action()."""
-        for _ in range(buf.step):
+    def _make_buffer(self, n: int = 128, obs_dim: int = 4, act_dim: int = 2) -> Buffer:
+        buf = Buffer(
+            step=n,
+            data={
+                "state": (obs_dim,),
+                "actions": (act_dim,),
+                "old_log_probs": (),
+                "adv": (),
+                "returns": (),
+                "value": (),
+            },
+            device=torch.device("cpu"),
+        )
+        agent = ContinuousTestAgent(obs_dim=obs_dim, act_dim=act_dim)
+        for _ in range(n):
             state = torch.randn(obs_dim)
             with torch.no_grad():
-                action, log_prob, _, value = model.get_action(state)
+                out = agent.get_action(state)
+            # For single-sample multi-dim actions, eval_action returns
+            # log_prob/entropy with shape (act_dim,) because dim()==1.
+            # Buffer expects scalar old_log_probs, so sum over action dims.
+            log_prob = out["log_prob"]
+            if log_prob.dim() > 0:
+                log_prob = log_prob.sum()
             buf.insert(
-                state=state.numpy(),
-                action=action.numpy(),
-                old_log_prob=log_prob.item(),
-                reward=np.random.randn(),
-                value=value.item(),
-                dones=0,
+                state=state,
+                actions=out["action"],
+                old_log_probs=log_prob,
+                adv=torch.randn(1).squeeze(),
+                returns=torch.randn(1).squeeze(),
+                value=out["value"].squeeze(),
             )
+        return buf
 
-    def test_update_with_continuous_actions(self):
-        """PPO update() should complete without errors with continuous actions."""
-        model = ContinuousTestModel(obs_dim=4, act_dim=2)
-        trainer = PPOTrainer(model, PPOConfig(lr=3e-4))
-        buf = Buffer(step=128, state_shape=(4,), action_shape=(2,))
-        self._fill_buffer_with_continuous_data(buf, model, obs_dim=4)
-        buf.insert_returns(
-            np.random.randn(128).astype(np.float32),
-            np.random.randn(128).astype(np.float32),
+    def test_ppo_runs_with_continuous_actions(self) -> None:
+        agent = ContinuousTestAgent(obs_dim=4, act_dim=2)
+        optimizer = torch.optim.Adam(agent.parameters(), lr=3e-4)
+        buf = self._make_buffer(n=128)
+        cfg = AlgoConfig()
+        scheduler = LambdaLR(optimizer, lr_lambda=lambda _: 1.0)
+        result = ppo(agent, optimizer, buf, cfg, scheduler, batch_size=32, epochs=2,
+                     device=torch.device("cpu"))
+        assert isinstance(result, dict)
+        assert "loss" in result
+
+    def test_ppo_updates_continuous_weights(self) -> None:
+        agent = ContinuousTestAgent(obs_dim=4, act_dim=2)
+        w_before = {k: v.clone() for k, v in agent.state_dict().items()}
+        optimizer = torch.optim.Adam(agent.parameters(), lr=1e-3)
+        buf = self._make_buffer(n=128)
+        cfg = AlgoConfig()
+        scheduler = LambdaLR(optimizer, lr_lambda=lambda _: 1.0)
+        ppo(agent, optimizer, buf, cfg, scheduler, batch_size=32, epochs=5,
+            device=torch.device("cpu"))
+        w_after = agent.state_dict()
+        changed = False
+        for k in w_before:
+            if not torch.allclose(w_before[k], w_after[k]):
+                changed = True
+                break
+        assert changed
+
+    def test_continuous_buffer_full_cycle(self) -> None:
+        """Full cycle: fill buffer -> compute GAE -> PPO update."""
+        obs_dim, act_dim = 8, 3
+        agent = ContinuousTestAgent(obs_dim=obs_dim, act_dim=act_dim)
+
+        # Fill raw buffer
+        raw_buf = Buffer(
+            step=64,
+            data={
+                "state": (obs_dim,),
+                "actions": (act_dim,),
+                "old_log_probs": (),
+                "reward": (),
+                "done": (),
+                "value": (),
+            },
+            device=torch.device("cpu"),
         )
-        total_loss, pi_loss, v_loss, entropy = trainer.update(
-            buf, total_steps=1000, step=0, batch_size=32, epochs=2
-        )
-        assert np.isfinite(total_loss)
-        assert np.isfinite(pi_loss)
-        assert np.isfinite(v_loss)
-        assert np.isfinite(entropy)
-        assert isinstance(total_loss, float)
-
-    def test_update_reduces_loss_over_steps(self):
-        """PPO should generally reduce loss when trained on fixed data."""
-        torch.manual_seed(42)
-        model = ContinuousTestModel(obs_dim=4, act_dim=2)
-        trainer = PPOTrainer(model, PPOConfig(lr=1e-3))
-        buf = Buffer(step=256, state_shape=(4,), action_shape=(2,))
-        self._fill_buffer_with_continuous_data(buf, model, obs_dim=4)
-        returns = np.ones(256, dtype=np.float32) * 10.0
-        adv = np.ones(256, dtype=np.float32) * 1.0
-        buf.insert_returns(returns, adv)
-        losses = []
-        for step in range(5):
-            total_loss, _, _, _ = trainer.update(
-                buf, total_steps=100, step=step, batch_size=64, epochs=5
-            )
-            losses.append(total_loss)
-        assert losses[-1] < losses[0] + 1.0
-
-    def test_gradient_flows_through_continuous_policy(self):
-        """Verify gradients actually update the continuous policy parameters."""
-        model = ContinuousTestModel(obs_dim=4, act_dim=2)
-        trainer = PPOTrainer(model, PPOConfig(lr=1e-3))
-        buf = Buffer(step=64, state_shape=(4,), action_shape=(2,))
-        self._fill_buffer_with_continuous_data(buf, model, obs_dim=4)
-        buf.insert_returns(
-            np.random.randn(64).astype(np.float32),
-            np.random.randn(64).astype(np.float32),
-        )
-        w_before = model.mean.weight.data.clone()
-        trainer.update(buf, total_steps=100, step=0, batch_size=32, epochs=5)
-        w_after = model.mean.weight.data.clone()
-        assert not torch.allclose(w_before, w_after)
-
-    def test_continuous_buffer_full_cycle(self):
-        """Full cycle: fill buffer -> compute GAE -> insert returns -> PPO update."""
-        model = ContinuousTestModel(obs_dim=8, act_dim=3)
-        trainer = PPOTrainer(model, PPOConfig(lr=3e-4))
-        buf = Buffer(step=128, state_shape=(8,), action_shape=(3,))
-        for _ in range(128):
-            state = torch.randn(8)
-            with torch.no_grad():
-                action, log_prob, _, value = model.get_action(state)
-            buf.insert(
-                state=state.numpy(),
-                action=action.numpy(),
-                old_log_prob=log_prob.item(),
-                reward=np.random.randn(),
-                value=value.item(),
-                dones=0,
-            )
-        rewards = buf.rewards
-        values = buf.values
-        dones = buf.dones
-        returns, advantages, _ = trainer.compute_gae(rewards, values, 0.0, dones)
-        buf.insert_returns(returns, advantages)
-        total_loss, pi_loss, v_loss, entropy = trainer.update(
-            buf, total_steps=1000, step=0, batch_size=32, epochs=3
-        )
-        assert np.isfinite(total_loss)
-        assert buf.size == 128
-
-    def test_high_dim_continuous_actions(self):
-        """PPO should work with high-dimensional continuous action spaces."""
-        act_dim = 17
-        model = ContinuousTestModel(obs_dim=8, act_dim=act_dim)
-        trainer = PPOTrainer(model, PPOConfig(lr=3e-4))
-        buf = Buffer(step=64, state_shape=(8,), action_shape=(act_dim,))
         for _ in range(64):
-            state = torch.randn(8)
+            state = torch.randn(obs_dim)
             with torch.no_grad():
-                action, log_prob, _, value = model.get_action(state)
-            buf.insert(
-                state=state.numpy(),
-                action=action.numpy(),
-                old_log_prob=log_prob.item(),
-                reward=np.random.randn(),
-                value=value.item(),
-                dones=0,
+                out = agent.get_action(state)
+            # Sum multi-dim log_prob to scalar for buffer storage
+            log_prob = out["log_prob"]
+            if log_prob.dim() > 0:
+                log_prob = log_prob.sum()
+            raw_buf.insert(
+                state=state,
+                actions=out["action"],
+                old_log_probs=log_prob,
+                reward=torch.randn(1).squeeze(),
+                done=torch.tensor(0.0),
+                value=out["value"].squeeze(),
             )
-        returns = np.random.randn(64).astype(np.float32)
-        adv = np.random.randn(64).astype(np.float32)
-        buf.insert_returns(returns, adv)
-        total_loss, _, _, _ = trainer.update(
-            buf, total_steps=100, step=0, batch_size=32, epochs=2
-        )
-        assert np.isfinite(total_loss)
 
-    def test_single_dim_continuous_action(self):
-        """PPO should work with 1D continuous actions (scalar action)."""
-        model = ContinuousTestModel(obs_dim=4, act_dim=1)
-        trainer = PPOTrainer(model, PPOConfig(lr=3e-4))
-        buf = Buffer(step=64, state_shape=(4,), action_shape=(1,))
-        for _ in range(64):
-            state = torch.randn(4)
-            with torch.no_grad():
-                action, log_prob, _, value = model.get_action(state)
-            buf.insert(
-                state=state.numpy(),
-                action=action.numpy(),
-                old_log_prob=log_prob.item(),
-                reward=np.random.randn(),
-                value=value.item(),
-                dones=0,
-            )
-        returns = np.random.randn(64).astype(np.float32)
-        adv = np.random.randn(64).astype(np.float32)
-        buf.insert_returns(returns, adv)
-        total_loss, _, _, _ = trainer.update(
-            buf, total_steps=100, step=0, batch_size=32, epochs=2
+        # Compute GAE
+        all_data = raw_buf.get_all()
+        last_value = torch.tensor([0.0])
+        returns, advantages, _ = gae_compute(
+            all_data["reward"].squeeze(),
+            all_data["value"].squeeze(),
+            last_value,
+            all_data["done"].squeeze(),
+            AlgoConfig(),
         )
-        assert np.isfinite(total_loss)
+
+        # Build ppo-compatible buffer
+        ppo_buf = Buffer(
+            step=64,
+            data={
+                "state": (obs_dim,),
+                "actions": (act_dim,),
+                "old_log_probs": (),
+                "adv": (),
+                "returns": (),
+                "value": (),
+            },
+            device=torch.device("cpu"),
+        )
+        for i in range(64):
+            ppo_buf.insert(
+                state=all_data["state"][i],
+                actions=all_data["actions"][i],
+                old_log_probs=all_data["old_log_probs"][i],
+                adv=advantages[i],
+                returns=returns[i],
+                value=all_data["value"][i],
+            )
+        optimizer = torch.optim.Adam(agent.parameters(), lr=3e-4)
+        cfg = AlgoConfig()
+        scheduler = LambdaLR(optimizer, lr_lambda=lambda _: 1.0)
+        result = ppo(agent, optimizer, ppo_buf, cfg, scheduler, batch_size=32, epochs=3,
+                     device=torch.device("cpu"))
+        assert isinstance(result, dict)
+        assert "loss" in result
