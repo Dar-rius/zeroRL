@@ -28,12 +28,12 @@ jobs:
         run: uv sync --all-extras --dev
 
       - name: Generate SBOM (Software Bill of Materials)
-        uses: anchore/sbom-action@v6
+        uses: anchore/sbom-action@v0
         with:
           format: spdx-json
           output-file: zerorl.sbom.json
 
       - name: Security audit (OSV-Scanner)
-        uses: google/osv-scanner-action@v6
+        uses: google/osv-scanner-action@v1
         with:
           sbom-path: zerorl.sbom.jsonson
