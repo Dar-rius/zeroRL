@@ -1,4 +1,4 @@
-name: test
+name: Tests
 
 on:
   push:
@@ -6,47 +6,49 @@ on:
   pull_request:
     branches: ["main"]
 
-jobs:
-  cpu-checks:
-    name: Check code Quality and run some tests
-    runs-on: ubuntu-latest
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  cpu-tests:
+    name: CPU Tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: [3.11, 3.12, 3.13]
-
+        python-version: ["3.11", "3.12", "3.13"]
     steps:
-      - name: Check code quality
+      - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Configure for python ${{matrix.python-version}}
-        uses: actions/setup-python@v6
-        with:
-          python-version: ${{matrix.python-version}}
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
 
-      - name: Install uv and dependancies
-        run: |
-          pip install uv
-          uv pip install --system -r requirements.txt
-          uv pip install --system ruff mypy pytest
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
 
-      - name: unit test run in cpu
-        run: |
-          pytest tests/test_common.py tests/test_env.py
+      - name: Sync dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Run CPU Tests
+        run: uv run pytest tests/ -m "not gpu" --cov=zerorl
 
   gpu-execution:
-    name: Run tests in GPU
-    needs: cpu-checks
-    runs-on: [self-hosted, jetson, gpu]
-    environment: jetson-execution
-
+    name: GPU Integration Tests
+    needs: cpu-tests
+    runs-on: [self-hosted, gpu, jetson]
+    environment: gpu-cluster # Corrigé : au bon niveau !
     steps:
-      - name: checkout in GPU
+      - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: run test
+      - name: Run GPU Tests in Container
         run: |
           docker run --rm --gpus all \
-          -v ${{github.workspace}}:/workspace -w /workspace \
-          nvcr.io/nvidia/pytorch:25.08-py3 \
-          bash -c "pip install -r requirements.txt && pytest"
+          -v ${{ github.workspace }}:/workspace -w /workspace \
+          nvcr.io/nvidia/pytorch:26.02-py3 \
+          bash -c "uv sync --all-extras --dev && uv run pytest tests/ -m 'gpu'"

@@ -1,0 +1,39 @@
+name: Security & Supply Chain
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  security-checks:
+    name: SBOM & Vulnerability Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Set up Python 3.15
+        run: uv python install 3.15
+
+      - name: Sync dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Generate SBOM (Software Bill of Materials)
+        uses: anchore/sbom-action@v6
+        with:
+          format: spdx-json
+          output-file: zerorl.sbom.json
+
+      - name: Security audit (OSV-Scanner)
+        uses: google/osv-scanner-action@v6
+        with:
+          sbom-path: zerorl.sbom.jsonson
