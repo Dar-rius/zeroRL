@@ -27,8 +27,7 @@ class NormMeanStd:
         self.count =  new_count
 
     @torch.compile
-    def normalize(self, x: Tensor) -> Tensor:
-        return (x - self.mean) / torch.sqrt(self.var + 1e-8)
+    def normalize(self, x: Tensor): return (x - self.mean) / torch.sqrt(self.var + 1e-8)
 
 
 class NormMinMax:
@@ -38,5 +37,4 @@ class NormMinMax:
         self.scale = 1.0 / (self.high - self.low + 1e-8)
 
     @torch.compile
-    def normalize(self, x: Tensor) -> Tensor:
-        return (x - self.low) * self.scale
+    def normalize(self, x: Tensor): return (x - self.low) * self.scale

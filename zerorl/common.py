@@ -5,7 +5,6 @@ and converts them to PyTorch tensors for the PPO update step.
 """
 
 import torch
-from torch import Tensor
 
 
 class Buffer:
@@ -43,9 +42,7 @@ class Buffer:
                 }
 
     @property
-    def size(self) -> int:
-        """Return the current number of stored elements."""
-        return self.slice
+    def size(self): return self.slice
 
     def insert(self, **kwargs):
         if self.slice >= self.step:
@@ -59,8 +56,7 @@ class Buffer:
         self.slice += 1
 
 
-    def get_all(self) -> dict[str, Tensor]:
-        return {name: val[:self.slice] for name, val in self.data.items()}
+    def get_all(self): return {name: val[:self.slice] for name, val in self.data.items()}
 
     def clear(self):
         """Reset the buffer for reuse.

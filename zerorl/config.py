@@ -63,4 +63,4 @@ class AlgoConfig:
         for key, value in kwargs.items():
             setattr(self, key, value)
 
-    def to_dict(self): self.__dict__
+    def to_dict(self): return self.__dict__

@@ -3,7 +3,7 @@ from torch.nn import Parameter
 from zerorl.agent import BaseAgent
 
 
-def linear_schedule(step, num_update): 1.0 - (step / num_update)
+def linear_schedule(step, num_update): return 1.0 - (step / num_update)
 
 
 def get_buffer_params_model(model: BaseAgent) -> tuple[dict[str, Parameter], dict[str, Tensor]]:
