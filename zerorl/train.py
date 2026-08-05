@@ -16,7 +16,7 @@ from zerorl.agent import BaseAgent
 from zerorl.common import Buffer
 from zerorl.config import TrainConfig, AlgoConfig
 from zerorl.env import BaseEnv
-from zerorl.algorithms.processing import NormMeanStd
+from zerorl.processing import NormMeanStd
 from zerorl.errors import EmptyBufferError
 from torch.utils.tensorboard import SummaryWriter
 
