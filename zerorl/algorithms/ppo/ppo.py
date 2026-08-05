@@ -16,7 +16,6 @@ from zerorl.config import AlgoConfig
 from zerorl.function import get_buffer_params_model
 
 
-@torch.compile
 def gae_compute(rewards: Tensor,
         values: Tensor,
         last_value: Tensor,
@@ -51,7 +50,8 @@ def gae_compute(rewards: Tensor,
     return (returns, advantages, delta)
 
 
-def ppo_loss(model: BaseAgent,
+def ppo_loss(
+        agent: BaseAgent,
         params: dict,
         buffers: dict,
         states: Tensor,
@@ -59,9 +59,10 @@ def ppo_loss(model: BaseAgent,
         old_log_probs: Tensor,
         advantages: Tensor,
         returns: Tensor,
-        hyper_params: AlgoConfig) -> tuple[Tensor, Tensor, Tensor, Tensor]:
-    logits, new_values = torch.func.functional_call(model, (params, buffers), (states,))
-    dist = model.build_distribution(logits)
+        hyper_params: AlgoConfig
+        ) -> tuple[Tensor, Tensor, Tensor, Tensor]:
+    logits, new_values = torch.func.functional_call(agent, (params, buffers), (states,))
+    dist = agent.build_distribution(logits)
     new_log_probs, dist_entropy = eval_action(dist, actions)
 
     idx_adv = advantages.view(-1)
@@ -84,18 +85,16 @@ def ppo_loss(model: BaseAgent,
     return (loss, policy_loss, value_loss, entropy_loss)
 
 
-def ppo(model: BaseAgent,
-        hyper_params: AlgoConfig,
+def ppo(agent: BaseAgent,
         optimizer: Optimizer,
         buffer: Buffer,
-        step: int,
-        num_update: int,
+        hyper_params: AlgoConfig,
         scheduler: LambdaLR,
-        batch_size: int = 64,
-        epochs: int = 10,
+        batch_size: int,
+        epochs: int,
         device: torch.device = torch.device("cpu")
-        ) ->  tuple[Tensor, Tensor, Tensor, Tensor]:
-    params, buffers = get_buffer_params_model(model)
+        ) ->  dict[str, Tensor]:
+    params, buffers = get_buffer_params_model(agent)
     all_data = buffer.get_all()
     adv_norm = (all_data["adv"] - all_data["adv"].mean()) / (all_data["adv"].std() + 1e-8)
     returns = (all_data["returns"] - all_data["returns"].mean()) / (all_data["returns"].std() + 1e-8)
@@ -112,7 +111,7 @@ def ppo(model: BaseAgent,
     index_loss = 0
 
     @torch.compile(mode="reduce-overhead")
-    def ppo_backward(model: BaseAgent,
+    def ppo_backward(agent: BaseAgent,
             params: dict,
             buffers: dict,
             states: Tensor,
@@ -121,12 +120,11 @@ def ppo(model: BaseAgent,
             advantages: Tensor,
             returns: Tensor,
             hyper_params: AlgoConfig) -> tuple[Tensor, Tensor, Tensor, Tensor]:
-        loss, policy_loss, value_loss, ent_loss = ppo_loss(model, params, buffers, states, actions,
+        loss, policy_loss, value_loss, ent_loss = ppo_loss(agent, params, buffers, states, actions,
                     old_log_probs, advantages, returns, hyper_params)
         loss.backward()
         return loss, policy_loss, value_loss, ent_loss
 
-    @torch.compile
     def update():
         """Run a PPO update on collected rollout data.
 
@@ -154,10 +152,10 @@ def ppo(model: BaseAgent,
                     continue  # Skip empty batches
                 
                 optimizer.zero_grad(set_to_none=True)
-                loss, policy_loss, value_loss, entropy_loss = ppo_backward(model, params, buffers, all_data["state"][idx],
+                loss, policy_loss, value_loss, entropy_loss = ppo_backward(agent, params, buffers, all_data["state"][idx],
                                 all_data["actions"][idx], all_data["old_log_probs"][idx], adv_norm[idx],
                                 returns[idx], hyper_params)
-                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                torch.nn.utils.clip_grad_norm_(agent.parameters(), 1.0)
                 optimizer.step()
 
                 epoch_losses[index_loss] = loss.detach()
@@ -171,7 +169,7 @@ def ppo(model: BaseAgent,
     scheduler.step()
     # Return average losses over all actual updates ([:index_loss] excludes
     # any unused pre-allocated entries)
-    return (epoch_losses[:index_loss].mean(),
-            epoch_pi_losses[:index_loss].mean(),
-            epoch_v_losses[:index_loss].mean(),
-            epoch_entropies[:index_loss].mean())
+    return {'loss': epoch_losses[:index_loss].mean(),
+            'policy loss': epoch_pi_losses[:index_loss].mean(),
+            'value loss': epoch_v_losses[:index_loss].mean(),
+            'entropy loss': epoch_entropies[:index_loss].mean()}

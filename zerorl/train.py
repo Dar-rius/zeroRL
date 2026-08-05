@@ -150,11 +150,12 @@ class BaseTrain:
             if self.buffer.size < self.require_buffer_size:
                 raise EmptyBufferError(self.buffer.size, self.require_buffer_size)
 
-            losses = self.update_weights(self.agent,
-                        self.buffer,
-                        self.optimizer,
-                        last_output,
-                        self.algo_config
+            losses = self.update_weights(
+                    self.agent,
+                    self.buffer,
+                    self.optimizer,
+                    last_output,
+                    self.algo_config
                     )
 
             if len(self.episode_rewards) > 0:
