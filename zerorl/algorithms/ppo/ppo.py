@@ -61,6 +61,22 @@ def ppo_loss(
         returns: Tensor,
         hyper_params: AlgoConfig
         ) -> dict[str, Tensor]:
+    """Compute PPO clipped surrogate loss, value loss, and entropy bonus.
+
+    Args:
+        agent: The policy network.
+        params: Named parameters dict from get_buffer_params_model().
+        buffers: Named buffers dict from get_buffer_params_model().
+        states: Batch of observations.
+        actions: Batch of actions taken.
+        old_log_probs: Log probabilities from the old policy.
+        advantages: GAE advantage estimates.
+        returns: GAE return estimates.
+        hyper_params: Algorithm hyperparameters.
+
+    Returns:
+        Dict with keys "loss", "policy_loss", "value_loss", "entropy_loss".
+    """
     logits, new_values = torch.func.functional_call(agent, (params, buffers), (states,))
     dist = agent.build_distribution(logits)
     new_log_probs, dist_entropy = eval_action(dist, actions)
@@ -97,6 +113,25 @@ def ppo(agent: BaseAgent,
         epochs: int,
         device: torch.device = torch.device("cpu")
         ) ->  dict[str, Tensor]:
+    """Run a full PPO update on collected rollout data.
+
+    Normalizes advantages and returns, runs minibatch SGD epochs with
+    clipped surrogate loss and gradient clipping, then steps the scheduler.
+
+    Args:
+        agent: The policy network.
+        optimizer: Optimizer for the agent parameters.
+        buffer: Buffer containing rollout data with keys "state", "actions",
+            "old_log_probs", "adv", "returns".
+        hyper_params: Algorithm hyperparameters.
+        scheduler: Learning rate scheduler (stepped once per call).
+        batch_size: Minibatch size.
+        epochs: Number of passes over the data.
+        device: Torch device for computations.
+
+    Returns:
+        Dict of averaged loss metrics ("loss", "policy_loss", "value_loss", "entropy_loss").
+    """
     params, buffers = get_buffer_params_model(agent)
     all_data = buffer.get_all()
     adv_norm = (all_data["adv"] - all_data["adv"].mean()) / (all_data["adv"].std() + 1e-8)
@@ -124,17 +159,6 @@ def ppo(agent: BaseAgent,
 
         Normalizes advantages and returns, then runs multiple epochs of
         minibatch SGD with the clipped surrogate loss.
-
-        Args:
-            memory: Buffer containing rollout data.
-            total_steps: Total training steps (LR decay denominator).
-            step: Current training step (LR decay numerator).
-            batch_size: Minibatch size.
-            epochs: Number of passes over the data.
-
-        Returns:
-            Tuple of (total_loss, policy_loss, value_loss, entropy),
-            each averaged over all minibatch updates.
         """
         history = []
         for _ in range(epochs):
@@ -154,7 +178,7 @@ def ppo(agent: BaseAgent,
                 history.append({k: v.detach() for k, v in global_losses.items()})
         return history
 
-    #calcul loss and update weights
+    # Compute losses and update weights
     history = update()
     scheduler.step()
     # Return average losses over all actual updates ([:index_loss] excludes

@@ -17,11 +17,10 @@ class TrainConfig:
 
     Attributes:
         model_name: Model name (used in the saved file path).
-        model_saved_path: Directory for model checkpoints.
-        device: PyTorch device string (auto-detects CUDA).
-        model_path: Computed as "{model_saved_path}/{model_name}.pt".
+        model_save_path: Directory for model checkpoints.
+        device: PyTorch device (auto-detects CUDA).
+        model_path: Computed as "{model_save_path}/{model_name}.pt".
         timestamp: Total environment timesteps for training.
-        batch_size: Minibatch size for PPO updates.
         rollout_steps: Steps collected before each PPO update.
         num_update: Computed as timestamp // rollout_steps.
     """
@@ -42,6 +41,20 @@ class TrainConfig:
 
 @dataclass(init=False)
 class AlgoConfig:
+    """Mutable algorithm hyperparameters for PPO and off-policy methods.
+
+    Attributes:
+        lr: Learning rate.
+        gamma: Discount factor.
+        batch_size: Minibatch size for PPO updates.
+        gae_lambda: GAE lambda.
+        clip_eps: PPO clipping range.
+        ent_coef: Entropy bonus coefficient.
+        value_coef: Value loss coefficient.
+        epochs: PPO epochs per update.
+        tau: Soft update coefficient (off-policy).
+    """
+
     lr: float = 3e-4
     gamma: float = 0.99
     batch_size: int = 64
@@ -63,4 +76,6 @@ class AlgoConfig:
         for key, value in kwargs.items():
             setattr(self, key, value)
 
-    def to_dict(self): return self.__dict__
+    def to_dict(self) -> dict:
+        """Return all hyperparameters as a dictionary."""
+        return self.__dict__

@@ -1,7 +1,8 @@
-"""Abstract training loop for RL agents.
+"""Training loop for RL agents.
 
 Provides BaseTrain, which orchestrates the rollout-update cycle:
-collect experience, compute GAE, run PPO, and repeat.
+collect experience, compute GAE, run the update_weights callable,
+and repeat.
 """
 
 import os
@@ -22,11 +23,12 @@ from torch.utils.tensorboard import SummaryWriter
 
 
 class BaseTrain:
-    """Abstract training loop coordinating agent, environment, and PPO.
+    """Training loop coordinating agent, environment, and weight updates.
 
-    Subclasses must implement rollout_phase(), update_weights(), and
-    save_model(). The provided implementations are template methods;
-    subclasses may override or call super() to reuse them.
+    Orchestrates the rollout-update cycle: collect experience via
+    rollout_phase(), compute GAE, run the update_weights callable,
+    and repeat. Handles observation normalization, logging, and
+    model saving.
     """
 
     def __init__(self,
@@ -46,8 +48,13 @@ class BaseTrain:
             agent: Neural network policy to train.
             env: Environment to collect experience from.
             buffer: Pre-allocated buffer for rollout data.
+            update_weights: Callable that computes the weight update from
+                collected rollout data. Signature:
+                (agent, buffer, optimizer, last_output, algo_config) -> dict[str, Tensor].
             train_config: Training configuration (device, paths, hyperparams).
-            ppo_trainer: PPO trainer handling GAE and weight updates.
+            algo_config: Algorithm hyperparameters (passed to update_weights).
+            optimizer: Optional optimizer. If None, creates Adam with algo_config.lr.
+            require_buffer_size: Minimum buffer size before an update is allowed.
         """
         super().__init__()
         self.train_config = train_config
@@ -118,6 +125,14 @@ class BaseTrain:
 
 
     def _log_metrics(self, metrics: dict, step: int, use_wandb: bool, use_tb: bool):
+        """Log training metrics to wandb and/or TensorBoard.
+
+        Args:
+            metrics: Dict of metric names to values (floats or Tensors).
+            step: Current training step.
+            use_wandb: Whether to log to Weights & Biases.
+            use_tb: Whether to log to TensorBoard.
+        """
         clean_metrics: dict[str, float] = {}
         tensor_keys: list[str]  = []
         tensor_vals: list[Tensor] = []
@@ -143,6 +158,14 @@ class BaseTrain:
 
 
     def train(self, use_wandb: bool = False, use_tb: bool = False):
+        """Run the full training loop.
+
+        Repeats rollout -> update_weights -> log -> clear for num_update steps.
+
+        Args:
+            use_wandb: Whether to log to Weights & Biases.
+            use_tb: Whether to log to TensorBoard.
+        """
         state, _ = self.env.reset()
         for step in tqdm(range(self.train_config.num_update)):
             last_output = self.rollout_phase(state)

@@ -12,7 +12,7 @@ from torch import Tensor
 from torch.distributions import Distribution
 
 
-#Function to calcul the action distribution
+# Compute log probability and entropy from a distribution
 def eval_action(dist: Distribution, action: Tensor) -> tuple[Tensor, Tensor]:
     log_prob = dist.log_prob(action)
     dist_entropy = dist.entropy()
@@ -25,7 +25,7 @@ def eval_action(dist: Distribution, action: Tensor) -> tuple[Tensor, Tensor]:
 class BaseAgent(nn.Module, ABC):
     """Abstract base class for all RL agents.
 
-    Subclasses must implement forward() and get_distribution(). The
+    Subclasses must implement forward() and build_distribution(). The
     get_action() template method composes those two to sample actions,
     compute log probabilities, and return critic values.
     """
@@ -56,13 +56,13 @@ class BaseAgent(nn.Module, ABC):
     @staticmethod
     @abstractmethod
     def build_distribution(logits: Tensor) -> Distribution:
-        """Transforme les logits en distribution. Doit être statique."""
+        """Transform logits into a probability distribution."""
         pass
 
     def get_action(self, state: Tensor, action: Tensor | None = None, **kwargs: Any) -> dict[str, Tensor]:
         """Sample or evaluate an action under the current policy.
 
-        Template method: calls get_distribution(), then samples if no
+        Template method: calls build_distribution(), then samples if no
         action is provided.
 
         Args:
@@ -71,7 +71,7 @@ class BaseAgent(nn.Module, ABC):
                     the policy distribution.
 
         Returns:
-            Tuple of (action, log_prob, entropy, value).
+            Dict with keys "action", "log_prob", "entropy", "value".
         """
         logits, value = self.forward(state, **kwargs)
         dist = self.build_distribution(logits)

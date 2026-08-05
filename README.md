@@ -8,7 +8,8 @@
 
 The package includes:
 
-- **Abstract base classes** — `BaseAgent`, `BaseEnv`, `BaseTrain` that enforce a clean interface via the template method pattern. Subclasses implement the methods that matter; the framework handles the rest.
+- **Abstract base classes** — `BaseAgent`, `BaseEnv` that enforce a clean interface via the template method pattern. Subclasses implement the methods that matter; the framework handles the rest.
+- **Training loop** — `BaseTrain` orchestrates rollout collection, PPO updates, and model saving. You pass a standalone `update_weights` function.
 - **PPO implementation** — Standalone functions (`gae_compute`, `ppo_loss`, `ppo`) implementing Generalized Advantage Estimation, clipped surrogate loss, and minibatch SGD with linear LR decay.
 - **Pre-allocated rollout buffer** — A zero-allocation `Buffer` that stores trajectory data in pre-allocated PyTorch tensors, supporting both discrete and continuous action spaces.
 - **Typed configurations** — Mutable `AlgoConfig` and computed `TrainConfig` dataclasses with auto GPU detection.
@@ -83,28 +84,58 @@ agent = CartPoleAgent()
 env = CartPoleEnv()
 buffer = Buffer(
     step=config.rollout_steps,
-    data={"state": (4,), "actions": (), "old_log_probs": (),
-          "adv": (), "returns": (), "value": ()},
+    data={
+        "state": (4,),
+        "action": (),
+        "log_prob": (),
+        "reward": (),
+        "done": (),
+        "entropy": (),
+        "value": (),
+        "adv": (),
+        "returns": (),
+        "actions": (),
+        "old_log_probs": (),
+    },
     device=config.device,
 )
 
 
-class MyTrain(BaseTrain):
-    def rollout_phase(self, state):
-        return super().rollout_phase(state)
+def update_weights(agent, buffer, optimizer, last_output, algo_config):
+    """Compute GAE advantages then run PPO update."""
+    from torch.optim.lr_scheduler import LambdaLR
 
-    def update_weights(self, agent, buffer, optimizer, last_output, algo_config):
-        from torch.optim.lr_scheduler import LambdaLR
-        scheduler = LambdaLR(optimizer, lr_lambda=lambda _: 1.0)
-        return ppo(agent, optimizer, buffer, algo_config, scheduler,
-                   batch_size=algo_config.batch_size, epochs=algo_config.epochs,
-                   device=agent.device)
+    from zerorl.algorithms.ppo.ppo import gae_compute, ppo
 
-    def save_model(self):
-        super().save_model()
+    all_data = buffer.get_all()
+
+    # Compute GAE from rollout data
+    returns, advantages, _ = gae_compute(
+        all_data["reward"],
+        all_data["value"],
+        last_output["value"],
+        all_data["done"],
+        algo_config,
+    )
+
+    # Store GAE results into buffer
+    buffer.data["adv"][:buffer.size] = advantages
+    buffer.data["returns"][:buffer.size] = returns
+
+    # Copy keys to match ppo() expectations (action → actions, log_prob → old_log_probs)
+    buffer.data["actions"][:buffer.size] = all_data["action"]
+    buffer.data["old_log_probs"][:buffer.size] = all_data["log_prob"]
+
+    scheduler = LambdaLR(optimizer, lr_lambda=lambda _: 1.0)
+    return ppo(
+        agent, optimizer, buffer, algo_config, scheduler,
+        batch_size=algo_config.batch_size,
+        epochs=algo_config.epochs,
+        device=agent.device,
+    )
 
 
-trainer = MyTrain(agent, env, buffer, MyTrain.update_weights, config, algo_config)
+trainer = BaseTrain(agent, env, buffer, update_weights, config, algo_config)
 trainer.train(use_wandb=False, use_tb=False)
 ```
 

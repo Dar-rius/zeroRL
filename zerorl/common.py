@@ -31,6 +31,8 @@ class Buffer:
 
         Args:
             step: Maximum number of timesteps (capacity).
+            data: Dict mapping field names to shape tuples (e.g. {"state": (4,), "action": ()}).
+            device: Torch device to allocate tensors on.
         """
         self.step = step
         self.slice: int = 0
@@ -43,6 +45,14 @@ class Buffer:
     def size(self): return self.slice
 
     def insert(self, **kwargs):
+        """Insert one timestep of data into the buffer.
+
+        Args:
+            **kwargs: Keyword arguments matching the keys in self.data.
+
+        Raises:
+            ValueError: If the buffer is full or a key doesn't exist.
+        """
         if self.slice >= self.step:
             raise ValueError(f"Buffer is full (size={self.step}). Cannot insert more data.")
         for name, val in kwargs.items():
@@ -54,7 +64,9 @@ class Buffer:
         self.slice += 1
 
 
-    def get_all(self): return {name: val[:self.slice] for name, val in self.data.items()}
+    def get_all(self) -> dict[str, torch.Tensor]:
+        """Return all inserted data as a dict of sliced tensors."""
+        return {name: val[:self.slice] for name, val in self.data.items()}
 
     def clear(self):
         """Reset the buffer for reuse.
