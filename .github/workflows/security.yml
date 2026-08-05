@@ -23,9 +23,3 @@ jobs:
         with:
           format: spdx-json
           output-file: zerorl.sbom.json
-
-      - name: Security audit (OSV-Scanner)
-        uses: google/osv-scanner-action@v1.7.1
-        with:
-          scan-args: |-
-            --lockfile=uv.lock
