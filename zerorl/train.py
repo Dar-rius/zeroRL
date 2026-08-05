@@ -36,7 +36,7 @@ class BaseTrain:
                  env: BaseEnv,
                  buffer: Buffer,
                  update_weights: Callable[[BaseAgent, Buffer,
-                                           optim.Optimizer, dict[str,Tensor],
+                                           optim.Optimizer, int, dict[str,Tensor],
                                            AlgoConfig | None], dict[str, Tensor]],
                  train_config: TrainConfig,
                  algo_config: AlgoConfig | None = None,
@@ -177,6 +177,7 @@ class BaseTrain:
                     self.agent,
                     self.buffer,
                     self.optimizer,
+                    step,
                     last_output,
                     self.algo_config
                     )
