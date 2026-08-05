@@ -4,17 +4,14 @@
 
 # zeroRL
 
-`zeroRL` provides a structured foundation for building and training reinforcement learning agents. Instead of writing boilerplate code for training loops, rollouts, and PPO optimization, you extend the provided abstract base classes and focus on defining your agent and environment.
+Most reinforcement learning libraries are black boxes. If you want to modify a specific function, you often run into unexpected errors. If you want to implement and test a new RL algorithm, you usually have to spend hours reading documentation and digging through the codebase just to understand how everything works.
 
-The package includes:
 
-- **Abstract base classes** — `BaseAgent`, `BaseEnv` that enforce a clean interface via the template method pattern. Subclasses implement the methods that matter; the framework handles the rest.
-- **Training loop** — `BaseTrain` orchestrates rollout collection, PPO updates, and model saving. You pass a standalone `update_weights` function.
-- **PPO implementation** — Standalone functions (`gae_compute`, `ppo_loss`, `ppo`) implementing Generalized Advantage Estimation, clipped surrogate loss, and minibatch SGD with linear LR decay.
-- **Pre-allocated rollout buffer** — A zero-allocation `Buffer` that stores trajectory data in pre-allocated PyTorch tensors, supporting both discrete and continuous action spaces.
-- **Typed configurations** — Mutable `AlgoConfig` and computed `TrainConfig` dataclasses with auto GPU detection.
-- **Observation normalization** — `NormMeanStd` (running mean/std) and `NormMinMax` (min/max scaling) for observation preprocessing.
-- **143 tests** — Full test suite covering unit, integration, and continuous action scenarios.
+**ZeroRL** was built to solve this problem. It is an RL library designed to help researchers and labs prototype new environments and algorithms quickly. Its modular architecture makes it easy to customize the components you need without having to understand a massive codebase or fight against the library's abstractions.
+
+Built on PyTorch 2, ZeroRL is designed with scalability, flexibility, and research productivity in mind.
+
+The goal is to make RL research faster, simpler, and more enjoyable.
 
 ## Installation
 
@@ -31,16 +28,18 @@ The package depends on `torch`, `numpy`, `gymnasium`, `tensorboard`, and `wandb`
 ```python
 import numpy as np
 import torch
+import gymnasium as gym
 import torch.nn as nn
 from gymnasium import spaces
+from torch.optim.lr_scheduler import LambdaLR
 
 from zerorl.agent import BaseAgent
 from zerorl.env import BaseEnv
 from zerorl.train import BaseTrain
 from zerorl.common import Buffer
 from zerorl.config import TrainConfig, AlgoConfig
-from zerorl.algorithms.ppo.ppo import ppo
-
+from zerorl.algorithms.ppo import gae_compute, ppo
+from zerorl.function import linear_schedule
 
 # 1. Define your agent
 class CartPoleAgent(BaseAgent):
@@ -62,9 +61,9 @@ class CartPoleAgent(BaseAgent):
 class CartPoleEnv(BaseEnv):
     def __init__(self):
         super().__init__()
-        self.observation_space = spaces.Box(-4.8, 4.8, shape=(4,))
-        self.action_space = spaces.Discrete(2)
-        self._env = __import__("gymnasium").make("CartPole-v1")
+        self._env = gym.make("CartPole-v1")
+        self.observation_space = self._env.observation_space
+        self.action_space = self._env.action_space
 
     def reset(self, seed=None, options=None):
         return self._env.reset(seed=seed)
@@ -86,8 +85,7 @@ buffer = Buffer(
     step=config.rollout_steps,
     data={
         "state": (4,),
-        "action": (),
-        "log_prob": (),
+        "old_log_probs": (),
         "reward": (),
         "done": (),
         "entropy": (),
@@ -95,20 +93,13 @@ buffer = Buffer(
         "adv": (),
         "returns": (),
         "actions": (),
-        "old_log_probs": (),
     },
     device=config.device,
 )
 
-
-def update_weights(agent, buffer, optimizer, last_output, algo_config):
+def update_weights(agent, buffer, optimizer, step, last_output, algo_config):
     """Compute GAE advantages then run PPO update."""
-    from torch.optim.lr_scheduler import LambdaLR
-
-    from zerorl.algorithms.ppo.ppo import gae_compute, ppo
-
     all_data = buffer.get_all()
-
     # Compute GAE from rollout data
     returns, advantages, _ = gae_compute(
         all_data["reward"],
@@ -117,23 +108,14 @@ def update_weights(agent, buffer, optimizer, last_output, algo_config):
         all_data["done"],
         algo_config,
     )
-
-    # Store GAE results into buffer
-    buffer.data["adv"][:buffer.size] = advantages
-    buffer.data["returns"][:buffer.size] = returns
-
-    # Copy keys to match ppo() expectations (action → actions, log_prob → old_log_probs)
-    buffer.data["actions"][:buffer.size] = all_data["action"]
-    buffer.data["old_log_probs"][:buffer.size] = all_data["log_prob"]
-
-    scheduler = LambdaLR(optimizer, lr_lambda=lambda _: 1.0)
+    buffer.insert(returns=returns, adv=advantages)
+    scheduler = LambdaLR(optimizer, lr_lambda=linear_schedule(step=step, num_update=config.num_update))
     return ppo(
         agent, optimizer, buffer, algo_config, scheduler,
         batch_size=algo_config.batch_size,
         epochs=algo_config.epochs,
         device=agent.device,
     )
-
 
 trainer = BaseTrain(agent, env, buffer, update_weights, config, algo_config)
 trainer.train(use_wandb=False, use_tb=False)
@@ -196,6 +178,7 @@ train = TrainConfig(
 - Gymnasium >= 1.3
 - TensorBoard >= 2.21
 - Weights & Biases >= 0.28
+- tqdm >= 4.70.0
 
 ## License
 
