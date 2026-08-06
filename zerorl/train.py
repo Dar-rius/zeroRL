@@ -90,8 +90,7 @@ class BaseTrain:
         """
         env_device = getattr(self.env, "device", "cpu")
         state_tensor = torch.as_tensor(state, dtype=torch.float32, device=self.train_config.device)
-        if state_tensor.dim() ==1:
-            state_tensor.unsqueeze(0)
+        if state_tensor.dim() == 1: state_tensor.unsqueeze(0)
 
         num_envs = state_tensor.shape[0]
         if self.current_episode_reward is None:
@@ -126,17 +125,17 @@ class BaseTrain:
 
             if finished.any():
                 finished_rewards = self.current_episode_reward[finished]
-                self.episode_rewards.extend(finished_rewards)
+                self.episode_rewards.extend(finished_rewards.tolist())
                 self.current_episode_reward[finished] = 0.0
-                if not self.env.auto_reset:
-                    state, _ = self.env.reset()
-                    state_tensor = torch.as_tensor(state, dtype=torch.float32, device=self.train_config.device)
-                    if state_tensor.dim() == 1: state_tensor = state_tensor.unsqueeze(0)
-                else:
-                    state_tensor = next_state.unsqueeze(0) if next_state.dim() == 1 else next_state
 
+            if finished.any() and not self.env.auto_reset:
+                state, _ = self.env.reset()
+                state_tensor = torch.as_tensor(state, dtype=torch.float32, device=self.train_config.device)
             else:
-                state_tensor = next_state.unsqueeze(0) if next_state.dim() == 1 else next_state
+                state_tensor = next_state
+
+            if state_tensor.dim() == 1:
+                state_tensor = state_tensor.unsqueeze(0)
 
         with torch.inference_mode():
             self.normalizer.update(state_tensor)
