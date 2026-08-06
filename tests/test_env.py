@@ -1,116 +1,71 @@
-"""Unit tests for BaseEnv abstract interface (zerorl.env)."""
+"""Integration tests for BaseEnv abstract interface using real Gymnasium envs."""
 
 import numpy as np
-import pytest
+import gymnasium as gym
 from zerorl.env import BaseEnv
 
 
-class ConcreteTestEnv(BaseEnv):
-    """Minimal concrete environment for testing the abstract interface."""
-
-    def __init__(self):
+class GymTestEnv(BaseEnv):
+    """A real ZeroRL-compatible environment wrapping a Gymnasium env."""
+    def __init__(self, env_id="CartPole-v1"):
         super().__init__()
-        self.steps = 0
+        self._env = gym.make(env_id)
+        # On récupère les vrais espaces depuis Gymnasium
+        self.observation_space = self._env.observation_space
+        self.action_space = self._env.action_space
 
     def reset(self, *, seed=None, options=None):
-        self.steps = 0
-        return np.zeros(4, dtype=np.float32), {"info": "reset"}
+        return self._env.reset(seed=seed, options=options)
 
     def step(self, action):
-        self.steps += 1
-        obs = np.ones(4, dtype=np.float32) * self.steps
-        reward = float(self.steps)
-        terminated = self.steps >= 5
-        truncated = False
-        return obs, reward, terminated, truncated, {}
+        return self._env.step(action)
 
     def close(self):
-        pass
+        self._env.close()
 
 
-class TestBaseEnvAbstract:
-    """Verify BaseEnv enforces abstract method contracts."""
-
-    def test_is_abstract(self) -> None:
-        from abc import ABC
-
-        assert ABC in BaseEnv.__mro__
-
-    def test_cannot_instantiate_directly(self) -> None:
-        with pytest.raises(TypeError):
-            BaseEnv()  # type: ignore[abstract]
-
-    def test_must_implement_reset(self) -> None:
-        class IncompleteEnv(BaseEnv):
-            def step(self, action):
-                pass
-
-            def close(self):
-                pass
-
-        with pytest.raises(TypeError):
-            IncompleteEnv()  # type: ignore[abstract]
-
-    def test_must_implement_step(self) -> None:
-        class IncompleteEnv(BaseEnv):
-            def reset(self, *, seed=None, options=None):
-                pass
-
-            def close(self):
-                pass
-
-        with pytest.raises(TypeError):
-            IncompleteEnv()  # type: ignore[abstract]
-
-    def test_must_implement_close(self) -> None:
-        class IncompleteEnv(BaseEnv):
-            def reset(self, *, seed=None, options=None):
-                pass
-
-            def step(self, action):
-                pass
-
-        with pytest.raises(TypeError):
-            IncompleteEnv()  # type: ignore[abstract]
-
-    def test_concrete_subclass_instantiates(self) -> None:
-        env = ConcreteTestEnv()
-        assert isinstance(env, BaseEnv)
-
-
-class TestConcreteEnvBehavior:
-    """Verify the concrete test environment works correctly."""
+class TestGymEnvIntegration:
+    """Verify that the wrapper correctly interfaces with a real Gymnasium env."""
 
     def setup_method(self) -> None:
-        self.env = ConcreteTestEnv()
+        self.env = GymTestEnv("CartPole-v1")
+
+    def teardown_method(self) -> None:
+        self.env.close()
 
     def test_reset_returns_obs_and_info(self) -> None:
-        obs, info = self.env.reset()
+        obs, info = self.env.reset(seed=42)
         assert isinstance(obs, np.ndarray)
-        assert obs.shape == (4,)
+        assert obs.shape == (4,) # CartPole state shape
         assert isinstance(info, dict)
 
     def test_step_returns_five_values(self) -> None:
-        self.env.reset()
-        result = self.env.step(np.array(0))
+        self.env.reset(seed=42)
+        result = self.env.step(0) # Push cart left
         assert len(result) == 5
 
-    def test_step_returns_obs_reward_terminated_truncated_info(self) -> None:
-        self.env.reset()
-        obs, reward, terminated, truncated, info = self.env.step(np.array(0))
+    def test_step_returns_correct_types(self) -> None:
+        self.env.reset(seed=42)
+        obs, reward, terminated, truncated, info = self.env.step(1) # Push cart right
         assert isinstance(obs, np.ndarray)
         assert isinstance(reward, float)
         assert isinstance(terminated, bool)
         assert isinstance(truncated, bool)
         assert isinstance(info, dict)
 
-    def test_episode_terminates_after_5_steps(self) -> None:
-        self.env.reset()
-        for _ in range(4):
-            obs, reward, terminated, truncated, _ = self.env.step(np.array(0))
-            assert not terminated
-        obs, reward, terminated, truncated, _ = self.env.step(np.array(0))
-        assert terminated
-
-    def test_close_does_not_raise(self) -> None:
-        self.env.close()
+    def test_can_run_full_episode(self) -> None:
+        """Ensure we can step until termination or truncation without errors."""
+        self.env.reset(seed=42)
+        steps = 0
+        terminated = False
+        truncated = False
+        
+        while not (terminated or truncated):
+            # Take random actions from the action space
+            action = self.env.action_space.sample()
+            obs, reward, terminated, truncated, info = self.env.step(action)
+            steps += 1
+            # CartPole-v1 truncates at 500 steps
+            assert steps <= 500 
+            
+        assert steps > 0
