@@ -11,6 +11,15 @@ from abc import ABC, abstractmethod
 from typing import Any
 from gymnasium import spaces
 from torch import Tensor
+from gymnasium.envs.registration import register
+
+
+#decorator for register env in gym
+def register_env(env_id: str): 
+    def _decorator(cls):
+        register(id=env_id, entry_point=cls)
+        return cls
+    return _decorator
 
 
 class BaseEnv(gym.Env, ABC):

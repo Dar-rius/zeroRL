@@ -35,6 +35,7 @@ def gae_compute(rewards: Tensor,
     Returns:
         Tuple of (returns, advantages, deltas), each shape (T,).
     """
+    if last_value.dim() == 1: last_value = last_value.unsqueeze(0)
     gae = torch.zeros(1, dtype=torch.float32, device=rewards.device)
     # Mask: 0.0 at episode boundaries (no bootstrapping across episodes)
     mask = 1.0 - dones
