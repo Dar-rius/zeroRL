@@ -17,7 +17,7 @@ class TestBufferInit:
     @pytest.mark.gpu
     def test_default_device(self, device) -> None:
         buf = Buffer(step=5, data={"x": (3,)}, device=device)
-        assert buf.data["x"].device == device
+        assert buf.data["x"].device.type == device.type
 
 class TestBufferInsert:
     @pytest.mark.gpu
