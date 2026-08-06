@@ -72,7 +72,7 @@ class BaseTrain:
         obs_shape = env.observation_space.shape
         assert obs_shape is not None, "NormMeanStd requires environment with a defined observation shape"
         self.normalizer = NormMeanStd(obs_shape, train_config.device)
-        tb_log_dir = os.path.join(self.train_config.model_save_path, "tensobaord", self.train_config.model_name)
+        tb_log_dir = os.path.join(self.train_config.model_save_path, "tensorboard", self.train_config.model_name)
         self.tb_writer = SummaryWriter(tb_log_dir)
         self.current_episode_reward: Tensor | None = None
         self.episode_rewards: list[float] = []
@@ -92,11 +92,13 @@ class BaseTrain:
         t_args = (torch.float32, dev)
         env_device = getattr(self.env, "device", "cpu")
         state_tensor = torch.as_tensor(state, *t_args)
-        if state_tensor.dim() == 1: state_tensor.unsqueeze(0)
+        if state_tensor.dim() == 1: state_tensor = state_tensor.unsqueeze(0)
 
         num_envs = state_tensor.shape[0]
         if self.current_episode_reward is None:
             self.current_episode_reward = torch.zeros(num_envs, device=dev)
+
+        assert self.current_episode_reward is not None
 
         for _ in range(self.train_config.rollout_steps):
             self.normalizer.update(state_tensor)
@@ -212,7 +214,7 @@ class BaseTrain:
 
             if len(self.episode_rewards) > 0:
                 recent = self.episode_rewards[-10:]
-                mean_reward = sum(recent) / len(recent)
+                mean_reward = float(np.mean(recent))
             else:
                 mean_reward = 0.0
 
