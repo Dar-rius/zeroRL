@@ -26,6 +26,7 @@ class Buffer:
     def __init__(self,
                  step: int,
                  data: dict[str, tuple],
+                 num_envs: int = 1,
                  device: torch.device = torch.device("cpu")):
         """Initialize pre-allocated arrays.
 
@@ -35,9 +36,10 @@ class Buffer:
             device: Torch device to allocate tensors on.
         """
         self.step = step
+        self.num_envs = num_envs
         self.slice: int = 0
         self.data = {
-                name: torch.zeros((self.step, *shape), dtype = torch.float32, device = device)
+                name: torch.zeros((self.step, self.num_envs, *shape), dtype = torch.float32, device = device)
                 for name, shape in data.items()
                 }
 
@@ -59,7 +61,7 @@ class Buffer:
             if name in self.data:
                 self.data[name][self.slice] = val
             else:
-                raise ValueError("variable {name} don't exist in extras")
+                raise ValueError(f"variable {name} don't exist in extras")
 
         self.slice += 1
 

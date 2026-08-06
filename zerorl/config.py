@@ -28,15 +28,16 @@ class TrainConfig:
     model_save_path: str
     timestamp: int = 1_000_000
     rollout_steps: int = 2048
-    device: torch.device = field(init=False)
+    num_envs: int = 1
 
+    device: torch.device = field(init=False)
     num_update: int = field(init=False)
     model_path: str = field(init=False)
 
     def __post_init__(self) -> None:
         self.device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model_path = f"{self.model_save_path}/{self.model_name}.pt"
-        self.num_update = self.timestamp // self.rollout_steps
+        self.num_update = self.timestamp // (self.rollout_steps * self.num_envs)
 
 
 @dataclass(init=False)
