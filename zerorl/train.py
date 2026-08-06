@@ -88,13 +88,15 @@ class BaseTrain:
         Args:
             state: Initial observation to start the rollout from.
         """
+        dev = self.train_config.device
+        t_args = (torch.float32, dev)
         env_device = getattr(self.env, "device", "cpu")
-        state_tensor = torch.as_tensor(state, dtype=torch.float32, device=self.train_config.device)
+        state_tensor = torch.as_tensor(state, *t_args)
         if state_tensor.dim() == 1: state_tensor.unsqueeze(0)
 
         num_envs = state_tensor.shape[0]
         if self.current_episode_reward is None:
-            self.current_episode_reward = torch.zeros(num_envs, device=self.train_config.device)
+            self.current_episode_reward = torch.zeros(num_envs, device=dev)
 
         for _ in range(self.train_config.rollout_steps):
             self.normalizer.update(state_tensor)
@@ -107,12 +109,18 @@ class BaseTrain:
                     action_input = outputs["action"].cpu().numpy()
 
             # Convention: truncate = terminated (episode naturally ended)
-            #             done = truncated (episode cut short by time limit)
+            #done = truncated (episode cut short by time limit)
             next_state, reward, done, truncate, _ = self.env.step(action_input)
-            done_tensor = torch.as_tensor(done, dtype=torch.float32, device=self.train_config.device)
-            trunc_tensor = torch.as_tensor(truncate, dtype=torch.float32, device=self.train_config.device)
-            reward_tensor = torch.as_tensor(reward, dtype=torch.float32, device=self.train_config.device)
-            next_state = torch.as_tensor(next_state, dtype=torch.float32, device=self.train_config.device)
+            done_tensor = torch.as_tensor(done, *t_args)
+            trunc_tensor = torch.as_tensor(truncate, *t_args)
+            reward_tensor = torch.as_tensor(reward, *t_args)
+            next_state = torch.as_tensor(next_state, *t_args)
+
+            if reward_tensor.dim() == 0:
+                next_state = next_state.unsqueeze(0)
+                reward_tensor = reward_tensor.unsqueeze(0)
+                done_tensor = done_tensor.unsqueeze(0)
+                trunc_tensor = trunc_tensor.unsqueeze(0)
 
             self.buffer.insert(
                 state = state_normalized,
@@ -130,7 +138,7 @@ class BaseTrain:
 
             if finished.any() and not self.env.auto_reset:
                 state, _ = self.env.reset()
-                state_tensor = torch.as_tensor(state, dtype=torch.float32, device=self.train_config.device)
+                state_tensor = torch.as_tensor(state, *t_args)
             else:
                 state_tensor = next_state
 
