@@ -74,7 +74,7 @@ class BaseTrain:
         self.normalizer = NormMeanStd(obs_shape, train_config.device)
         tb_log_dir = os.path.join(self.train_config.model_save_path, "tensobaord", self.train_config.model_name)
         self.tb_writer = SummaryWriter(tb_log_dir)
-        self.current_episode_reward = 0.0
+        self.current_episode_reward: Tensor | None = None
         self.episode_rewards: list[float] = []
         self.require_buffer_size = require_buffer_size
 
@@ -88,36 +88,57 @@ class BaseTrain:
         Args:
             state: Initial observation to start the rollout from.
         """
+        env_device = getattr(self.env, "device", "cpu")
+        state_tensor = torch.as_tensor(state, dtype=torch.float32, device=self.train_config.device)
+        if state_tensor.dim() ==1:
+            state_tensor.unsqueeze(0)
+
+        num_envs = state_tensor.shape[0]
+        if self.current_episode_reward is None:
+            self.current_episode_reward = torch.zeros(num_envs, device=self.train_config.device)
+
         for _ in range(self.train_config.rollout_steps):
-            state_tensor = torch.as_tensor(state, dtype=torch.float32, device=self.train_config.device)
             self.normalizer.update(state_tensor)
             state_normalized = self.normalizer.normalize(state_tensor)
             with torch.inference_mode():
                 outputs = self.agent.get_action(state_normalized)
-                action_np = outputs["action"].cpu().numpy()
+                if str(env_device).startswith("cuda"):
+                    action_input: np.ndarray | Tensor = outputs["action"]
+                else:
+                    action_input = outputs["action"].cpu().numpy()
 
             # Convention: truncate = terminated (episode naturally ended)
             #             done = truncated (episode cut short by time limit)
-            next_state, reward, done, truncate, _ = self.env.step(action_np)
-            done_casted = 1.0 if done else 0.0
+            next_state, reward, done, truncate, _ = self.env.step(action_input)
+            done_tensor = torch.as_tensor(done, dtype=torch.float32, device=self.train_config.device)
+            trunc_tensor = torch.as_tensor(truncate, dtype=torch.float32, device=self.train_config.device)
+            reward_tensor = torch.as_tensor(reward, dtype=torch.float32, device=self.train_config.device)
+            next_state = torch.as_tensor(next_state, dtype=torch.float32, device=self.train_config.device)
 
             self.buffer.insert(
                 state = state_normalized,
-                reward = reward,
-                done = done_casted,
+                reward = reward_tensor,
+                done = done_tensor,
                 **outputs
             )
-            self.current_episode_reward += reward
+            self.current_episode_reward += reward_tensor
+            finished = (done_tensor > 0) | (trunc_tensor > 0)
 
-            if done or truncate:
-                self.episode_rewards.append(self.current_episode_reward)
-                self.current_episode_reward = 0.0
-                state, _ = self.env.reset()
+            if finished.any():
+                finished_rewards = self.current_episode_reward[finished]
+                self.episode_rewards.extend(finished_rewards)
+                self.current_episode_reward[finished] = 0.0
+                if not self.env.auto_reset:
+                    state, _ = self.env.reset()
+                    state_tensor = torch.as_tensor(state, dtype=torch.float32, device=self.train_config.device)
+                    if state_tensor.dim() == 1: state_tensor = state_tensor.unsqueeze(0)
+                else:
+                    state_tensor = next_state.unsqueeze(0) if next_state.dim() == 1 else next_state
+
             else:
-                state = next_state
+                state_tensor = next_state.unsqueeze(0) if next_state.dim() == 1 else next_state
 
         with torch.inference_mode():
-            state_tensor = torch.as_tensor(state, dtype=torch.float32, device=self.train_config.device)
             self.normalizer.update(state_tensor)
             state_normalized = self.normalizer.normalize(state_tensor)
             next_output = self.agent.get_action(state_normalized)
@@ -147,7 +168,7 @@ class BaseTrain:
         if tensor_vals:
             cpu_vals = torch.stack(tensor_vals).cpu().numpy()
             for k, v in zip(tensor_keys, cpu_vals):
-                clean_metrics[k] = float(v)        
+                clean_metrics[k] = float(v)
 
         if use_wandb: wandb.log(clean_metrics, step=step)
 
