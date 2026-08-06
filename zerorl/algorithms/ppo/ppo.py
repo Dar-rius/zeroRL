@@ -169,13 +169,14 @@ def ppo(agent: BaseAgent,
                 if idx.numel() == 0:
                     continue  # Skip empty batches
                 
+                torch.compiler.cudagraph_mark_step_begin()
                 optimizer.zero_grad(set_to_none=True)
                 global_losses = ppo_backward(agent, params, buffers, all_data["state"][idx],
                                 all_data["actions"][idx], all_data["old_log_probs"][idx], adv_norm[idx],
                                 returns[idx], hyper_params)
                 torch.nn.utils.clip_grad_norm_(agent.parameters(), 1.0)
                 optimizer.step()
-                history.append({k: v.detach() for k, v in global_losses.items()})
+                history.append({k: v.detach().clone() for k, v in global_losses.items()})
         return history
 
     # Compute losses and update weights

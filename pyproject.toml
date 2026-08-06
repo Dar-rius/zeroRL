@@ -1,6 +1,6 @@
 [project]
 name = "zeroRl"
-version = "0.1.27"
+version = "0.1.0"
 description = "A type-safe, algorithm-agnostic Reinforcement Learning framework"
 readme = "README.md"
 requires-python = ">=3.11"

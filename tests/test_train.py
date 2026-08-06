@@ -11,7 +11,11 @@ from zerorl.config import AlgoConfig, TrainConfig
 from zerorl.env import BaseEnv
 from zerorl.train import BaseTrain
 
-# ... (Fixture device) ...
+
+@pytest.fixture
+def device():
+    return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 
 class MockAgent(BaseAgent):
     """Minimal agent for testing BaseTrain."""
@@ -69,7 +73,7 @@ class TestBaseTrainInit:
         obs_dim, act_dim = 4, 2
         agent = MockAgent(obs_dim, act_dim)
         # ON UTILISE LE VRAI ENV ICI
-        env = CartPoleEnvWrapper() 
+        env = CartPoleEnvWrapper()
         buf = Buffer(step=10, data={"state": (obs_dim,)}, device=device)
         cfg = _make_train_config(tmp_path, device)
         algo_cfg = AlgoConfig()
