@@ -58,7 +58,7 @@ class TestPPOVectorizedIntegration:
         buf = Buffer(
             step=T,
             data={
-                "state": (obs_dim,),
+                "state": (obs_dim, ),
                 "actions": (),
                 "old_log_probs": (),
                 "reward": (),
