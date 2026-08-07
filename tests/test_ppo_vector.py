@@ -93,10 +93,8 @@ class TestPPOVectorizedIntegration:
                 old_log_probs=out["log_prob"],
                 reward=reward_tensor,
                 done=done_tensor,
-                value=out["value"],
+                value=out["value"].squeeze(-1),
             )
-            print(buf.data["value"].shape)
-            print(buf.data["actions"].shape)
             state = next_state
 
         env.close()
@@ -121,7 +119,7 @@ class TestPPOVectorizedIntegration:
         
         result = ppo(
             agent, optimizer, buf, cfg, scheduler,
-            batch_size=16,  # Mini-batch from the flattened 128 transitions
+            batch_size=16,
             epochs=2,
             device=device,
         )
