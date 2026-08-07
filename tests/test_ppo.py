@@ -4,7 +4,7 @@ import pytest
 import torch
 import torch.nn as nn
 from torch.optim.lr_scheduler import LambdaLR
-from zerorl.agent import BaseAgent
+from zerorl.agent import BaseAgent, eval_action
 from zerorl.algorithms.ppo.ppo import gae_compute, ppo_loss, ppo
 from zerorl.common import Buffer
 from zerorl.config import AlgoConfig
@@ -25,6 +25,13 @@ class DiscreteTestAgent(BaseAgent):
     @staticmethod
     def build_distribution(logits: torch.Tensor):
         return torch.distributions.Categorical(logits=logits)
+    
+    def get_action(self, state: torch.Tensor, action: torch.Tensor | None = None, **kwargs):
+        logits, value = self.forward(state, **kwargs)
+        dist = self.build_distribution(logits)
+        if action is None: action = dist.sample()
+        log_prob, dist_entropy = eval_action(dist, action)
+        return {"action": action, "log_prob": log_prob, "entropy":dist_entropy, "value":value}
 
 class TestGaeCompute:
     @pytest.mark.gpu

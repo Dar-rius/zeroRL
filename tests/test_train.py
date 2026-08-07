@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 import gymnasium as gym
 from pathlib import Path
-from zerorl.agent import BaseAgent
+from zerorl.agent import BaseAgent, eval_action
 from zerorl.common import Buffer
 from zerorl.config import AlgoConfig, TrainConfig
 from zerorl.env import BaseEnv
@@ -32,6 +32,13 @@ class MockAgent(BaseAgent):
     @staticmethod
     def build_distribution(logits: torch.Tensor) -> torch.distributions.Distribution:
         return torch.distributions.Categorical(logits=logits)
+
+    def get_action(self, state: torch.Tensor, action: torch.Tensor | None = None, **kwargs):
+        logits, value = self.forward(state, **kwargs)
+        dist = self.build_distribution(logits)
+        if action is None: action = dist.sample()
+        log_prob, dist_entropy = eval_action(dist, action)
+        return {"action": action, "log_prob": log_prob, "entropy":dist_entropy, "value":value}
 
 class CartPoleEnvWrapper(BaseEnv):
     """Real Gymnasium environment wrapper for integration testing."""

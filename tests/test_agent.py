@@ -22,6 +22,13 @@ class ConcreteTestAgent(BaseAgent):
     def build_distribution(logits: torch.Tensor):
         return torch.distributions.Categorical(logits=logits)
 
+    def get_action(self, state: torch.Tensor, action: torch.Tensor | None = None, **kwargs):
+        logits, value = self.forward(state, **kwargs)
+        dist = self.build_distribution(logits)
+        if action is None: action = dist.sample()
+        log_prob, dist_entropy = eval_action(dist, action)
+        return {"action": action, "log_prob": log_prob, "entropy":dist_entropy, "value":value}
+
 class TestBaseAgentGetAction:
     @pytest.mark.gpu
     def test_returns_dict_with_four_keys(self, device) -> None:

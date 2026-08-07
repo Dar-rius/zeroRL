@@ -3,7 +3,7 @@
 import pytest
 import torch
 import torch.nn as nn
-from zerorl.agent import BaseAgent
+from zerorl.agent import BaseAgent, eval_action
 from zerorl.function import get_buffer_params_model, linear_schedule
 
 @pytest.fixture
@@ -22,6 +22,12 @@ class TestGetBufferParamsModel:
             def forward(self, state, **kwargs): return self.actor(state), torch.zeros(1)
             @staticmethod
             def build_distribution(logits): return torch.distributions.Categorical(logits=logits)
+            def get_action(self, state: torch.Tensor, action: torch.Tensor | None = None, **kwargs):
+                logits, value = self.forward(state, **kwargs)
+                dist = self.build_distribution(logits)
+                if action is None: action = dist.sample()
+                log_prob, dist_entropy = eval_action(dist, action)
+                return {"action": action, "log_prob": log_prob, "entropy":dist_entropy, "value":value}
 
         agent = SimpleAgent().to(device)
         params, buffers = get_buffer_params_model(agent)
