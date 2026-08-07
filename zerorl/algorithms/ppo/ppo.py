@@ -83,12 +83,12 @@ def ppo_loss(
     Returns:
         Dict with keys "loss", "policy_loss", "value_loss", "entropy_loss".
     """
-    if agent.build_distribution is BaseAgent.build_distribution:
+    logits, new_values = torch.func.functional_call(agent, (params, buffers), (states,))
+    dist = agent.build_distribution(logits)
+    if dist is None:
         raise NotImplementedError(
                 "To use ppo_loss, the agent must override the static method `buid_distribtion`"
                 )
-    logits, new_values = torch.func.functional_call(agent, (params, buffers), (states,))
-    dist: Distribution = agent.build_distribution(logits)
     new_log_probs, dist_entropy = eval_action(dist, actions)
 
     idx_adv = advantages.view(-1)
