@@ -35,7 +35,7 @@ class DiscreteTestAgent(BaseAgent):
         dist = self.build_distribution(logits)
         if action is None: action = dist.sample()
         log_prob, dist_entropy = eval_action(dist, action)
-        return {"action": action, "log_prob": log_prob, "entropy":dist_entropy, "value":value}
+        return {"action": action, "log_prob": log_prob, "entropy": dist_entropy, "value": value}
 
 
 class TestPPOVectorizedIntegration:
@@ -54,9 +54,10 @@ class TestPPOVectorizedIntegration:
         cfg = AlgoConfig()
         scheduler = LambdaLR(optimizer, lr_lambda=lambda _: 1.0)
 
-        # 2. Setup Buffer with (num_envs, *shape) to match vectorized outputs
+        # 2. Setup Buffer with num_envs to match vectorized outputs
         buf = Buffer(
             step=T,
+            num_envs=num_envs, # <-- FIX ICI
             data={
                 "state": (obs_dim, ),
                 "actions": (),
@@ -86,7 +87,6 @@ class TestPPOVectorizedIntegration:
             done_tensor = torch.as_tensor(terminated, dtype=torch.float32, device=device)
             
             # Insert batched data into buffer
-            # out["value"] is (N, 1), we keep it as is to test gae_compute's robustness
             buf.insert(
                 state=state_tensor,
                 actions=out["action"],
@@ -95,8 +95,6 @@ class TestPPOVectorizedIntegration:
                 done=done_tensor,
                 value=out["value"],
             )
-            
-            # VectorEnv auto-resets, so we just take next_state
             state = next_state
 
         env.close()
@@ -113,8 +111,10 @@ class TestPPOVectorizedIntegration:
             cfg,
         )
         
-        # Insert GAE results back into buffer
-        buf.insert(returns=returns, adv=advantages)
+        # FIX ICI : On écrit directement dans la mémoire pré-allouée du buffer 
+        # sans utiliser insert() pour éviter le crash "Buffer is full"
+        buf.data["returns"][:buf.size] = returns
+        buf.data["adv"][:buf.size] = advantages
 
         # 5. Run PPO Update (which will flatten (T, N) -> (T*N) internally)
         w_before = {k: v.clone() for k, v in agent.state_dict().items()}

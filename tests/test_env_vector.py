@@ -31,7 +31,6 @@ class TestVectorEnvInit:
     def test_init_with_string_id(self) -> None:
         env = VectorEnv(env_spec="CartPole-v1", num_envs=4)
         assert isinstance(env, BaseEnv)
-        # Gymnasium vectorizes the spaces automatically
         assert env.observation_space.shape == (4, 4) 
         assert env.action_space.shape == (4,)
         env.close()
@@ -44,7 +43,7 @@ class TestVectorEnvInit:
     
     def test_invalid_env_spec_raises_error(self) -> None:
         with pytest.raises(ValueError, match="env_spec must be a string"):
-            VectorEnv(env_spec=12345, num_envs=1) #type: ignore[arg-type]
+            VectorEnv(env_spec=12345, num_envs=1) # type: ignore[arg-type]
 
 
 class TestVectorEnvProperties:
@@ -52,7 +51,6 @@ class TestVectorEnvProperties:
 
     def test_auto_reset_is_true(self) -> None:
         env = VectorEnv("CartPole-v1", num_envs=2)
-        # Crucial for BaseTrain to know it shouldn't reset manually
         assert env.auto_reset is True
         env.close()
 
@@ -70,12 +68,12 @@ class TestVectorEnvInteraction:
     def test_reset_returns_batched_obs(self) -> None:
         obs, info = self.env.reset(seed=42)
         assert isinstance(obs, np.ndarray)
-        assert obs.shape == (self.num_envs, 4) # 4 is CartPole obs dim
+        assert obs.shape == (self.num_envs, 4)
         assert isinstance(info, dict)
 
     def test_step_returns_batched_data(self) -> None:
         self.env.reset(seed=42)
-        actions = np.array([0, 1, 0, 1]) # Batch of actions
+        actions = np.array([0, 1, 0, 1])
         obs, reward, terminated, truncated, info = self.env.step(actions)
         
         assert obs.shape == (self.num_envs, 4)
