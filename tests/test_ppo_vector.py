@@ -93,8 +93,10 @@ class TestPPOVectorizedIntegration:
                 old_log_probs=out["log_prob"],
                 reward=reward_tensor,
                 done=done_tensor,
-                value=out["value"].unsqueeze(-1),
+                value=out["value"],
             )
+            print(buf.data["value"].shape)
+            print(buf.data["actions"].shape)
             state = next_state
 
         env.close()
