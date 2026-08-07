@@ -99,8 +99,8 @@ class TestVectorEnvInteraction:
             if terminated.any() or truncated.any():
                 done_occurred = True
                 # When an env auto-resets, Gymnasium stores the TRUE final observation 
-                # in info["terminal_observation"], and returns the NEW reset obs in `obs`.
-                assert "terminal_observation" in info
+                # in info["final_observation"], and returns the NEW reset obs in `obs`.
+                assert "final_observation" in info
                 break
                 
         assert done_occurred, "Test should have triggered at least one done within 500 steps"
