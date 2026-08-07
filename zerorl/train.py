@@ -104,6 +104,7 @@ class BaseTrain:
             state_normalized = self.normalizer.normalize(state_tensor)
             with torch.inference_mode():
                 outputs = self.agent.get_action(state_normalized)
+                outputs["value"] = outputs["value"].squeeze(-1)
                 if str(env_device).startswith("cuda"):
                     action_input: np.ndarray | Tensor = outputs["action"]
                 else:
@@ -186,7 +187,7 @@ class BaseTrain:
 
 
 
-    def train(self, use_wandb: bool = False, use_tb: bool = False):
+    def train(self, *, use_wandb: bool = False, use_tb: bool = False):
         """Run the full training loop.
 
         Repeats rollout -> update_weights -> log -> clear for num_update steps.
@@ -223,7 +224,6 @@ class BaseTrain:
             }
             for k, v in losses.items(): metrics[k] = v
             self._log_metrics(metrics, step, use_wandb, use_tb)
-
             self.buffer.clear()
 
 
