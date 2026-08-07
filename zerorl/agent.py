@@ -13,8 +13,7 @@ from torch.distributions import Distribution
 
 
 # Compute log probability and entropy from a distribution
-def eval_action(logits: Tensor, action: Tensor) -> tuple[Tensor, Tensor]:
-    dist = torch.distributions.Categorical(logits=logits)
+def eval_action(dist: Distribution, action: Tensor) -> tuple[Tensor, Tensor]:
     log_prob = dist.log_prob(action)
     dist_entropy = dist.entropy()
     if log_prob.dim() > 1:
