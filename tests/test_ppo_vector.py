@@ -89,7 +89,7 @@ class TestPPOVectorizedIntegration:
             # out["value"] is (N, 1), we keep it as is to test gae_compute's robustness
             buf.insert(
                 state=state_tensor,
-                actions=out["actions"],
+                actions=out["action"],
                 old_log_probs=out["log_prob"],
                 reward=reward_tensor,
                 done=done_tensor,
