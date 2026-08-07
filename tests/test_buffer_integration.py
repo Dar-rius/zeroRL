@@ -12,10 +12,10 @@ class TestBufferIntegration:
     @pytest.mark.gpu
     def test_full_insert_cycle_with_get_all(self, device) -> None:
         buf = Buffer(step=20, data={"state": (8,), "action": (4,)}, device=device)
-        for i in range(20):
+        for _ in range(20):
             buf.insert(state=torch.randn(8, device=device), action=torch.randn(4, device=device))
         result = buf.get_all()
-        assert result["state"].shape == (20, 8)
+        assert result["state"].shape == (20, 1, 8)
 
     @pytest.mark.gpu
     def test_buffer_scalar_actions(self, device) -> None:
@@ -23,7 +23,7 @@ class TestBufferIntegration:
         for i in range(10):
             buf.insert(state=torch.ones(4, device=device), action=torch.tensor(float(i), device=device))
         result = buf.get_all()
-        assert result["action"].shape == (10,)
+        assert result["action"].shape == (10, 1)
 
     @pytest.mark.gpu
     def test_clear_and_refill(self, device) -> None:
@@ -43,4 +43,4 @@ class TestBufferIntegration:
         for _ in range(n):
             buf.insert(state=torch.randn(4, device=device), action=torch.tensor(0, device=device))
         assert buf.size == n
-        assert buf.get_all()["state"].shape == (n, 4)
+        assert buf.get_all()["state"].shape == (n, 1, 4)

@@ -12,7 +12,7 @@ class TestBufferInit:
     @pytest.mark.gpu
     def test_creates_arrays_with_correct_shapes(self, device) -> None:
         buf = Buffer(step=10, data={"state": (4,)}, device=device)
-        assert buf.data["state"].shape == (10, 4)
+        assert buf.data["state"].shape == (10, 1, 4)
 
     @pytest.mark.gpu
     def test_default_device(self, device) -> None:
@@ -23,7 +23,7 @@ class TestBufferInsert:
     @pytest.mark.gpu
     def test_single_insert_state(self, device) -> None:
         buf = Buffer(step=10, data={"state": (4,)}, device=device)
-        state = torch.tensor([1.0, 2.0, 3.0, 4.0], device=device)
+        state = torch.tensor([1.0, 2.0, 3.0, 4.0], device=device).unsqueeze(0)
         buf.insert(state=state)
         torch.testing.assert_close(buf.data["state"][0], state)
 
@@ -41,4 +41,4 @@ class TestBufferGetAll:
         buf = Buffer(step=5, data={"state": (4,)}, device=device)
         for _ in range(5):
             buf.insert(state=torch.randn(4, device=device))
-        assert buf.get_all()["state"].shape == (5, 4)
+        assert buf.get_all()["state"].shape == (5, 1, 4)

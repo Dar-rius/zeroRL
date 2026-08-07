@@ -79,7 +79,7 @@ class TestPPOVectorizedIntegration:
                 out = agent.get_action(state_tensor)
                 
             # Step the real vectorized environment
-            next_state, reward, terminated, truncated, _ = env.step(out["actions"].cpu().numpy())
+            next_state, reward, terminated, _, _ = env.step(out["action"].cpu().numpy())
             
             # Convert to tensors for the buffer
             reward_tensor = torch.as_tensor(reward, dtype=torch.float32, device=device)
