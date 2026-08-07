@@ -51,6 +51,9 @@ markers = [
     "gpu: marks tests that require a GPU to run (deselect with '-m \"not gpu\"')",
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
 ]
+filterwarnings = [
+    "ignore: `torch.jit.script_method` is deprecated:DeprecationWarning",
+]
 
 
 [build-system]
