@@ -70,7 +70,8 @@ class BaseTrain:
         else:
             self.optimizer = optimizer
         obs_shape = env.observation_space.shape
-        assert obs_shape is not None, "NormMeanStd requires environment with a defined observation shape"
+        if obs_shape is None:
+            raise ValueError("NormMeanStd requires environment with a defined observation shape")
         self.normalizer = NormMeanStd(obs_shape, train_config.device)
         tb_log_dir = os.path.join(self.train_config.model_save_path, "tensorboard", self.train_config.model_name)
         self.tb_writer = SummaryWriter(tb_log_dir)
@@ -97,8 +98,6 @@ class BaseTrain:
         num_envs = state_tensor.shape[0]
         if self.current_episode_reward is None:
             self.current_episode_reward = torch.zeros(num_envs, device=dev)
-
-        assert self.current_episode_reward is not None
 
         for _ in range(self.train_config.rollout_steps):
             self.normalizer.update(state_tensor)
