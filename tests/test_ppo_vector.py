@@ -57,7 +57,7 @@ class TestPPOVectorizedIntegration:
         # 2. Setup Buffer with num_envs to match vectorized outputs
         buf = Buffer(
             step=T,
-            num_envs=num_envs, # <-- FIX ICI
+            num_envs=num_envs, 
             data={
                 "state": (obs_dim, ),
                 "actions": (),
@@ -93,7 +93,7 @@ class TestPPOVectorizedIntegration:
                 old_log_probs=out["log_prob"],
                 reward=reward_tensor,
                 done=done_tensor,
-                value=out["value"],
+                value=out["value"].unsqueeze(-1),
             )
             state = next_state
 
@@ -111,8 +111,6 @@ class TestPPOVectorizedIntegration:
             cfg,
         )
         
-        # FIX ICI : On écrit directement dans la mémoire pré-allouée du buffer 
-        # sans utiliser insert() pour éviter le crash "Buffer is full"
         buf.data["returns"][:buf.size] = returns
         buf.data["adv"][:buf.size] = advantages
 

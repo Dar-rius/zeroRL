@@ -127,6 +127,7 @@ class BaseTrain:
                 state = state_normalized,
                 reward = reward_tensor,
                 done = done_tensor,
+                value = outputs["value"].unsqueeze(-1),
                 **outputs
             )
             self.current_episode_reward += reward_tensor
