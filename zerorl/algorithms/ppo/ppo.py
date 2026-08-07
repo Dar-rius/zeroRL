@@ -10,6 +10,7 @@ from torch import nn
 from torch import Tensor
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LambdaLR
+from torch.distribution import Distribution
 from zerorl.common import Buffer
 from zerorl.agent import BaseAgent, eval_action
 from zerorl.config import AlgoConfig
@@ -82,8 +83,12 @@ def ppo_loss(
     Returns:
         Dict with keys "loss", "policy_loss", "value_loss", "entropy_loss".
     """
+    if agent.build_distribution is BaseAgent.build_distribution:
+        raise NotImplementedError(
+                "To use ppo_loss, the agent must override the static method `buid_distribtion`"
+                )
     logits, new_values = torch.func.functional_call(agent, (params, buffers), (states,))
-    dist = agent.build_distribution(logits)
+    dist: Distribution = agent.build_distribution(logits)
     new_log_probs, dist_entropy = eval_action(dist, actions)
 
     idx_adv = advantages.view(-1)

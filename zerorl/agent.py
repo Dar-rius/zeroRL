@@ -13,13 +13,14 @@ from torch.distributions import Distribution
 
 
 # Compute log probability and entropy from a distribution
-def eval_action(dist: Distribution, action: Tensor) -> tuple[Tensor, Tensor]:
+def eval_action(logits: Tensor, action: Tensor) -> tuple[Tensor, Tensor]:
+    dist = torch.distributions.Categorical(logits=logits)
     log_prob = dist.log_prob(action)
     dist_entropy = dist.entropy()
     if log_prob.dim() > 1:
         log_prob = log_prob.sum(dim=-1)
         dist_entropy = dist_entropy.sum(dim=-1)
-    return log_prob, dist_entropy
+    return (log_prob, dist_entropy)
 
 
 class BaseAgent(nn.Module, ABC):
@@ -42,7 +43,7 @@ class BaseAgent(nn.Module, ABC):
             return torch.device("cpu")
 
     @abstractmethod
-    def forward(self, state: Tensor, **kwargs: Any) -> tuple[Tensor, Tensor]:
+    def forward(self, state: Tensor, **kwargs: Any) -> tuple[Tensor, ...]:
         """Compute raw policy logits and value estimate.
 
         Args:
@@ -53,12 +54,16 @@ class BaseAgent(nn.Module, ABC):
         """
         pass
     
-    @staticmethod
-    @abstractmethod
-    def build_distribution(logits: Tensor) -> Distribution:
-        """Transform logits into a probability distribution."""
-        pass
 
+    @staticmethod
+    def build_distribution(logits: Tensor) -> Distribution | None:
+        """Optional: Transform logits into a probability distribution.
+        Override this if your algorithm uses Policy Gradients (PPO, REINFORCE).
+        """
+        return None
+
+
+    @abstractmethod
     def get_action(self, state: Tensor, action: Tensor | None = None, **kwargs: Any) -> dict[str, Tensor]:
         """Sample or evaluate an action under the current policy.
 
@@ -69,13 +74,5 @@ class BaseAgent(nn.Module, ABC):
             state: Environment observation.
             action: Optional pre-selected action. When None, samples from
                     the policy distribution.
-
-        Returns:
-            Dict with keys "action", "log_prob", "entropy", "value".
         """
-        logits, value = self.forward(state, **kwargs)
-        dist = self.build_distribution(logits)
-        if action is None: action = dist.sample()
-        log_prob, dist_entropy = eval_action(dist, action)
-        return {"action": action, "log_prob": log_prob,
-                "entropy":dist_entropy, "value":value}
+        pass
