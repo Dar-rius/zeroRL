@@ -141,7 +141,7 @@ class TestPPOContinuousIntegration:
                 out = agent.get_action(state_tensor)
             
             # Step the real environment
-            next_state, reward, terminated, truncated, _ = env.step(out["actions"])
+            next_state, reward, terminated, truncated, _ = env.step(out["action"])
             done = terminated or truncated
 
             # Sum multi-dim log_prob to scalar for buffer storage
