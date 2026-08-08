@@ -52,7 +52,7 @@ class TestGaeCompute:
         values = torch.tensor([0.5, 0.5, 0.5], device=device).unsqueeze(-1)
         dones = torch.tensor([0.0, 0.0, 0.0], device=device).unsqueeze(-1)
         last_value = torch.tensor([1.0], device=device)
-        returns, advantages, _ = gae_compute(rewards, values, last_value, dones, cfg, buf)
+        returns, _, _ = gae_compute(rewards, values, last_value, dones, cfg)
         gae_compute(rewards, values, last_value, dones, cfg, buf)
         torch.testing.assert_close(returns, buf.data["returns"])
 
