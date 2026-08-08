@@ -5,7 +5,7 @@ tensors and converts them for the PPO update step.
 """
 
 import torch
-from zerorl.erros import KeyBufferError
+from zerorl.errors import KeyBufferError
 
 
 class Buffer:
