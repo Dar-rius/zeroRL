@@ -51,7 +51,7 @@ class TestKeyBufferError:
     """Tests for the KeyBufferError custom exception."""
 
     def test_is_exception_subclass(self) -> None:
-        assert issubclass(KeyBufferError, Exception)
+        assert issubclass(KeyBufferError, Exception) 
 
     def test_stores_attributes(self) -> None:
         data = {"state": object(), "action": object()}
