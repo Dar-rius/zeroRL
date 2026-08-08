@@ -44,5 +44,3 @@ class KeyBufferError(Exception):
         details += f"Please ensure your Buffer is initialized with the key '{self.arg_name}\n"
         details += f"Current valid keys are: {list(self.data_buffer.keys())}"
         return details
-
-

@@ -5,6 +5,7 @@ tensors and converts them for the PPO update step.
 """
 
 import torch
+from zerorl.erros import KeyBufferError
 
 
 class Buffer:
@@ -61,7 +62,7 @@ class Buffer:
             if name in self.data:
                 self.data[name][self.slice] = val
             else:
-                raise ValueError(f"variable {name} don't exist in extras")
+                raise KeyBufferError(name, kwargs)
 
         self.slice += 1
 
