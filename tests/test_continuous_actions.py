@@ -150,12 +150,12 @@ class TestPPOContinuousIntegration:
                 log_prob = log_prob.sum()
 
             raw_buf.insert(
-                state=state_tensor,
+                states=state_tensor,
                 actions=out["action"],
-                old_log_probs=log_prob,
-                reward=torch.tensor(reward, dtype=torch.float32, device=device),
+                old_log_prob=log_prob,
+                rewards=torch.tensor(reward, dtype=torch.float32, device=device),
                 done=torch.tensor(1.0 if done else 0.0, device=device),
-                value=out["value"].squeeze(),
+                old_values=out["value"].squeeze(),
             )
 
             state = next_state if not done else env.reset()[0]
@@ -176,12 +176,12 @@ class TestPPOContinuousIntegration:
         # 5. Fill PPO Buffer
         for i in range(n_steps):
             ppo_buf.insert(
-                state=all_data["states"][i],
+                states=all_data["states"][i],
                 actions=all_data["actions"][i],
-                old_log_probs=all_data["old_log_prob"][i],
-                adv=advantages[i],
+                old_log_prob=all_data["old_log_prob"][i],
+                advantages=advantages[i],
                 returns=returns[i],
-                value=all_data["old_values"][i],
+                old_values=all_data["old_values"][i],
             )
 
         # 6. Run PPO Update and verify weights change
