@@ -14,6 +14,12 @@ class TestLinearSchedule:
     def test_step_zero_returns_one(self) -> None:
         assert linear_schedule(0, 1000) == pytest.approx(1.0)
 
+    def test_linear_schedule_midpoint(self) -> None:
+        assert linear_schedule(500, 1000) == pytest.approx(0.5)
+
+    def test_linear_schedule_endpoint(self) -> None:
+        assert linear_schedule(1000, 1000) == pytest.approx(0.0)
+
 class TestGetBufferParamsModel:
     @pytest.mark.gpu
     def test_returns_tuple_of_dicts(self, device) -> None:

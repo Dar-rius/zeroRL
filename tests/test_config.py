@@ -60,6 +60,10 @@ class TestAlgoConfig:
         assert cfg.gamma is not None
         assert cfg.tau is not None
 
+    def test_unknown_kwarg_sets_attr(self) -> None:
+        cfg = AlgoConfig(unknown=5)
+        assert cfg.unknown == 5
+
 
 # =============================================================================
 # Test TrainConfig (Mutable with Computed Fields)

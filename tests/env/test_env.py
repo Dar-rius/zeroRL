@@ -2,7 +2,7 @@
 
 import numpy as np
 import gymnasium as gym
-from zerorl.env import BaseEnv
+from zerorl.env import BaseEnv, register_env
 
 
 class GymTestEnv(BaseEnv):
@@ -69,3 +69,18 @@ class TestGymEnvIntegration:
             assert steps <= 500 
             
         assert steps > 0
+
+
+class TestRegisterEnv:
+    def test_register_env_registers_id(self) -> None:
+        env_id = "ZeroRLTestEnv-v0"
+        if env_id in gym.envs.registry:
+            del gym.envs.registry[env_id]
+
+        @register_env(env_id)
+        class RegEnv(GymTestEnv):
+            pass
+
+        assert env_id in gym.envs.registry
+        env = gym.make(env_id)
+        env.close()

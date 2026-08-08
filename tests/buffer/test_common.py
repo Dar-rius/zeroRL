@@ -42,3 +42,13 @@ class TestBufferGetAll:
         for _ in range(5):
             buf.insert(state=torch.randn(4, device=device))
         assert buf.get_all()["state"].shape == (5, 1, 4)
+
+
+class TestBufferInsertEdgeCases:
+    @pytest.mark.gpu
+    def test_insert_missing_key_zero_fills(self, device) -> None:
+        buf = Buffer(step=3, data={"a": (), "b": ()}, device=device)
+        buf.insert(a=torch.tensor(1.0, device=device))
+        assert buf.size == 1
+        torch.testing.assert_close(buf.data["a"][0], torch.tensor([1.0], device=device))
+        torch.testing.assert_close(buf.data["b"][0], torch.tensor([0.0], device=device))
