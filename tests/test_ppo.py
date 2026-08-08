@@ -44,6 +44,20 @@ class TestGaeCompute:
         returns, advantages, _ = gae_compute(rewards, values, last_value, dones, cfg)
         torch.testing.assert_close(returns, advantages + values)
 
+    @pytest.mark.gpu
+    def test_buffer_inside_advantages_(self, device) -> None:
+        cfg = AlgoConfig()
+        buf = Buffer(step=3, data = {"returns":(), "advantages": ()}, device=device)
+        rewards = torch.tensor([1.0, 2.0, 3.0], device=device).unsqueeze(-1)
+        values = torch.tensor([0.5, 0.5, 0.5], device=device).unsqueeze(-1)
+        dones = torch.tensor([0.0, 0.0, 0.0], device=device).unsqueeze(-1)
+        last_value = torch.tensor([1.0], device=device)
+        returns, advantages, _ = gae_compute(rewards, values, last_value, dones, cfg, buf)
+        gae_compute(rewards, values, last_value, dones, cfg, buf)
+        torch.testing.assert_close(returns, buf.data["returns"])
+
+
+
 class TestPpoLoss:
     @pytest.mark.gpu
     def test_returns_dict(self, device) -> None:
