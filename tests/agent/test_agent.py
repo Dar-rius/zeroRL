@@ -69,3 +69,28 @@ class TestEvalAction:
         action = torch.randn(3, 2, device=device)
         log_prob, entropy = eval_action(dist, action)
         assert log_prob.shape == (3,)
+
+
+class ParamlessAgent(BaseAgent):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, state: torch.Tensor, **kwargs):
+        return torch.zeros(state.shape[0], 2), torch.zeros(state.shape[0], 1)
+
+    @staticmethod
+    def build_distribution(logits: torch.Tensor):
+        return torch.distributions.Categorical(logits=logits)
+
+    def get_action(self, state: torch.Tensor, action: torch.Tensor | None = None, **kwargs):
+        logits, value = self.forward(state, **kwargs)
+        dist = self.build_distribution(logits)
+        if action is None: action = dist.sample()
+        log_prob, dist_entropy = eval_action(dist, action)
+        return {"action": action, "log_prob": log_prob, "entropy": dist_entropy, "value": value}
+
+
+class TestBaseAgentDevice:
+    def test_device_fallback_no_params(self) -> None:
+        agent = ParamlessAgent()
+        assert agent.device == torch.device("cpu")

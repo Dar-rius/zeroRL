@@ -104,3 +104,166 @@ class TestPpoFunction:
         w_after = agent.state_dict()
         changed = not all(torch.allclose(w_before[k], w_after[k]) for k in w_before)
         assert changed
+
+
+class TestGaeDoneMask:
+    @pytest.mark.gpu
+    def test_gae_no_bootstrap_across_done(self, device) -> None:
+        cfg = AlgoConfig()
+        reward = torch.tensor([1.0, 2.0, 3.0], device=device).unsqueeze(-1)
+        values = torch.tensor([0.5, 0.5, 0.5], device=device).unsqueeze(-1)
+        last_value = torch.tensor([1.0], device=device)
+        dones_no = torch.tensor([0.0, 0.0, 0.0], device=device).unsqueeze(-1)
+        dones_mid = torch.tensor([0.0, 1.0, 0.0], device=device).unsqueeze(-1)
+        _, adv_no, _ = gae_compute(reward, values, last_value, dones_no, cfg)
+        _, adv_done, delta_done = gae_compute(reward, values, last_value, dones_mid, cfg)
+        torch.testing.assert_close(adv_done[1], delta_done[1])
+        assert adv_done[1].item() < adv_no[1].item()
+
+    @pytest.mark.gpu
+    def test_gae_last_step_done_ignores_last_value(self, device) -> None:
+        cfg = AlgoConfig()
+        reward = torch.tensor([1.0, 2.0, 3.0], device=device).unsqueeze(-1)
+        values = torch.tensor([0.5, 0.5, 0.5], device=device).unsqueeze(-1)
+        big_last = torch.tensor([100.0], device=device)
+        dones_last = torch.tensor([0.0, 0.0, 1.0], device=device).unsqueeze(-1)
+        dones_none = torch.tensor([0.0, 0.0, 0.0], device=device).unsqueeze(-1)
+        _, _, delta_done = gae_compute(reward, values, big_last, dones_last, cfg)
+        _, _, delta_none = gae_compute(reward, values, big_last, dones_none, cfg)
+        torch.testing.assert_close(delta_done[-1], reward[-1] - values[-1])
+        assert delta_none[-1].item() != delta_done[-1].item()
+
+    @pytest.mark.gpu
+    def test_gae_multi_env_independent(self, device) -> None:
+        cfg = AlgoConfig()
+        reward = torch.tensor([[1.0, 10.0], [2.0, 20.0], [3.0, 30.0]], device=device)
+        values = torch.tensor([[0.5, 5.0], [0.5, 5.0], [0.5, 5.0]], device=device)
+        last_value = torch.tensor([1.0, 10.0], device=device)
+        dones = torch.tensor([[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]], device=device)
+        returns_both, adv_both, _ = gae_compute(reward, values, last_value, dones, cfg)
+        r0, a0, _ = gae_compute(reward[:, 0:1], values[:, 0:1], last_value[0:1], dones[:, 0:1], cfg)
+        torch.testing.assert_close(returns_both[:, 0:1], r0)
+        torch.testing.assert_close(adv_both[:, 0:1], a0)
+
+
+class TestPpoLossInternals:
+    @pytest.mark.gpu
+    def test_ppo_loss_clipping_activates(self, device) -> None:
+        agent = DiscreteTestAgent().to(device)
+        state = torch.randn(16, 4, device=device)
+        action = torch.randint(0, 2, (16,), device=device)
+        logits, _ = agent(state)
+        dist = agent.build_distribution(logits)
+        new_log_prob, _ = eval_action(dist, action)
+        old_log_prob = new_log_prob - 5.0
+        advantage = torch.ones(16, device=device)
+        return_ = torch.zeros(16, device=device)
+        cfg = AlgoConfig(clip_eps=0.2)
+        params = dict(agent.named_parameters())
+        buffers = dict(agent.named_buffers())
+        result = ppo_loss(agent, params, buffers, state, action, old_log_prob, advantage, return_, cfg)
+        ratio = torch.exp(new_log_prob - old_log_prob)
+        surr1 = ratio * advantage
+        surr2 = torch.clamp(ratio, 1.0 - 0.2, 1.0 + 0.2) * advantage
+        expected_policy_loss = -torch.min(surr1, surr2).mean()
+        torch.testing.assert_close(result["policy_loss"], expected_policy_loss)
+        assert (surr2 != surr1).any()
+
+    @pytest.mark.gpu
+    def test_ppo_loss_value_loss_correct(self, device) -> None:
+        agent = DiscreteTestAgent().to(device)
+        state = torch.randn(16, 4, device=device)
+        action = torch.randint(0, 2, (16,), device=device)
+        log_prob = torch.randn(16, device=device)
+        advantage = torch.randn(16, device=device)
+        return_ = torch.randn(16, device=device)
+        cfg = AlgoConfig()
+        params = dict(agent.named_parameters())
+        buffers = dict(agent.named_buffers())
+        result = ppo_loss(agent, params, buffers, state, action, log_prob, advantage, return_, cfg)
+        logits, new_values = agent(state)
+        expected = nn.functional.mse_loss(new_values.view(-1), return_)
+        torch.testing.assert_close(result["value_loss"], expected)
+
+    @pytest.mark.gpu
+    def test_ppo_loss_entropy_subtracted(self, device) -> None:
+        agent = DiscreteTestAgent().to(device)
+        state = torch.randn(16, 4, device=device)
+        action = torch.randint(0, 2, (16,), device=device)
+        log_prob = torch.randn(16, device=device)
+        advantage = torch.randn(16, device=device)
+        return_ = torch.randn(16, device=device)
+        cfg = AlgoConfig()
+        params = dict(agent.named_parameters())
+        buffers = dict(agent.named_buffers())
+        result = ppo_loss(agent, params, buffers, state, action, log_prob, advantage, return_, cfg)
+        expected = (result["policy_loss"] + cfg.value_coef * result["value_loss"]
+                    - cfg.ent_coef * result["entropy_loss"])
+        torch.testing.assert_close(result["loss"], expected)
+
+    @pytest.mark.gpu
+    def test_ppo_loss_ratio_one_when_same_policy(self, device) -> None:
+        agent = DiscreteTestAgent().to(device)
+        state = torch.randn(16, 4, device=device)
+        action = torch.randint(0, 2, (16,), device=device)
+        logits, _ = agent(state)
+        dist = agent.build_distribution(logits)
+        new_log_prob, _ = eval_action(dist, action)
+        advantage = torch.ones(16, device=device)
+        return_ = torch.zeros(16, device=device)
+        cfg = AlgoConfig()
+        params = dict(agent.named_parameters())
+        buffers = dict(agent.named_buffers())
+        result = ppo_loss(agent, params, buffers, state, action, new_log_prob, advantage, return_, cfg)
+        torch.testing.assert_close(result["policy_loss"], -advantage.mean())
+
+    @pytest.mark.gpu
+    def test_ppo_loss_raises_when_dist_none(self, device) -> None:
+        class NoDistAgent(BaseAgent):
+            def __init__(self): super().__init__(); self.actor = nn.Linear(4, 2)
+            def forward(self, state, **kwargs): return self.actor(state), torch.zeros(1)
+            @staticmethod
+            def build_distribution(logits): return None
+            def get_action(self, state, action=None, **kwargs): return {"action": torch.zeros(1), "log_prob": torch.zeros(1), "entropy": torch.zeros(1), "value": torch.zeros(1)}
+        agent = NoDistAgent().to(device)
+        state = torch.randn(16, 4, device=device)
+        params = dict(agent.named_parameters())
+        buffers = dict(agent.named_buffers())
+        cfg = AlgoConfig()
+        with pytest.raises(NotImplementedError, match="buid_distribtion"):
+            ppo_loss(agent, params, buffers, state, torch.zeros(16, device=device),
+                     torch.zeros(16, device=device), torch.zeros(16, device=device),
+                     torch.zeros(16, device=device), cfg)
+
+
+class TestPpoEdgeCases:
+    @pytest.mark.gpu
+    def test_ppo_batch_larger_than_dataset(self, device) -> None:
+        agent = DiscreteTestAgent().to(device)
+        optimizer = torch.optim.Adam(agent.parameters(), lr=3e-4)
+        buf = TestPpoFunction()._make_buffer(64, 4, device)
+        cfg = AlgoConfig()
+        scheduler = LambdaLR(optimizer, lr_lambda=lambda _: 1.0)
+        result = ppo(agent, optimizer, buf, cfg, scheduler, batch_size=256, epochs=2, device=device)
+        assert "loss" in result
+
+    @pytest.mark.gpu
+    def test_ppo_epochs_zero_returns_empty_dict(self, device) -> None:
+        agent = DiscreteTestAgent().to(device)
+        optimizer = torch.optim.Adam(agent.parameters(), lr=3e-4)
+        buf = TestPpoFunction()._make_buffer(64, 4, device)
+        cfg = AlgoConfig()
+        scheduler = LambdaLR(optimizer, lr_lambda=lambda _: 1.0)
+        result = ppo(agent, optimizer, buf, cfg, scheduler, batch_size=32, epochs=0, device=device)
+        assert result == {}
+
+    @pytest.mark.gpu
+    def test_ppo_scheduler_stepped_once(self, device) -> None:
+        from unittest.mock import MagicMock
+        agent = DiscreteTestAgent().to(device)
+        optimizer = torch.optim.Adam(agent.parameters(), lr=3e-4)
+        buf = TestPpoFunction()._make_buffer(64, 4, device)
+        cfg = AlgoConfig()
+        scheduler = MagicMock()
+        ppo(agent, optimizer, buf, cfg, scheduler, batch_size=32, epochs=2, device=device)
+        assert scheduler.step.call_count == 1

@@ -2,7 +2,7 @@
 
 ## Project
 
-RL training framework built on PyTorch + Gymnasium. Provides abstract base classes (`BaseAgent`, `BaseEnv`, `BaseTrain`) and standalone PPO functions (`gae_compute`, `ppo_loss`, `ppo`). Includes 143 tests, all passing.
+RL training framework built on PyTorch + Gymnasium. Provides abstract base classes (`BaseAgent`, `BaseEnv`, `BaseTrain`) and standalone PPO functions (`gae_compute`, `ppo_loss`, `ppo`). Includes 88 tests, all passing (1 xfailed documenting a known vectorized-reset bug).
 
 ## Package management
 
@@ -13,11 +13,17 @@ RL training framework built on PyTorch + Gymnasium. Provides abstract base class
 ## Lint / typecheck
 
 ```
-ruff check zerorl/       # linter (Pyflakes only, pyproject.toml)
-mypy zerorl/             # strict: disallow_untyped_defs, warn_unreachable (pyproject.toml)
+ruff check zerorl/ tests/   # linter (Pyflakes only, pyproject.toml)
+mypy zerorl/                # strict: disallow_untyped_defs, warn_unreachable (pyproject.toml)
 ```
 
 No pre-commit hooks, no CI, no formatter config beyond ruff defaults.
+
+## Running tests on this machine
+
+- GPU: GTX 1050 Ti (sm_61); installed torch cu130 has no sm_61 kernels → CUDA ops fail
+- Run CPU-only: `CUDA_VISIBLE_DEVICES="" uv run python -m pytest tests/ -v`
+- Tests are marked `@pytest.mark.gpu`; the marker is informational only (no auto-deselect)
 
 ## Import style
 
@@ -31,7 +37,8 @@ No pre-commit hooks, no CI, no formatter config beyond ruff defaults.
 zerorl/
   __init__.py              # empty package marker
   agent.py                 # BaseAgent (ABC, nn.Module), eval_action()
-  env.py                   # BaseEnv (ABC) — Gymnasium v1 API wrapper
+  env.py                   # BaseEnv (ABC, gym.Env) — Gymnasium v1 API wrapper; register_env() decorator
+  vector_env.py             # VectorEnv(BaseEnv) — vectorized env wrapper (env_id string or callable class)
   train.py                 # BaseTrain — rollout/update/save training loop
   common.py                # Buffer — dict-based pre-allocated torch buffer
   config.py                # TrainConfig (computed fields), AlgoConfig (mutable dataclass)
@@ -45,17 +52,19 @@ zerorl/
       ppo.py               # gae_compute(), ppo_loss(), ppo() — standalone functions
 tests/
   __init__.py
-  test_agent.py              # 17 tests
-  test_buffer_integration.py # 7 tests
-  test_common.py             # 26 tests
-  test_config.py             # 14 tests
-  test_continuous_actions.py # 12 tests
-  test_env.py                # 11 tests
+  test_agent.py              # 6 tests
+  test_buffer_integration.py # 4 tests
+  test_common.py             # 6 tests
+  test_config.py             # 15 tests
+  test_continuous_actions.py # 1 test
+  test_env.py                # 5 tests
   test_errors.py             # 7 tests
-  test_function.py           # 12 tests
-  test_ppo.py                # 17 tests
-  test_processing.py         # 13 tests
-  test_train.py              # 7 tests
+  test_function.py           # 4 tests
+  test_ppo.py                # 16 tests
+  test_processing.py         # 3 tests
+  test_train.py              # 13 tests
+  test_ppo_vector.py         # 1 test
+  test_env_vector.py         # 7 tests
 ```
 
 ## Key APIs
@@ -63,10 +72,10 @@ tests/
 ### Buffer
 
 ```python
-Buffer(step: int, data: dict[str, tuple], device: torch.device)
+Buffer(step: int, data: dict[str, tuple], num_envs: int = 1, device: torch.device)
 ```
 
-Constructor takes a dict mapping field names to shapes (e.g., `{"state": (4,), "actions": ()}`). Internally pre-allocates torch tensors on the given device. `get_all()` returns a dict of sliced tensors (same keys). No `insert_returns()` method — callers insert GAE-computed returns/advantages directly.
+Constructor takes a dict mapping field names to shapes (e.g., `{"state": (4,), "actions": ()}`). Internally pre-allocates torch tensors of shape `(step, num_envs, *shape)` on the given device. `get_all()` returns a dict of sliced tensors (same keys). No `insert_returns()` method — callers insert GAE-computed returns/advantages directly.
 
 ### BaseAgent
 
@@ -85,7 +94,7 @@ No `PPOTrainer` class — PPO is composed as standalone functions that accept an
 ### Config
 
 - `AlgoConfig`: Mutable dataclass with custom `__init__` (init=False). Fields: `lr`, `gamma`, `batch_size`, `gae_lambda`, `clip_eps`, `ent_coef`, `value_coef`, `epochs`, `tau`.
-- `TrainConfig`: Mutable dataclass with `__post_init__` for computed fields (`model_path`, `num_update`, `device`). Fields: `model_name`, `model_save_path`, `timestamp`, `rollout_steps`.
+- `TrainConfig`: Mutable dataclass with `__post_init__` for computed fields (`model_path`, `num_update`, `device`). Fields: `model_name`, `model_save_path`, `timestamp`, `rollout_steps`, `num_envs`. `num_update` is computed as `timestamp // (rollout_steps * num_envs)` — overriding `rollout_steps`/`timestamp`/`num_envs` after construction does NOT recompute `num_update`; set it manually if needed.
 
 No `PPOConfig` (replaced by `AlgoConfig`). No `WandbConfig`.
 
@@ -95,12 +104,14 @@ No `PPOConfig` (replaced by `AlgoConfig`). No `WandbConfig`.
 BaseTrain(agent, env, buffer, update_weights, train_config, algo_config=None, optimizer=None, require_buffer_size=10)
 ```
 
-`update_weights` is a `Callable[[BaseAgent, Buffer, Optimizer, dict[str,Tensor], AlgoConfig | None], dict[str, Tensor]]`. Methods: `rollout_phase(state)`, `_log_metrics(metrics, step, use_wandb, use_tb)`, `train(use_wandb, use_tb)`, `save_model()`.
+`update_weights` is a `Callable[[BaseAgent, Buffer, Optimizer, int, dict[str,Tensor], AlgoConfig | None], dict[str, Tensor]]`. Methods: `rollout_phase(state)`, `_log_metrics(metrics, step, use_wandb, use_tb)`, `train(use_wandb, use_tb)`, `save_model()`.
 
 ### Utility modules
 
 - `function.py`: `linear_schedule(step, num_update)`, `get_buffer_params_model(model) -> (params, buffers)`
 - `processing.py`: `NormMeanStd(shape, device, epsilon)`, `NormMinMax(low, high, device)` — both have `normalize(x)` and `NormMeanStd` has `update(x)`
+- `env.py`: `register_env(env_id)` decorator registers a class with Gymnasium
+- `vector_env.py`: `VectorEnv(env_spec, num_envs)` — wraps `env_spec` (string env_id or callable class) into a vectorized env
 
 ## Conventions
 
@@ -113,5 +124,8 @@ BaseTrain(agent, env, buffer, update_weights, train_config, algo_config=None, op
 ## Testing
 
 ```
-python -m pytest tests/ -v    # run all 143 tests
+CUDA_VISIBLE_DEVICES="" uv run python -m pytest tests/ -v    # run all 88 tests (CPU-only on this machine)
 ```
+
+- 87 pass, 1 xfailed (documents vectorized reset bug at `train.py:141-145`: all envs reset when any finishes)
+- `test_train.py::test_rollout_phase_partial_finish_preserves_survivors` is the xfail test
