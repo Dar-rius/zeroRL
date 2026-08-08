@@ -105,30 +105,19 @@ class TestPPOContinuousIntegration:
         cfg = AlgoConfig()
         scheduler = LambdaLR(optimizer, lr_lambda=lambda _: 1.0)
 
-        # 2. Setup Buffers
+        # 2. Setup Buffer
         n_steps = 128
         raw_buf = Buffer(
             step=n_steps,
             data={
-                "states": (obs_dim,),
-                "actions": (act_dim,),
-                "old_log_prob": (),
-                "rewards": (),
+                "state": (obs_dim,),
+                "action": (act_dim,),
+                "log_prob": (),
+                "reward": (),
                 "done": (),
-                "old_values": (),
-            },
-            device=device,
-        )
-        
-        ppo_buf = Buffer(
-            step=n_steps,
-            data={
-                "states": (obs_dim,),
-                "actions": (act_dim,),
-                "old_log_prob": (),
-                "advantages": (),
-                "returns": (),
-                "old_values": (),
+                "value": (),
+                "advantage": (),
+                "return": (),
             },
             device=device,
         )
@@ -150,45 +139,35 @@ class TestPPOContinuousIntegration:
                 log_prob = log_prob.sum()
 
             raw_buf.insert(
-                states=state_tensor,
-                actions=out["action"],
-                old_log_prob=log_prob,
-                rewards=torch.tensor(reward, dtype=torch.float32, device=device),
+                state=state_tensor,
+                action=out["action"],
+                log_prob=log_prob,
+                reward=torch.tensor(reward, dtype=torch.float32, device=device),
                 done=torch.tensor(1.0 if done else 0.0, device=device),
-                old_values=out["value"].squeeze(),
+                value=out["value"].squeeze(),
             )
 
             state = next_state if not done else env.reset()[0]
 
         env.close()
 
-        # 4. Compute GAE
+        # 4. Compute GAE (writes advantage/return in place into raw_buf)
         all_data = raw_buf.get_all()
         last_value = torch.zeros(1, device=device) # Assume 0 for simplicity at end of rollout
-        returns, advantages, _ = gae_compute(
-            all_data["rewards"],
-            all_data["old_values"],
+        gae_compute(
+            all_data["reward"],
+            all_data["value"],
             last_value,
             all_data["done"],
             cfg,
+            raw_buf,
         )
 
-        # 5. Fill PPO Buffer
-        for i in range(n_steps):
-            ppo_buf.insert(
-                states=all_data["states"][i],
-                actions=all_data["actions"][i],
-                old_log_prob=all_data["old_log_prob"][i],
-                advantages=advantages[i],
-                returns=returns[i],
-                old_values=all_data["old_values"][i],
-            )
-
-        # 6. Run PPO Update and verify weights change
+        # 5. Run PPO Update and verify weights change
         w_before = {k: v.clone() for k, v in agent.state_dict().items()}
         
         result = ppo(
-            agent, optimizer, ppo_buf, cfg, scheduler, 
+            agent, optimizer, raw_buf, cfg, scheduler, 
             batch_size=32, epochs=3, device=device
         )
         

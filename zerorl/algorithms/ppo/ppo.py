@@ -54,7 +54,7 @@ def gae_compute(rewards: Tensor,
     returns = advantages + values
     if buffer is not None:
         buffer.data["advantage"][:buffer.size] = advantages
-        buffer.data["return"][:buffer.size] = returns 
+        buffer.data["return"][:buffer.size] = returns
     return (returns, advantages, delta)
 
 

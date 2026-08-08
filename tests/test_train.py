@@ -84,7 +84,7 @@ class TestBaseTrainInit:
         agent = MockAgent(obs_dim, act_dim)
         # ON UTILISE LE VRAI ENV ICI
         env = CartPoleEnvWrapper()
-        buf = Buffer(step=10, data={"states": (obs_dim,)}, device=device)
+        buf = Buffer(step=10, data={"state": (obs_dim,)}, device=device)
         cfg = _make_train_config(tmp_path, device)
         algo_cfg = AlgoConfig()
 
