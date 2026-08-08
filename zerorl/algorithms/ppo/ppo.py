@@ -53,8 +53,8 @@ def gae_compute(rewards: Tensor,
         advantages[step] = gae
     returns = advantages + values
     if buffer is not None:
-        buffer.data["advantages"][:buffer.size] = advantages
-        buffer.data["returns"][:buffer.size] = advantages
+        buffer.data["advantage"][:buffer.size] = advantages
+        buffer.data["return"][:buffer.size] = returns 
     return (returns, advantages, delta)
 
 
@@ -133,8 +133,8 @@ def ppo(agent: BaseAgent,
     Args:
         agent: The policy network.
         optimizer: Optimizer for the agent parameters.
-        buffer: Buffer containing rollout data with keys "state", "actions",
-            "old_log_probs", "advantages", "returns".
+        buffer: Buffer containing rollout data with keys "state", "action",
+            "log_prob", "advantage", "return".
         hyper_params: Algorithm hyperparameters.
         scheduler: Learning rate scheduler (stepped once per call).
         batch_size: Minibatch size.
@@ -148,9 +148,9 @@ def ppo(agent: BaseAgent,
     all_data = buffer.get_all()
     flat_data = {key: tensor.reshape(-1, *tensor.shape[2:]) 
                 for key, tensor in all_data.items()}
-    adv_norm = (flat_data["advantages"] - flat_data["advantages"].mean()) / (flat_data["advantages"].std() + 1e-8)
-    returns = (flat_data["returns"] - flat_data["returns"].mean()) / (flat_data["returns"].std() + 1e-8)
-    dataset_size = flat_data["actions"].size(0)
+    adv_norm = (flat_data["advantage"] - flat_data["advantage"].mean()) / (flat_data["advantage"].std() + 1e-8)
+    returns = (flat_data["return"] - flat_data["return"].mean()) / (flat_data["return"].std() + 1e-8)
+    dataset_size = flat_data["action"].size(0)
     final_metrics: dict[str, Tensor] = {}
 
     @torch.compile(mode="reduce-overhead")
@@ -185,8 +185,8 @@ def ppo(agent: BaseAgent,
                 
                 torch.compiler.cudagraph_mark_step_begin()
                 optimizer.zero_grad(set_to_none=True)
-                global_losses = ppo_backward(agent, params, buffers, flat_data["states"][idx],
-                                flat_data["actions"][idx], flat_data["old_log_prob"][idx], adv_norm[idx],
+                global_losses = ppo_backward(agent, params, buffers, flat_data["state"][idx],
+                                flat_data["action"][idx], flat_data["log_prob"][idx], adv_norm[idx],
                                 returns[idx], hyper_params)
                 torch.nn.utils.clip_grad_norm_(agent.parameters(), 1.0)
                 optimizer.step()

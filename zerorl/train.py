@@ -75,7 +75,7 @@ class BaseTrain:
         self.normalizer = NormMeanStd(obs_shape, train_config.device)
         tb_log_dir = os.path.join(self.train_config.model_save_path, "tensorboard", self.train_config.model_name)
         self.tb_writer = SummaryWriter(tb_log_dir)
-        self.current_episode_reward: Tensor | None = None
+        self.current_episode_reward: Tensor | None = None 
         self.episode_rewards: list[float] = []
         self.require_buffer_size = require_buffer_size
 
