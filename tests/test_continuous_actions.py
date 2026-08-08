@@ -110,12 +110,12 @@ class TestPPOContinuousIntegration:
         raw_buf = Buffer(
             step=n_steps,
             data={
-                "state": (obs_dim,),
+                "states": (obs_dim,),
                 "actions": (act_dim,),
-                "old_log_probs": (),
-                "reward": (),
+                "old_log_prob": (),
+                "rewards": (),
                 "done": (),
-                "value": (),
+                "old_values": (),
             },
             device=device,
         )
@@ -123,12 +123,12 @@ class TestPPOContinuousIntegration:
         ppo_buf = Buffer(
             step=n_steps,
             data={
-                "state": (obs_dim,),
+                "states": (obs_dim,),
                 "actions": (act_dim,),
-                "old_log_probs": (),
-                "adv": (),
+                "old_log_prob": (),
+                "advantages": (),
                 "returns": (),
-                "value": (),
+                "old_values": (),
             },
             device=device,
         )
