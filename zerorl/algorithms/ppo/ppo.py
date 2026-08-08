@@ -17,10 +17,11 @@ from zerorl.function import get_buffer_params_model
 
 
 def gae_compute(rewards: Tensor,
-        values: Tensor,
-        last_value: Tensor,
-        dones: Tensor,
-        hyper_params: AlgoConfig) -> tuple[Tensor, Tensor, Tensor]:
+            values: Tensor,
+            last_value: Tensor,
+            dones: Tensor,
+            hyper_params: AlgoConfig,
+            buffer:Buffer | None = None) -> tuple[Tensor, Tensor, Tensor]:
     """Compute Generalized Advantage Estimation.
 
     Works backwards through the trajectory, accumulating TD errors
@@ -33,7 +34,7 @@ def gae_compute(rewards: Tensor,
         dones: Episode termination flags, shape (T,). 1.0 = done.
 
     Returns:
-        Tuple of (returns, advantages, deltas), each shape (T,).
+        Tuple of (return, advantage, delta), each shape (T,).
     """
     rewards = rewards.reshape(rewards.shape[0], -1)
     values = values.reshape(values.shape[0], -1)
@@ -45,25 +46,27 @@ def gae_compute(rewards: Tensor,
     mask = 1.0 - dones
     next_values = torch.cat((values[1:], last_value.unsqueeze(0)), 0)
     total_size = rewards.shape[0]
-    advantages = torch.zeros_like(rewards)
+    advantage = torch.zeros_like(rewards)
     delta = rewards + hyper_params.gamma * next_values * mask - values
     for step in reversed(range(total_size)):
         gae = delta[step] + hyper_params.gamma * hyper_params.gae_lambda * mask[step] * gae
-        advantages[step] = gae
-
-    returns = advantages + values
-    return (returns, advantages, delta)
+        advantage[step] = gae
+    returns = advantage + values
+    if buffer is not None:
+        buffer.data["adv"][:buffer.size] = advantage
+        buffer.data["return"][:buffer.size] = advantage
+    return (returns, advantage, delta)
 
 
 def ppo_loss(
         agent: BaseAgent,
         params: dict,
         buffers: dict,
-        states: Tensor,
-        actions: Tensor,
-        old_log_probs: Tensor,
-        advantages: Tensor,
-        returns: Tensor,
+        state: Tensor,
+        action: Tensor,
+        old_log_prob: Tensor,
+        advantage: Tensor,
+        return_: Tensor,
         hyper_params: AlgoConfig
         ) -> dict[str, Tensor]:
     """Compute PPO clipped surrogate loss, value loss, and entropy bonus.
@@ -82,18 +85,18 @@ def ppo_loss(
     Returns:
         Dict with keys "loss", "policy_loss", "value_loss", "entropy_loss".
     """
-    logits, new_values = torch.func.functional_call(agent, (params, buffers), (states,))
+    logits, new_values = torch.func.functional_call(agent, (params, buffers), (state,))
     dist = agent.build_distribution(logits)
     if dist is None:
         raise NotImplementedError(
                 "To use ppo_loss, the agent must override the static method `buid_distribtion`"
                 )
-    new_log_probs, dist_entropy = eval_action(dist, actions)
+    new_log_probs, dist_entropy = eval_action(dist, action)
 
-    idx_adv = advantages.view(-1)
-    idx_return = returns.view(-1)
+    idx_adv = advantage.view(-1)
+    idx_return = return_.view(-1)
 
-    logratio = new_log_probs - old_log_probs
+    logratio = new_log_probs - old_log_prob
     ratio = torch.exp(logratio)
 
     surr1 = ratio * idx_adv
@@ -146,22 +149,22 @@ def ppo(agent: BaseAgent,
     flat_data = {key: tensor.reshape(-1, *tensor.shape[2:]) 
                 for key, tensor in all_data.items()}
     adv_norm = (flat_data["adv"] - flat_data["adv"].mean()) / (flat_data["adv"].std() + 1e-8)
-    returns = (flat_data["returns"] - flat_data["returns"].mean()) / (flat_data["returns"].std() + 1e-8)
-    dataset_size = flat_data["actions"].size(0)
+    returns = (flat_data["return"] - flat_data["return"].mean()) / (flat_data["return"].std() + 1e-8)
+    dataset_size = flat_data["action"].size(0)
     final_metrics: dict[str, Tensor] = {}
 
     @torch.compile(mode="reduce-overhead")
     def ppo_backward(agent: BaseAgent,
-            params: dict,
-            buffers: dict,
-            states: Tensor,
-            actions: Tensor,
-            old_log_probs: Tensor,
-            advantages: Tensor,
-            returns: Tensor,
-            hyper_params: AlgoConfig) -> dict[str, Tensor]:
-        global_losses = ppo_loss(agent, params, buffers, states, actions,
-                            old_log_probs, advantages, returns, hyper_params)
+                    params: dict,
+                    buffers: dict,
+                    state: Tensor,
+                    action: Tensor,
+                    old_log_prob: Tensor,
+                    advantage: Tensor,
+                    return_: Tensor,
+                    hyper_params: AlgoConfig) -> dict[str, Tensor]:
+        global_losses = ppo_loss(agent, params, buffers, state, action,
+                            old_log_prob, advantage, return_, hyper_params)
         global_losses["loss"].backward()
         return global_losses
 
@@ -183,7 +186,7 @@ def ppo(agent: BaseAgent,
                 torch.compiler.cudagraph_mark_step_begin()
                 optimizer.zero_grad(set_to_none=True)
                 global_losses = ppo_backward(agent, params, buffers, flat_data["state"][idx],
-                                flat_data["actions"][idx], flat_data["old_log_probs"][idx], adv_norm[idx],
+                                flat_data["action"][idx], flat_data["old_log_prob"][idx], adv_norm[idx],
                                 returns[idx], hyper_params)
                 torch.nn.utils.clip_grad_norm_(agent.parameters(), 1.0)
                 optimizer.step()
