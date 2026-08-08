@@ -52,6 +52,9 @@ class CartPoleEnvWrapper(BaseEnv):
         return self._env.reset(seed=seed, options=options)
 
     def step(self, action):
+        # BaseTrain batches obs → action shape (1,); CartPole needs a scalar
+        if hasattr(action, "shape") and len(action.shape) > 0:
+            action = action.item()
         return self._env.step(action)
 
     def close(self):
@@ -91,4 +94,41 @@ class TestBaseTrainInit:
         assert trainer.buffer is buf
         assert trainer.train_config is cfg
         assert trainer.algo_config is algo_cfg
+        env.close()
+
+
+class TestBaseTrainRollout:
+    @pytest.mark.gpu
+    def test_rollout_phase_fills_buffer(self, tmp_path: Path, device: torch.device) -> None:
+        obs_dim, act_dim = 4, 2
+        rollout_steps = 8
+        agent = MockAgent(obs_dim, act_dim)
+        env = CartPoleEnvWrapper()
+        buf = Buffer(
+            step=rollout_steps,
+            data={
+                "state": (obs_dim,),
+                "reward": (),
+                "done": (),
+                "action": (),
+                "log_prob": (),
+                "entropy": (),
+                "value": (),
+            },
+            device=device,
+        )
+        cfg = _make_train_config(tmp_path, device)
+        cfg.rollout_steps = rollout_steps
+        algo_cfg = AlgoConfig()
+        trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, algo_cfg)
+
+        state, _ = env.reset(seed=42)
+        last_output = trainer.rollout_phase(state)
+
+        assert buf.size == rollout_steps
+        assert "action" in last_output
+        assert "log_prob" in last_output
+        assert "entropy" in last_output
+        assert "value" in last_output
+        assert last_output["value"].shape[0] == 1
         env.close()

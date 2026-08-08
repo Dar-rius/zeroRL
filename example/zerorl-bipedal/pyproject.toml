@@ -1,0 +1,14 @@
+[project]
+name = "zerorl-bipedal"
+version = "0.1.0"
+description = "Example training scripts using local zeroRL"
+requires-python = ">=3.11"
+dependencies = [
+    "zerorl",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+zerorl = { path = "../../", editable = true }
