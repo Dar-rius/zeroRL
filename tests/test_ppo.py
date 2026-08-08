@@ -47,7 +47,7 @@ class TestGaeCompute:
     @pytest.mark.gpu
     def test_buffer_inside_advantages_(self, device) -> None:
         cfg = AlgoConfig()
-        buf = Buffer(step=3, data = {"returns":(), "advantages": ()}, device=device)
+        buf = Buffer(step=0, data = {"returns":(), "advantages": ()}, device=device)
         rewards = torch.tensor([1.0, 2.0, 3.0], device=device).unsqueeze(-1)
         values = torch.tensor([0.5, 0.5, 0.5], device=device).unsqueeze(-1)
         dones = torch.tensor([0.0, 0.0, 0.0], device=device).unsqueeze(-1)
