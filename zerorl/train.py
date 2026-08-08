@@ -9,7 +9,7 @@ import os
 import numpy as np
 import torch
 import wandb
-import tqdm
+from tqdm import tqdm
 from typing import Callable
 from torch import Tensor
 from torch import optim
@@ -90,9 +90,9 @@ class BaseTrain:
             state: Initial observation to start the rollout from.
         """
         dev = self.train_config.device
-        t_args = (torch.float32, dev)
+        t_kwargs = {"dtype": torch.float32, "device": dev}
         env_device = getattr(self.env, "device", "cpu")
-        state_tensor = torch.as_tensor(state, *t_args)
+        state_tensor = torch.as_tensor(state, **t_kwargs)
         if state_tensor.dim() == 1: state_tensor = state_tensor.unsqueeze(0)
 
         num_envs = state_tensor.shape[0]
@@ -113,10 +113,10 @@ class BaseTrain:
             # Convention: truncate = terminated (episode naturally ended)
             #done = truncated (episode cut short by time limit)
             next_state, reward, done, truncate, _ = self.env.step(action_input)
-            done_tensor = torch.as_tensor(done, *t_args)
-            trunc_tensor = torch.as_tensor(truncate, *t_args)
-            reward_tensor = torch.as_tensor(reward, *t_args)
-            next_state = torch.as_tensor(next_state, *t_args)
+            done_tensor = torch.as_tensor(done, **t_kwargs)
+            trunc_tensor = torch.as_tensor(truncate, **t_kwargs)
+            reward_tensor = torch.as_tensor(reward, **t_kwargs)
+            next_state = torch.as_tensor(next_state, **t_kwargs)
 
             if reward_tensor.dim() == 0:
                 next_state = next_state.unsqueeze(0)
@@ -140,7 +140,7 @@ class BaseTrain:
 
             if finished.any() and not self.env.auto_reset:
                 state, _ = self.env.reset()
-                state_tensor = torch.as_tensor(state, *t_args)
+                state_tensor = torch.as_tensor(state, **t_kwargs)
             else:
                 state_tensor = next_state
 
