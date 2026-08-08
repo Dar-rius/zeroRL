@@ -46,27 +46,27 @@ def gae_compute(rewards: Tensor,
     mask = 1.0 - dones
     next_values = torch.cat((values[1:], last_value.unsqueeze(0)), 0)
     total_size = rewards.shape[0]
-    advantage = torch.zeros_like(rewards)
+    advantages = torch.zeros_like(rewards)
     delta = rewards + hyper_params.gamma * next_values * mask - values
     for step in reversed(range(total_size)):
         gae = delta[step] + hyper_params.gamma * hyper_params.gae_lambda * mask[step] * gae
-        advantage[step] = gae
-    returns = advantage + values
+        advantages[step] = gae
+    returns = advantages + values
     if buffer is not None:
-        buffer.data["adv"][:buffer.size] = advantage
-        buffer.data["return"][:buffer.size] = advantage
-    return (returns, advantage, delta)
+        buffer.data["advantages"][:buffer.size] = advantages
+        buffer.data["returns"][:buffer.size] = advantages
+    return (returns, advantages, delta)
 
 
 def ppo_loss(
         agent: BaseAgent,
         params: dict,
         buffers: dict,
-        state: Tensor,
-        action: Tensor,
+        states: Tensor,
+        actions: Tensor,
         old_log_prob: Tensor,
-        advantage: Tensor,
-        return_: Tensor,
+        advantages: Tensor,
+        returns: Tensor,
         hyper_params: AlgoConfig
         ) -> dict[str, Tensor]:
     """Compute PPO clipped surrogate loss, value loss, and entropy bonus.
@@ -77,7 +77,7 @@ def ppo_loss(
         buffers: Named buffers dict from get_buffer_params_model().
         states: Batch of observations.
         actions: Batch of actions taken.
-        old_log_probs: Log probabilities from the old policy.
+        old_log_prob: Log probabilities from the old policy.
         advantages: GAE advantage estimates.
         returns: GAE return estimates.
         hyper_params: Algorithm hyperparameters.
@@ -85,16 +85,16 @@ def ppo_loss(
     Returns:
         Dict with keys "loss", "policy_loss", "value_loss", "entropy_loss".
     """
-    logits, new_values = torch.func.functional_call(agent, (params, buffers), (state,))
+    logits, new_values = torch.func.functional_call(agent, (params, buffers), (states,))
     dist = agent.build_distribution(logits)
     if dist is None:
         raise NotImplementedError(
                 "To use ppo_loss, the agent must override the static method `buid_distribtion`"
                 )
-    new_log_probs, dist_entropy = eval_action(dist, action)
+    new_log_probs, dist_entropy = eval_action(dist, actions)
 
-    idx_adv = advantage.view(-1)
-    idx_return = return_.view(-1)
+    idx_adv = advantages.view(-1)
+    idx_return = returns.view(-1)
 
     logratio = new_log_probs - old_log_prob
     ratio = torch.exp(logratio)
@@ -185,8 +185,8 @@ def ppo(agent: BaseAgent,
                 
                 torch.compiler.cudagraph_mark_step_begin()
                 optimizer.zero_grad(set_to_none=True)
-                global_losses = ppo_backward(agent, params, buffers, flat_data["state"][idx],
-                                flat_data["action"][idx], flat_data["old_log_prob"][idx], adv_norm[idx],
+                global_losses = ppo_backward(agent, params, buffers, flat_data["states"][idx],
+                                flat_data["actions"][idx], flat_data["old_log_prob"][idx], adv_norm[idx],
                                 returns[idx], hyper_params)
                 torch.nn.utils.clip_grad_norm_(agent.parameters(), 1.0)
                 optimizer.step()
