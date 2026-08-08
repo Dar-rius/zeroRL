@@ -88,12 +88,12 @@ class TestPPOVectorizedIntegration:
             
             # Insert batched data into buffer
             buf.insert(
-                state=state_tensor,
+                states=state_tensor,
                 actions=out["action"],
-                old_log_probs=out["log_prob"],
-                reward=reward_tensor,
+                old_log_prob=out["log_prob"],
+                rewards=reward_tensor,
                 done=done_tensor,
-                value=out["value"].squeeze(-1),
+                old_values=out["value"].squeeze(-1),
             )
             state = next_state
 
@@ -104,15 +104,15 @@ class TestPPOVectorizedIntegration:
         last_value = torch.zeros(num_envs, 1, device=device)  # Mock last value (N, 1)
         
         returns, advantages, _ = gae_compute(
-            all_data["reward"],      # (T, N)
-            all_data["value"],       # (T, N, 1)
+            all_data["rewards"],      # (T, N)
+            all_data["old_values"],       # (T, N, 1)
             last_value,              # (N, 1)
             all_data["done"],        # (T, N)
             cfg,
         )
         
         buf.data["returns"][:buf.size] = returns
-        buf.data["adv"][:buf.size] = advantages
+        buf.data["advantages"][:buf.size] = advantages
 
         # 5. Run PPO Update (which will flatten (T, N) -> (T*N) internally)
         w_before = {k: v.clone() for k, v in agent.state_dict().items()}

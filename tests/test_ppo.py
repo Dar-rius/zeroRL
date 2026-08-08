@@ -63,7 +63,7 @@ class TestPpoFunction:
     def _make_buffer(self, n, obs_dim, device):
         buf = Buffer(step=n, data={"states": (obs_dim,), "actions": (), "old_log_prob": (), "advantages": (), "returns": (), "old_values": ()}, device=device)
         for _ in range(n):
-            buf.insert(state=torch.randn(obs_dim, device=device), actions=torch.tensor(0, device=device), old_log_probs=torch.tensor(-0.5, device=device), adv=torch.tensor(1.0, device=device), returns=torch.tensor(2.0, device=device), value=torch.tensor(0.5, device=device))
+            buf.insert(states=torch.randn(obs_dim, device=device), actions=torch.tensor(0, device=device), old_log_prob=torch.tensor(-0.5, device=device), advantages=torch.tensor(1.0, device=device), returns=torch.tensor(2.0, device=device), old_values=torch.tensor(0.5, device=device))
         return buf
 
     @pytest.mark.gpu

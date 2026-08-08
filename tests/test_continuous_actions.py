@@ -141,7 +141,7 @@ class TestPPOContinuousIntegration:
                 out = agent.get_action(state_tensor)
             
             # Step the real environment
-            next_state, reward, terminated, truncated, _ = env.step(out["action"])
+            next_state, reward, terminated, truncated, _ = env.step(out["actions"])
             done = terminated or truncated
 
             # Sum multi-dim log_prob to scalar for buffer storage
@@ -166,8 +166,8 @@ class TestPPOContinuousIntegration:
         all_data = raw_buf.get_all()
         last_value = torch.zeros(1, device=device) # Assume 0 for simplicity at end of rollout
         returns, advantages, _ = gae_compute(
-            all_data["reward"],
-            all_data["value"],
+            all_data["rewards"],
+            all_data["old_values"],
             last_value,
             all_data["done"],
             cfg,
@@ -176,12 +176,12 @@ class TestPPOContinuousIntegration:
         # 5. Fill PPO Buffer
         for i in range(n_steps):
             ppo_buf.insert(
-                state=all_data["state"][i],
+                state=all_data["states"][i],
                 actions=all_data["actions"][i],
-                old_log_probs=all_data["old_log_probs"][i],
+                old_log_probs=all_data["old_log_prob"][i],
                 adv=advantages[i],
                 returns=returns[i],
-                value=all_data["value"][i],
+                value=all_data["old_values"][i],
             )
 
         # 6. Run PPO Update and verify weights change
