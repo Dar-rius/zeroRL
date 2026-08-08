@@ -59,14 +59,14 @@ class TestPPOVectorizedIntegration:
             step=T,
             num_envs=num_envs, 
             data={
-                "states": (obs_dim, ),
-                "actions": (),
-                "old_log_prob": (),
-                "rewards": (),
+                "state": (obs_dim, ),
+                "action": (),
+                "log_prob": (),
+                "reward": (),
                 "done": (),
-                "old_values": (),
-                "advantages": (),
-                "returns": (),
+                "value": (),
+                "advantage": (),
+                "return": (),
             },
             device=device,
         )
@@ -88,12 +88,12 @@ class TestPPOVectorizedIntegration:
             
             # Insert batched data into buffer
             buf.insert(
-                states=state_tensor,
-                actions=out["action"],
-                old_log_prob=out["log_prob"],
-                rewards=reward_tensor,
+                state=state_tensor,
+                action=out["action"],
+                log_prob=out["log_prob"],
+                reward=reward_tensor,
                 done=done_tensor,
-                old_values=out["value"].squeeze(-1),
+                value=out["value"].squeeze(-1),
             )
             state = next_state
 
@@ -104,15 +104,15 @@ class TestPPOVectorizedIntegration:
         last_value = torch.zeros(num_envs, 1, device=device)  # Mock last value (N, 1)
         
         returns, advantages, _ = gae_compute(
-            all_data["rewards"],      # (T, N)
-            all_data["old_values"],       # (T, N, 1)
+            all_data["reward"],      # (T, N)
+            all_data["value"],       # (T, N, 1)
             last_value,              # (N, 1)
             all_data["done"],        # (T, N)
             cfg,
         )
         
-        buf.data["returns"][:buf.size] = returns
-        buf.data["advantages"][:buf.size] = advantages
+        buf.data["return"][:buf.size] = returns
+        buf.data["advantage"][:buf.size] = advantages
 
         # 5. Run PPO Update (which will flatten (T, N) -> (T*N) internally)
         w_before = {k: v.clone() for k, v in agent.state_dict().items()}

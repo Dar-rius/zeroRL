@@ -75,7 +75,7 @@ class BaseTrain:
         self.normalizer = NormMeanStd(obs_shape, train_config.device)
         tb_log_dir = os.path.join(self.train_config.model_save_path, "tensorboard", self.train_config.model_name)
         self.tb_writer = SummaryWriter(tb_log_dir)
-        self.current_episode_reward: Tensor | None = None
+        self.current_episode_reward: Tensor | None = None 
         self.episode_rewards: list[float] = []
         self.require_buffer_size = require_buffer_size
 
@@ -90,9 +90,8 @@ class BaseTrain:
             state: Initial observation to start the rollout from.
         """
         dev = self.train_config.device
-        t_kwargs = {"dtype": torch.float32, "device": dev}
         env_device = getattr(self.env, "device", "cpu")
-        state_tensor = torch.as_tensor(state, **t_kwargs)
+        state_tensor = torch.as_tensor(state, dtype=torch.float32, device=dev)
         if state_tensor.dim() == 1: state_tensor = state_tensor.unsqueeze(0)
 
         num_envs = state_tensor.shape[0]
@@ -113,10 +112,10 @@ class BaseTrain:
             # Convention: truncate = terminated (episode naturally ended)
             #done = truncated (episode cut short by time limit)
             next_state, reward, done, truncate, _ = self.env.step(action_input)
-            done_tensor = torch.as_tensor(done, **t_kwargs)
-            trunc_tensor = torch.as_tensor(truncate, **t_kwargs)
-            reward_tensor = torch.as_tensor(reward, **t_kwargs)
-            next_state = torch.as_tensor(next_state, **t_kwargs)
+            done_tensor = torch.as_tensor(done, dtype=torch.float32, device=dev)
+            trunc_tensor = torch.as_tensor(truncate, dtype=torch.float32, device=dev)
+            reward_tensor = torch.as_tensor(reward, dtype=torch.float32, device=dev)
+            next_state = torch.as_tensor(next_state, dtype=torch.float32, device=dev)
 
             if reward_tensor.dim() == 0:
                 next_state = next_state.unsqueeze(0)
@@ -140,7 +139,7 @@ class BaseTrain:
 
             if finished.any() and not self.env.auto_reset:
                 state, _ = self.env.reset()
-                state_tensor = torch.as_tensor(state, **t_kwargs)
+                state_tensor = torch.as_tensor(state, dtype=torch.float32, device=dev)
             else:
                 state_tensor = next_state
 

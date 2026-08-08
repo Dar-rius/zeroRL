@@ -37,24 +37,26 @@ class TestGaeCompute:
     @pytest.mark.gpu
     def test_returns_equals_advantages_plus_values(self, device) -> None:
         cfg = AlgoConfig()
-        rewards = torch.tensor([1.0, 2.0, 3.0], device=device).unsqueeze(-1)
+        reward = torch.tensor([1.0, 2.0, 3.0], device=device).unsqueeze(-1)
         values = torch.tensor([0.5, 0.5, 0.5], device=device).unsqueeze(-1)
         dones = torch.tensor([0.0, 0.0, 0.0], device=device).unsqueeze(-1)
         last_value = torch.tensor([1.0], device=device)
-        returns, advantages, _ = gae_compute(rewards, values, last_value, dones, cfg)
+        returns, advantages, _ = gae_compute(reward, values, last_value, dones, cfg)
         torch.testing.assert_close(returns, advantages + values)
 
     @pytest.mark.gpu
     def test_buffer_inside_advantages_(self, device) -> None:
         cfg = AlgoConfig()
-        buf = Buffer(step=0, data = {"returns":(), "advantages": ()}, device=device)
-        rewards = torch.tensor([1.0, 2.0, 3.0], device=device).unsqueeze(-1)
+        buf = Buffer(step=3, data = {"return":(), "advantage": ()}, device=device)
+        buf.slice = 3
+        reward = torch.tensor([1.0, 2.0, 3.0], device=device).unsqueeze(-1)
         values = torch.tensor([0.5, 0.5, 0.5], device=device).unsqueeze(-1)
         dones = torch.tensor([0.0, 0.0, 0.0], device=device).unsqueeze(-1)
         last_value = torch.tensor([1.0], device=device)
-        returns, _, _ = gae_compute(rewards, values, last_value, dones, cfg)
-        gae_compute(rewards, values, last_value, dones, cfg, buf)
-        torch.testing.assert_close(returns, buf.data["returns"])
+        returns, advantages, _ = gae_compute(reward, values, last_value, dones, cfg)
+        gae_compute(reward, values, last_value, dones, cfg, buf)
+        torch.testing.assert_close(returns, buf.data["return"])
+        torch.testing.assert_close(advantages, buf.data["advantage"])
 
 
 
@@ -65,19 +67,19 @@ class TestPpoLoss:
         params = dict(agent.named_parameters())
         buffers = dict(agent.named_buffers())
         cfg = AlgoConfig()
-        states = torch.randn(16, 4, device=device)
-        actions = torch.randint(0, 2, (16,), device=device)
-        old_log_probs = torch.randn(16, device=device)
-        advantages = torch.randn(16, device=device)
-        returns = torch.randn(16, device=device)
-        result = ppo_loss(agent, params, buffers, states, actions, old_log_probs, advantages, returns, cfg)
+        state = torch.randn(16, 4, device=device)
+        action = torch.randint(0, 2, (16,), device=device)
+        log_prob = torch.randn(16, device=device)
+        advantage = torch.randn(16, device=device)
+        return_ = torch.randn(16, device=device)
+        result = ppo_loss(agent, params, buffers, state, action, log_prob, advantage, return_, cfg)
         assert "loss" in result
 
 class TestPpoFunction:
     def _make_buffer(self, n, obs_dim, device):
-        buf = Buffer(step=n, data={"states": (obs_dim,), "actions": (), "old_log_prob": (), "advantages": (), "returns": (), "old_values": ()}, device=device)
+        buf = Buffer(step=n, data={"state": (obs_dim,), "action": (), "log_prob": (), "advantage": (), "return": (), "value": ()}, device=device)
         for _ in range(n):
-            buf.insert(states=torch.randn(obs_dim, device=device), actions=torch.tensor(0, device=device), old_log_prob=torch.tensor(-0.5, device=device), advantages=torch.tensor(1.0, device=device), returns=torch.tensor(2.0, device=device), old_values=torch.tensor(0.5, device=device))
+            buf.insert(state=torch.randn(obs_dim, device=device), action=torch.tensor(0, device=device), log_prob=torch.tensor(-0.5, device=device), advantage=torch.tensor(1.0, device=device), **{"return": torch.tensor(2.0, device=device)}, value=torch.tensor(0.5, device=device))
         return buf
 
     @pytest.mark.gpu
