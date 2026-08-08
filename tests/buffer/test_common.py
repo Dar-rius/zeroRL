@@ -3,6 +3,7 @@
 import pytest
 import torch
 from zerorl.common import Buffer
+from zerorl.errors import KeyBufferError
 
 @pytest.fixture
 def device() -> torch.device:
@@ -52,3 +53,33 @@ class TestBufferInsertEdgeCases:
         assert buf.size == 1
         torch.testing.assert_close(buf.data["a"][0], torch.tensor([1.0], device=device))
         torch.testing.assert_close(buf.data["b"][0], torch.tensor([0.0], device=device))
+
+
+class TestBufferKeyError:
+    @pytest.mark.gpu
+    def test_insert_unknown_key_raises_key_buffer_error(self, device) -> None:
+        buf = Buffer(step=3, data={"state": (4,)}, device=device)
+        with pytest.raises(KeyBufferError):
+            buf.insert(foo=torch.zeros(4, device=device))
+
+    @pytest.mark.gpu
+    def test_key_buffer_error_has_correct_arg_name(self, device) -> None:
+        buf = Buffer(step=3, data={"state": (4,)}, device=device)
+        with pytest.raises(KeyBufferError) as exc_info:
+            buf.insert(missing=torch.zeros(4, device=device))
+        assert exc_info.value.arg_name == "missing"
+
+    @pytest.mark.gpu
+    def test_slice_not_incremented_on_error(self, device) -> None:
+        buf = Buffer(step=3, data={"state": (4,)}, device=device)
+        with pytest.raises(KeyBufferError):
+            buf.insert(foo=torch.zeros(4, device=device))
+        assert buf.size == 0
+
+    @pytest.mark.gpu
+    def test_mix_known_unknown_key_raises(self, device) -> None:
+        buf = Buffer(step=3, data={"state": (4,), "action": ()}, device=device)
+        with pytest.raises(KeyBufferError):
+            buf.insert(state=torch.zeros(4, device=device),
+                       bogus=torch.zeros(4, device=device))
+        assert buf.size == 0

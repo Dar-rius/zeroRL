@@ -1,11 +1,11 @@
-"""Unit tests for EmptyBufferError (zerorl.errors).
+"""Unit tests for custom exceptions (zerorl.errors).
 
-Verifies the custom exception raised when update is attempted on an
-insufficiently filled buffer.
+Verifies EmptyBufferError (raised on update with insufficient buffer)
+and KeyBufferError (raised by Buffer.insert() on unknown keys).
 """
 
 import pytest
-from zerorl.errors import EmptyBufferError
+from zerorl.errors import EmptyBufferError, KeyBufferError
 
 
 class TestEmptyBufferError:
@@ -45,3 +45,36 @@ class TestEmptyBufferError:
         err = EmptyBufferError(current_size=99, require_buffer_size=100)
         assert err.current_size == 99
         assert err.require_buffer_size == 100
+
+
+class TestKeyBufferError:
+    """Tests for the KeyBufferError custom exception."""
+
+    def test_is_exception_subclass(self) -> None:
+        assert issubclass(KeyBufferError, Exception) 
+
+    def test_stores_attributes(self) -> None:
+        data = {"state": object(), "action": object()}
+        err = KeyBufferError("missing", data)
+        assert err.arg_name == "missing"
+        assert err.data_buffer is data
+
+    def test_str_contains_arg_name(self) -> None:
+        err = KeyBufferError("entropy", {"state": object()})
+        s = str(err)
+        assert "entropy" in s
+
+    def test_str_lists_valid_keys(self) -> None:
+        data = {"state": object(), "action": object(), "value": object()}
+        err = KeyBufferError("foo", data)
+        s = str(err)
+        assert "state" in s
+        assert "action" in s
+        assert "value" in s
+
+    def test_can_be_raised_and_caught(self) -> None:
+        data = {"state": object()}
+        with pytest.raises(KeyBufferError) as exc_info:
+            raise KeyBufferError("bar", data)
+        assert exc_info.value.arg_name == "bar"
+        assert exc_info.value.data_buffer is data
