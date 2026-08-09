@@ -8,7 +8,7 @@ and repeat.
 import os
 import sys
 import time
-import ressource
+import resource
 import numpy as np
 import torch
 from dataclasses import dataclass, asdict
@@ -224,7 +224,7 @@ class BaseTrain:
         is_profile = self.train_config.profile
         is_cuda = self.train_config.device == "cuda" and torch.cuda.is_available()
         sync = torch.cuda.synchronize 
-        if is_profile: sys.stderr.write("\03396mZeroRL Profiler Enabled (TIME & VRAM).\033[0m\n")
+        if is_profile: sys.stderr.write("\033[96mZeroRL Profiler Enabled (TIME & VRAM).\033[0m\n")
         state, _ = self.env.reset()
         for step in tqdm(range(self.train_config.num_update)):
             if is_profile:
@@ -255,7 +255,7 @@ class BaseTrain:
             if is_profile:
                 if is_cuda: sync()
                 t_end = time.perf_counter()
-                ram_kb = ressource.getrusage(ressource.RUSAGE_SELF).ru_maxrss
+                ram_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
                 ram_mb = ram_kb /1024 if ram_kb > 0 else 0.0
                 profile_data = ProfileMetrics(
                     step = step,
@@ -278,6 +278,8 @@ class BaseTrain:
                 "mean_episode_reward": mean_reward,
                 "learning_rate": self.optimizer.param_groups[0]['lr']
             }
+            if use_wandb  and is_profile:
+                wandb.log({f"profile/{k}": v for k, v in asdict(profile_data).items()})
             for k, v in losses.items(): metrics[k] = v
             self._log_metrics(metrics, step, use_wandb, use_tb)
             self.buffer.clear()
