@@ -25,7 +25,6 @@ from zerorl.config import TrainConfig, AlgoConfig
 from zerorl.env import BaseEnv
 from zerorl.processing import NormMeanStd
 from zerorl.errors import EmptyBufferError
-from zerorl.function import linear_schedule
 
 
 #Profiler Metric
@@ -58,7 +57,7 @@ class BaseTrain:
                  train_config: TrainConfig,
                  algo_config: AlgoConfig | None = None,
                  optimizer: optim.Optimizer | None = None,
-                 schedule_func: Callable | None = None,
+                 schedule_func: Callable[[int], float] | None = None,
                  require_buffer_size: int = 10):
         """Initialize the training loop.
 
@@ -82,21 +81,26 @@ class BaseTrain:
         self.update_weights = update_weights
         self.algo_config = algo_config
         self.optimizer: optim.Optimizer
+
         if optimizer is None:
             lr = getattr(self.algo_config, 'lr', 3e-4)
             self.optimizer = optim.Adam(self.agent.parameters(), lr=lr)
         else:
             self.optimizer = optimizer
+
         obs_shape = env.observation_space.shape
         if obs_shape is None:
             raise ValueError("NormMeanStd requires environment with a defined observation shape")
-        self.schedule_func = schedule_func
-        if self.schedule_func is None: self.schedule_func = linear_schedule
+
+        if schedule_func is None:
+            schedule_func = lambda current_step: 1.0 - (current_step / self.train_config.num_update)
+        self.scheduler = LambdaLR(self.optimizer, schedule_func)
+
         self.require_buffer_size = require_buffer_size
         self.normalizer = NormMeanStd(obs_shape, train_config.device)
         tb_log_dir = os.path.join(self.train_config.model_save_path, "tensorboard", self.train_config.model_name)
         self.tb_writer = SummaryWriter(tb_log_dir)
-        self.current_episode_reward: Tensor | None = None 
+        self.current_episode_reward: Tensor | None = None
         self.episode_rewards: list[float] = []
 
 
@@ -227,7 +231,7 @@ class BaseTrain:
         """
         is_profile = self.train_config.profile
         is_cuda = self.train_config.device ==  torch.device("cuda") and torch.cuda.is_available()
-        sync = torch.cuda.synchronize 
+        sync = torch.cuda.synchronize
         if is_profile: sys.stderr.write("\033[96mZeroRL Profiler Enabled (TIME & VRAM).\033[0m\n")
         state, _ = self.env.reset()
         for step in tqdm(range(self.train_config.num_update)):
@@ -246,12 +250,10 @@ class BaseTrain:
             if self.buffer.size < self.require_buffer_size:
                 raise EmptyBufferError(self.buffer.size, self.require_buffer_size)
             
-            scheduler = LambdaLR(self.optimizer,
-                                 lr_lambda=self.schedule_func)
             losses = self.update_weights(
                     self.agent,
                     self.buffer,
-                    scheduler,
+                    self.scheduler,
                     self.optimizer,
                     step,
                     last_output,

@@ -4,21 +4,11 @@ import pytest
 import torch
 import torch.nn as nn
 from zerorl.agent import BaseAgent, eval_action
-from zerorl.function import get_buffer_params_model, linear_schedule
+from zerorl.function import get_buffer_params_model
 
 @pytest.fixture
 def device() -> torch.device:
     return torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-class TestLinearSchedule:
-    def test_step_zero_returns_one(self) -> None:
-        assert linear_schedule(0, 1000) == pytest.approx(1.0)
-
-    def test_linear_schedule_midpoint(self) -> None:
-        assert linear_schedule(500, 1000) == pytest.approx(0.5)
-
-    def test_linear_schedule_endpoint(self) -> None:
-        assert linear_schedule(1000, 1000) == pytest.approx(0.0)
 
 class TestGetBufferParamsModel:
     @pytest.mark.gpu

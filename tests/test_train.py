@@ -18,6 +18,7 @@ from zerorl.config import AlgoConfig, TrainConfig
 from zerorl.errors import EmptyBufferError
 from zerorl.env import BaseEnv
 from zerorl.train import BaseTrain, ProfileMetrics
+from torch.optim.lr_scheduler import LambdaLR
 
 
 @pytest.fixture
@@ -71,6 +72,7 @@ class CartPoleEnvWrapper(BaseEnv):
 def _mock_update_weights(
     agent: BaseAgent,
     buffer: Buffer,
+    scheduler: LambdaLR,
     optimizer: torch.optim.Optimizer,
     step: int,
     last_output: dict[str, torch.Tensor],
@@ -195,7 +197,7 @@ class FakeVecEnv(BaseEnv):
 
 
 def _make_counting_update_weights(counter: list[int]):
-    def _update(agent, buffer, optimizer, step, last_output, algo_config):
+    def _update(agent, buffer, scheduler, optimizer, step, last_output, algo_config):
         counter.append(step)
         return {"loss": torch.tensor(0.0, device=next(agent.parameters()).device)}
     return _update

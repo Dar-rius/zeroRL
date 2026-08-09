@@ -43,7 +43,7 @@ zerorl/
   common.py                # Buffer — dict-based pre-allocated torch buffer
   config.py                # TrainConfig (computed fields), AlgoConfig (mutable dataclass)
   errors.py                # EmptyBufferError
-  function.py              # linear_schedule(), get_buffer_params_model()
+  function.py              # get_buffer_params_model()
   processing.py            # NormMeanStd, NormMinMax
   algorithms/
     __init__.py            # empty
@@ -108,7 +108,7 @@ BaseTrain(agent, env, buffer, update_weights, train_config, algo_config=None, op
 
 ### Utility modules
 
-- `function.py`: `linear_schedule(step, num_update)`, `get_buffer_params_model(model) -> (params, buffers)`
+- `function.py`: `get_buffer_params_model(model) -> (params, buffers)`
 - `processing.py`: `NormMeanStd(shape, device, epsilon)`, `NormMinMax(low, high, device)` — both have `normalize(x)` and `NormMeanStd` has `update(x)`
 - `env.py`: `register_env(env_id)` decorator registers a class with Gymnasium
 - `vector_env.py`: `VectorEnv(env_spec, num_envs)` — wraps `env_spec` (string env_id or callable class) into a vectorized env
