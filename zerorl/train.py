@@ -1,25 +1,41 @@
 """Training loop for RL agents.
 
 Provides BaseTrain, which orchestrates the rollout-update cycle:
-collect experience, compute GAE, run the update_weights callable,
+collect experience, copute GAE, run the update_weights callable,
 and repeat.
 """
 
 import os
+import sys
+import time
+import resource
 import numpy as np
 import torch
+from dataclasses import dataclass, asdict
 import wandb
 from tqdm import tqdm
 from typing import Callable
 from torch import Tensor
 from torch import optim
+from torch.optim.lr_scheduler import LambdaLR
+from torch.utils.tensorboard import SummaryWriter
 from zerorl.agent import BaseAgent
 from zerorl.common import Buffer
 from zerorl.config import TrainConfig, AlgoConfig
 from zerorl.env import BaseEnv
 from zerorl.processing import NormMeanStd
 from zerorl.errors import EmptyBufferError
-from torch.utils.tensorboard import SummaryWriter
+
+
+#Profiler Metric
+@dataclass
+class ProfileMetrics:
+    fps: float
+    rollout_ms: float
+    update_ms: float
+    vram_allocated_gb: float
+    vram_peak_gb: float
+    ram_mb: float
 
 
 class BaseTrain:
@@ -35,12 +51,13 @@ class BaseTrain:
                  agent: BaseAgent,
                  env: BaseEnv,
                  buffer: Buffer,
-                 update_weights: Callable[[BaseAgent, Buffer,
+                 update_weights: Callable[[BaseAgent, Buffer, LambdaLR,
                                            optim.Optimizer, int, dict[str,Tensor],
                                            AlgoConfig | None], dict[str, Tensor]],
                  train_config: TrainConfig,
                  algo_config: AlgoConfig | None = None,
                  optimizer: optim.Optimizer | None = None,
+                 schedule_func: Callable[[int], float] | None = None,
                  require_buffer_size: int = 10):
         """Initialize the training loop.
 
@@ -64,20 +81,27 @@ class BaseTrain:
         self.update_weights = update_weights
         self.algo_config = algo_config
         self.optimizer: optim.Optimizer
+
         if optimizer is None:
             lr = getattr(self.algo_config, 'lr', 3e-4)
             self.optimizer = optim.Adam(self.agent.parameters(), lr=lr)
         else:
             self.optimizer = optimizer
+
         obs_shape = env.observation_space.shape
         if obs_shape is None:
             raise ValueError("NormMeanStd requires environment with a defined observation shape")
+
+        if schedule_func is None:
+            schedule_func = lambda current_step: 1.0 - (current_step / self.train_config.num_update)
+        self.scheduler = LambdaLR(self.optimizer, schedule_func)
+
+        self.require_buffer_size = require_buffer_size
         self.normalizer = NormMeanStd(obs_shape, train_config.device)
         tb_log_dir = os.path.join(self.train_config.model_save_path, "tensorboard", self.train_config.model_name)
         self.tb_writer = SummaryWriter(tb_log_dir)
-        self.current_episode_reward: Tensor | None = None 
+        self.current_episode_reward: Tensor | None = None
         self.episode_rewards: list[float] = []
-        self.require_buffer_size = require_buffer_size
 
 
     def rollout_phase(self, state: np.ndarray):
@@ -152,6 +176,16 @@ class BaseTrain:
             next_output = self.agent.get_action(state_normalized)
         return next_output
 
+    
+    #Profiler display
+    def _log_profile_metrics(self, step: int, metrics: ProfileMetrics):
+        sys.stderr.write(
+                f"\033[94m[Profile] Step {step} | FPS: {metrics.fps:.0f} | "
+                f"Rollout: {metrics.rollout_ms:.1f}ms | Update: {metrics.update_ms:1f}ms |"
+                f"VRAM: {metrics.vram_allocated_gb:.2f}GB (Peak: {metrics.vram_peak_gb:.2f}GB) | "
+                f"RAM: {metrics.ram_mb:.0f}MB\033[0m\n"
+                )
+
 
     def _log_metrics(self, metrics: dict, step: int, use_wandb: bool, use_tb: bool):
         """Log training metrics to wandb and/or TensorBoard.
@@ -195,21 +229,51 @@ class BaseTrain:
             use_wandb: Whether to log to Weights & Biases.
             use_tb: Whether to log to TensorBoard.
         """
+        is_profile = self.train_config.profile
+        is_cuda = self.train_config.device ==  torch.device("cuda") and torch.cuda.is_available()
+        sync = torch.cuda.synchronize
+        if is_profile: sys.stderr.write("\033[96mZeroRL Profiler Enabled (TIME & VRAM).\033[0m\n")
         state, _ = self.env.reset()
         for step in tqdm(range(self.train_config.num_update)):
+            if is_profile:
+                if is_cuda :
+                    sync()
+                    torch.cuda.reset_peak_memory_stats()
+                t_start = time.perf_counter()
+
             last_output = self.rollout_phase(state)
+
+            if is_profile:
+                if is_cuda: sync()
+                t_rollout = time.perf_counter()
 
             if self.buffer.size < self.require_buffer_size:
                 raise EmptyBufferError(self.buffer.size, self.require_buffer_size)
-
+            
             losses = self.update_weights(
                     self.agent,
                     self.buffer,
+                    self.scheduler,
                     self.optimizer,
                     step,
                     last_output,
                     self.algo_config
                     )
+               
+            if is_profile:
+                if is_cuda: sync()
+                t_end = time.perf_counter()
+                ram_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+                ram_mb = ram_kb /1024 if ram_kb > 0 else 0.0
+                profile_data = ProfileMetrics(
+                    fps= (self.train_config.rollout_steps * self.train_config.num_envs) / (t_end - t_start),
+                    rollout_ms = (t_rollout - t_start) * 1000,
+                    update_ms = (t_end - t_rollout) * 1000,
+                    vram_allocated_gb = torch.cuda.memory_allocated() / (1024 ** 3) if is_cuda else 0.0,
+                    vram_peak_gb = torch.cuda.max_memory_allocated() / (1024 ** 3) if is_cuda else 0.0,
+                    ram_mb = ram_mb
+                    )
+                self._log_profile_metrics(step, profile_data)
 
             if len(self.episode_rewards) > 0:
                 recent = self.episode_rewards[-10:]
@@ -221,6 +285,8 @@ class BaseTrain:
                 "mean_episode_reward": mean_reward,
                 "learning_rate": self.optimizer.param_groups[0]['lr']
             }
+            if use_wandb and is_profile:
+                wandb.log({f"profile/{k}": v for k, v in asdict(profile_data).items()})
             for k, v in losses.items(): metrics[k] = v
             self._log_metrics(metrics, step, use_wandb, use_tb)
             self.buffer.clear()

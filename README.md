@@ -39,7 +39,6 @@ from zerorl.train import BaseTrain
 from zerorl.common import Buffer
 from zerorl.config import TrainConfig, AlgoConfig
 from zerorl.algorithms.ppo import gae_compute, ppo
-from zerorl.function import linear_schedule
 
 # 1. Define your agent
 class CartPoleAgent(BaseAgent):
@@ -97,7 +96,7 @@ buffer = Buffer(
     device=config.device,
 )
 
-def update_weights(agent, buffer, optimizer, step, last_output, algo_config):
+def update_weights(agent, buffer, scheduler, optimizer, step, last_output, algo_config):
     """Compute GAE advantages then run PPO update."""
     all_data = buffer.get_all()
     # Compute GAE from rollout data
@@ -109,7 +108,6 @@ def update_weights(agent, buffer, optimizer, step, last_output, algo_config):
         algo_config,
     )
     buffer.insert(returns=returns, adv=advantages)
-    scheduler = LambdaLR(optimizer, lr_lambda=linear_schedule(step=step, num_update=config.num_update))
     return ppo(
         agent, optimizer, buffer, algo_config, scheduler,
         batch_size=algo_config.batch_size,
@@ -133,7 +131,6 @@ trainer.train(use_wandb=False, use_tb=False)
 | `TrainConfig` | Training settings with auto-computed `model_path`, `num_update`, and `device`. Automatically detects CUDA.                                                                                        |
 | `NormMeanStd` | Online running mean/std normalization for observations.                                                                                                                                                |
 | `NormMinMax`  | Min-max normalization for observations.                                                                                                                                                |
-| `linear_schedule` | Linear decay function for learning rate scheduling.                                                                                                                                                |
 | `ppo` | Standalone PPO update function — GAE, clipped surrogate loss, minibatch SGD, gradient clipping.                                                      |
 
 ## PPO Algorithm Details
