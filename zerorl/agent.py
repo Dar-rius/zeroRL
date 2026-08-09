@@ -6,8 +6,6 @@ policy/value interface for all RL agent implementations.
 
 import torch
 from torch import nn
-from abc import ABC, abstractmethod
-from typing import Any
 from torch import Tensor
 from torch.distributions import Distribution
 
@@ -22,7 +20,7 @@ def eval_action(dist: Distribution, action: Tensor) -> tuple[Tensor, Tensor]:
     return (log_prob, dist_entropy)
 
 
-class BaseAgent(nn.Module, ABC):
+class BaseAgent(nn.Module):
     """Abstract base class for all RL agents.
 
     Subclasses must implement forward() and build_distribution(). The
@@ -40,38 +38,3 @@ class BaseAgent(nn.Module, ABC):
             return next(self.parameters()).device
         except StopIteration:
             return torch.device("cpu")
-
-    @abstractmethod
-    def forward(self, state: Tensor, **kwargs: Any) -> tuple[Tensor, ...]:
-        """Compute raw policy logits and value estimate.
-
-        Args:
-            state: Environment observation.
-
-        Returns:
-            Tuple of (policy_logits, value) tensors.
-        """
-        pass
-    
-
-    @staticmethod
-    def build_distribution(logits: Tensor) -> Distribution | None:
-        """Optional: Transform logits into a probability distribution.
-        Override this if your algorithm uses Policy Gradients (PPO, REINFORCE).
-        """
-        return None
-
-
-    @abstractmethod
-    def get_action(self, state: Tensor, action: Tensor | None = None, **kwargs: Any) -> dict[str, Tensor]:
-        """Sample or evaluate an action under the current policy.
-
-        Template method: calls build_distribution(), then samples if no
-        action is provided.
-
-        Args:
-            state: Environment observation.
-            action: Optional pre-selected action. When None, samples from
-                    the policy distribution.
-        """
-        pass
