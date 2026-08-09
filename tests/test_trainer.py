@@ -1,11 +1,14 @@
 """Tests for zerorl.trainer (make_env + prototype)."""
 
+from pathlib import Path
+
 import pytest
 import torch
 import torch.nn as nn
 import gymnasium as gym
 from zerorl.agent import BaseAgent, eval_action
 from zerorl.env import BaseEnv
+from zerorl.train import BaseTrain
 from zerorl.vector_env import VectorEnv
 from zerorl import trainer
 from zerorl.trainer import _resolve_agent
@@ -98,3 +101,75 @@ class TestResolveAgent:
         custom = _CustomAgent()
         assert _resolve_agent(custom, env) is custom
         env.close()
+
+
+class TestPrototype:
+    @pytest.mark.gpu
+    def test_prototype_cartpole_string_default_agent(self, tmp_path: Path) -> None:
+        t = trainer.prototype(
+            algo="ppo",
+            env="CartPole-v1",
+            agent=None,
+            timestamp=64,
+            rollout_steps=8,
+            model_name="cartpole",
+            model_save_path=str(tmp_path),
+            batch_size=8,
+            epochs=1,
+        )
+        assert isinstance(t, BaseTrain)
+        state, _ = t.env.reset(seed=0)
+        last = t.rollout_phase(state)
+        assert t.buffer.size == 8
+        assert "value" in last
+        t.env.close()
+
+    @pytest.mark.gpu
+    def test_prototype_custom_agent_and_env(self, tmp_path: Path) -> None:
+        env = _TinyEnv()
+        agent = _CustomAgent()
+        t = trainer.prototype(
+            algo="ppo",
+            env=env,
+            agent=agent,
+            timestamp=32,
+            rollout_steps=4,
+            model_name="custom",
+            model_save_path=str(tmp_path),
+            batch_size=4,
+            epochs=1,
+        )
+        state, _ = t.env.reset(seed=1)
+        t.rollout_phase(state)
+        assert t.buffer.size == 4
+        t.env.close()
+
+    def test_prototype_requires_env(self) -> None:
+        with pytest.raises(ValueError):
+            trainer.prototype(algo="ppo", env=None, agent=None)
+
+    def test_prototype_unknown_algo(self) -> None:
+        with pytest.raises(ValueError):
+            trainer.prototype(algo="sac", env="CartPole-v1")
+
+    def test_prototype_unknown_kwarg(self) -> None:
+        with pytest.raises(TypeError):
+            trainer.prototype(algo="ppo", env="CartPole-v1", not_a_param=1)
+
+    @pytest.mark.gpu
+    def test_prototype_vector_string_env(self, tmp_path: Path) -> None:
+        t = trainer.prototype(
+            algo="ppo",
+            env="CartPole-v1",
+            is_vector=True,
+            num_envs=2,
+            timestamp=32,
+            rollout_steps=4,
+            model_name="vec",
+            model_save_path=str(tmp_path),
+            batch_size=4,
+            epochs=1,
+        )
+        assert isinstance(t.env, VectorEnv)
+        assert t.train_config.num_envs == 2
+        t.env.close()
