@@ -260,10 +260,10 @@ class BaseTrain:
                 profile_data = ProfileMetrics(
                     step = step,
                     fps= (self.train_config.rollout_steps * self.train_config.num_envs) / (t_end - t_start),
-                    rollout_ms = (t_rollout - t_start) * 100,
+                    rollout_ms = (t_rollout - t_start) * 1000,
                     update_ms = (t_end - t_rollout) * 1000,
-                    vram_allocated_gb = torch.cuda.memory_allocated() / (1024 ** 3),
-                    vram_peak_gb = torch.cuda.max_memory_allocated() / (1024 ** 3),
+                    vram_allocated_gb = torch.cuda.memory_allocated() / (1024 ** 3) if is_cuda else 0.0,
+                    vram_peak_gb = torch.cuda.max_memory_allocated() / (1024 ** 3) if is_cuda else 0.0,
                     ram_mb = ram_mb
                     )
                 self._log_profile_metrics(profile_data)
