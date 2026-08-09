@@ -47,7 +47,7 @@ class TestGaeCompute:
     @pytest.mark.gpu
     def test_buffer_inside_advantages_(self, device) -> None:
         cfg = AlgoConfig()
-        buf = Buffer(step=3, data = {"return":(), "advantage": ()}, device=device)
+        buf = Buffer(step=3, data = {"returns":(), "adv": ()}, device=device)
         buf.slice = 3
         reward = torch.tensor([1.0, 2.0, 3.0], device=device).unsqueeze(-1)
         values = torch.tensor([0.5, 0.5, 0.5], device=device).unsqueeze(-1)
@@ -55,8 +55,8 @@ class TestGaeCompute:
         last_value = torch.tensor([1.0], device=device)
         returns, advantages, _ = gae_compute(reward, values, last_value, dones, cfg)
         gae_compute(reward, values, last_value, dones, cfg, buf)
-        torch.testing.assert_close(returns, buf.data["return"])
-        torch.testing.assert_close(advantages, buf.data["advantage"])
+        torch.testing.assert_close(returns, buf.data["returns"])
+        torch.testing.assert_close(advantages, buf.data["adv"])
 
 
 
@@ -77,9 +77,16 @@ class TestPpoLoss:
 
 class TestPpoFunction:
     def _make_buffer(self, n, obs_dim, device):
-        buf = Buffer(step=n, data={"state": (obs_dim,), "action": (), "log_prob": (), "advantage": (), "return": (), "value": ()}, device=device)
+        buf = Buffer(step=n, data={"state": (obs_dim,), "actions": (), "old_log_probs": (), "adv": (), "returns": (), "value": ()}, device=device)
         for _ in range(n):
-            buf.insert(state=torch.randn(obs_dim, device=device), action=torch.tensor(0, device=device), log_prob=torch.tensor(-0.5, device=device), advantage=torch.tensor(1.0, device=device), **{"return": torch.tensor(2.0, device=device)}, value=torch.tensor(0.5, device=device))
+            buf.insert(
+                state=torch.randn(obs_dim, device=device),
+                actions=torch.tensor(0, device=device),
+                old_log_probs=torch.tensor(-0.5, device=device),
+                adv=torch.tensor(1.0, device=device),
+                returns=torch.tensor(2.0, device=device),
+                value=torch.tensor(0.5, device=device),
+            )
         return buf
 
     @pytest.mark.gpu

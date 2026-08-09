@@ -60,13 +60,13 @@ class TestPPOVectorizedIntegration:
             num_envs=num_envs, 
             data={
                 "state": (obs_dim, ),
-                "action": (),
-                "log_prob": (),
+                "actions": (),
+                "old_log_probs": (),
                 "reward": (),
                 "done": (),
                 "value": (),
-                "advantage": (),
-                "return": (),
+                "adv": (),
+                "returns": (),
             },
             device=device,
         )
@@ -89,8 +89,8 @@ class TestPPOVectorizedIntegration:
             # Insert batched data into buffer
             buf.insert(
                 state=state_tensor,
-                action=out["action"],
-                log_prob=out["log_prob"],
+                actions=out["action"],
+                old_log_probs=out["log_prob"],
                 reward=reward_tensor,
                 done=done_tensor,
                 value=out["value"].squeeze(-1),
@@ -111,8 +111,8 @@ class TestPPOVectorizedIntegration:
             cfg,
         )
         
-        buf.data["return"][:buf.size] = returns
-        buf.data["advantage"][:buf.size] = advantages
+        buf.data["returns"][:buf.size] = returns
+        buf.data["adv"][:buf.size] = advantages
 
         # 5. Run PPO Update (which will flatten (T, N) -> (T*N) internally)
         w_before = {k: v.clone() for k, v in agent.state_dict().items()}
