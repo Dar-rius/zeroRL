@@ -2,7 +2,7 @@
 
 ## Project
 
-RL training framework built on PyTorch + Gymnasium. Provides abstract base classes (`BaseAgent`, `BaseEnv`, `BaseTrain`) and standalone PPO functions (`gae_compute`, `ppo_loss`, `ppo`). Includes 88 tests, all passing (1 xfailed documenting a known vectorized-reset bug).
+RL training framework built on PyTorch + Gymnasium. Provides abstract base classes (`BaseAgent`, `BaseEnv`, `BaseTrain`) and standalone PPO functions (`gae_compute`, `ppo_loss`, `ppo`). Includes 111 tests, all passing (1 xfailed documenting a known vectorized-reset bug).
 
 ## Package management
 
@@ -53,19 +53,24 @@ zerorl/
       ppo.py               # gae_compute(), ppo_loss(), ppo() — standalone functions
 tests/
   __init__.py
-  test_agent.py              # 6 tests
-  test_buffer_integration.py # 4 tests
-  test_common.py             # 6 tests
   test_config.py             # 15 tests
-  test_continuous_actions.py # 1 test
-  test_env.py                # 5 tests
-  test_errors.py             # 7 tests
+  test_errors.py             # 12 tests
   test_function.py           # 4 tests
-  test_ppo.py                # 16 tests
   test_processing.py         # 3 tests
   test_train.py              # 13 tests
-  test_ppo_vector.py         # 1 test
-  test_env_vector.py         # 7 tests
+  test_trainer.py            # 14 tests
+  agent/
+    test_agent.py            # 6 tests
+    test_continuous_actions.py # 1 test
+  algo/ppo/
+    test_ppo.py              # 16 tests
+    test_ppo_vector.py       # 1 test
+  buffer/
+    test_buffer_integration.py # 4 tests
+    test_common.py           # 10 tests
+  env/
+    test_env.py              # 5 tests
+    test_env_vector.py       # 7 tests
 ```
 
 ## Key APIs
@@ -132,8 +137,8 @@ Import as `from zerorl import trainer`.
 ## Testing
 
 ```
-CUDA_VISIBLE_DEVICES="" uv run python -m pytest tests/ -v    # run all 88 tests (CPU-only on this machine)
+CUDA_VISIBLE_DEVICES="" uv run python -m pytest tests/ -v    # run all 111 tests (CPU-only on this machine)
 ```
 
-- 87 pass, 1 xfailed (documents vectorized reset bug at `train.py:141-145`: all envs reset when any finishes)
+- 110 pass, 1 xfailed (documents vectorized reset bug at `train.py:141-145`: all envs reset when any finishes)
 - `test_train.py::test_rollout_phase_partial_finish_preserves_survivors` is the xfail test
