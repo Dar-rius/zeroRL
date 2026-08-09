@@ -6,8 +6,12 @@ and repeat.
 """
 
 import os
+import sys
+import time
+import ressource
 import numpy as np
 import torch
+from dataclasses import dataclass, asdict
 import wandb
 from tqdm import tqdm
 from typing import Callable
@@ -20,6 +24,18 @@ from zerorl.env import BaseEnv
 from zerorl.processing import NormMeanStd
 from zerorl.errors import EmptyBufferError
 from torch.utils.tensorboard import SummaryWriter
+
+
+#Profiler Metric
+@dataclass
+class ProfileMetrics:
+    step: int
+    fps: float
+    rollout_ms: float
+    update_ms: float
+    vram_allocated_gb: float
+    vram_peak_gb: float
+    ram_mb: float
 
 
 class BaseTrain:
@@ -152,6 +168,16 @@ class BaseTrain:
             next_output = self.agent.get_action(state_normalized)
         return next_output
 
+    
+    #Profiler display
+    def _log_profile_metrics(self, metrics: ProfileMetrics):
+        sys.stderr.write(
+                f"\033[94m[Profile] Step {metrics.step} | FPS: {metrics.fps:.0f} | "
+                f"Rollout: {metrics.rollout_ms:.1f}ms | Update: {metrics.update_ms:1f}ms |"
+                f"VRAM: {metrics.vram_allocated_gb:.2f}GB (Peak: {metrics.vram_peak_gb:.2f}GB) | "
+                f"RAM: {metrics.ram_mb:.0f}MB\033[0m\n"
+                )
+
 
     def _log_metrics(self, metrics: dict, step: int, use_wandb: bool, use_tb: bool):
         """Log training metrics to wandb and/or TensorBoard.
@@ -195,9 +221,24 @@ class BaseTrain:
             use_wandb: Whether to log to Weights & Biases.
             use_tb: Whether to log to TensorBoard.
         """
+        is_profile = self.train_config.profile
+        is_cuda = self.train_config.device == "cuda" and torch.cuda.is_available()
+        sync = torch.cuda.synchronize 
+        if is_profile: sys.stderr.write("\03396mZeroRL Profiler Enabled (TIME & VRAM).\033[0m\n")
         state, _ = self.env.reset()
         for step in tqdm(range(self.train_config.num_update)):
+            if is_profile:
+                if is_cuda :
+                    sync()
+                    torch.cuda.reset_peak_memory_stats()    
+                t_start = time.perf_counter()
+                
+
             last_output = self.rollout_phase(state)
+
+            if is_profile:
+                if is_cuda: sync()
+                t_rollout = time.perf_counter()
 
             if self.buffer.size < self.require_buffer_size:
                 raise EmptyBufferError(self.buffer.size, self.require_buffer_size)
@@ -210,6 +251,22 @@ class BaseTrain:
                     last_output,
                     self.algo_config
                     )
+               
+            if is_profile:
+                if is_cuda: sync()
+                t_end = time.perf_counter()
+                ram_kb = ressource.getrusage(ressource.RUSAGE_SELF).ru_maxrss
+                ram_mb = ram_kb /1024 if ram_kb > 0 else 0.0
+                profile_data = ProfileMetrics(
+                    step = step,
+                    fps= (self.train_config.rollout_steps * self.train_config.num_envs) / (t_end - t_start),
+                    rollout_ms = (t_rollout - t_start) * 100,
+                    update_ms = (t_end - t_rollout) * 1000,
+                    vram_allocated_gb = torch.cuda.memory_allocated() / (1024 ** 3),
+                    vram_peak_gb = torch.cuda.max_memory_allocated() / (1024 ** 3),
+                    ram_mb = ram_mb
+                    )
+                self._log_profile_metrics(profile_data)
 
             if len(self.episode_rewards) > 0:
                 recent = self.episode_rewards[-10:]
