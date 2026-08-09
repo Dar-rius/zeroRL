@@ -186,9 +186,10 @@ def _make_ppo_update(train_config: TrainConfig):
         n = buffer.size
         buffer.data["returns"][:n] = returns
         buffer.data["adv"][:n] = advantages
+        lr_factor = linear_schedule(step=step, num_update=train_config.num_update)
         scheduler = LambdaLR(
             optimizer,
-            lr_lambda=linear_schedule(step=step, num_update=train_config.num_update),
+            lr_lambda=lambda _: lr_factor,
         )
         return ppo(
             agent,
