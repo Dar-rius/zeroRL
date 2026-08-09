@@ -589,8 +589,8 @@ class TestBaseTrainProfilerTrain:
         buf = Buffer(step=8, num_envs=1, data={
             "state": (4,), "reward": (), "done": (),
             "action": (), "log_prob": (), "entropy": (), "value": (),
-        }, device=device)
-        cfg = _make_profile_config(tmp_path, device, profile=True, num_steps=3)
+        }, device=torch.device("cpu"))
+        cfg = _make_profile_config(tmp_path, torch.device("cpu"), profile=True, num_steps=3)
         trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, AlgoConfig(),
                             require_buffer_size=4)
         written: list[str] = []
@@ -615,10 +615,10 @@ class TestBaseTrainProfilerTrain:
         buf = Buffer(step=8, num_envs=1, data={
             "state": (4,), "reward": (), "done": (),
             "action": (), "log_prob": (), "entropy": (), "value": (),
-        }, device=device)
+        }, device=torch.device("cpu"))
         # Construct on CPU so agent.to(cpu) works; flip device to cuda after
         # so is_cuda=True exercises the cuda branch without real CUDA.
-        cfg = _make_profile_config(tmp_path, device, profile=True, num_steps=3)
+        cfg = _make_profile_config(tmp_path, torch.device("cpu"), profile=True, num_steps=3)
         trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, AlgoConfig(),
                             require_buffer_size=4)
         trainer.train_config.device = torch.device("cuda")
@@ -651,8 +651,8 @@ class TestBaseTrainProfilerTrain:
         buf = Buffer(step=8, num_envs=1, data={
             "state": (4,), "reward": (), "done": (),
             "action": (), "log_prob": (), "entropy": (), "value": (),
-        }, device=device)
-        cfg = _make_profile_config(tmp_path, device, profile=True, num_steps=1)
+        }, device=torch.device("cpu"))
+        cfg = _make_profile_config(tmp_path, torch.device("cpu"), profile=True, num_steps=1)
         trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, AlgoConfig(),
                             require_buffer_size=4)
         trainer.train_config.device = torch.device("cuda")
