@@ -25,6 +25,24 @@ The package depends on `torch`, `numpy`, `gymnasium`, `tensorboard`, and `wandb`
 
 ## Quick Start
 
+### Quick Start (prototype)
+
+```python
+from zerorl import trainer
+
+t = trainer.prototype(
+    algo="ppo",
+    env="CartPole-v1",
+    timestamp=1_000_000,
+    lr=3e-4,
+)
+t.train(use_wandb=False, use_tb=False)
+```
+
+Use `trainer.make_env(...)` if you want to build the environment first, or pass your own `BaseEnv` / agent into `prototype`.
+
+### Full control
+
 ```python
 import numpy as np
 import torch

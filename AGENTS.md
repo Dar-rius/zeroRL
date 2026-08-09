@@ -40,6 +40,7 @@ zerorl/
   env.py                   # BaseEnv (ABC, gym.Env) — Gymnasium v1 API wrapper; register_env() decorator
   vector_env.py             # VectorEnv(BaseEnv) — vectorized env wrapper (env_id string or callable class)
   train.py                 # BaseTrain — rollout/update/save training loop
+  trainer.py               # make_env(), prototype() — DX factory over BaseTrain
   common.py                # Buffer — dict-based pre-allocated torch buffer
   config.py                # TrainConfig (computed fields), AlgoConfig (mutable dataclass)
   errors.py                # EmptyBufferError
@@ -105,6 +106,13 @@ BaseTrain(agent, env, buffer, update_weights, train_config, algo_config=None, op
 ```
 
 `update_weights` is a `Callable[[BaseAgent, Buffer, Optimizer, int, dict[str,Tensor], AlgoConfig | None], dict[str, Tensor]]`. Methods: `rollout_phase(state)`, `_log_metrics(metrics, step, use_wandb, use_tb)`, `train(use_wandb, use_tb)`, `save_model()`.
+
+### trainer (`make_env` / `prototype`)
+
+Import as `from zerorl import trainer`.
+
+- `make_env(env, *, is_vector=False, num_envs=1) -> BaseEnv` — resolves a gym id `str`, callable env class, or existing `BaseEnv`; optionally wraps in `VectorEnv` when `is_vector=True`.
+- `prototype(*, algo="ppo", agent=None, env=None, is_vector=False, num_envs=1, timestamp=1_000_000, model_name="model", model_save_path="./checkpoints", rollout_steps=2048, **hyper_params) -> BaseTrain` — wires default MLP agent (when `agent=None`), PPO buffer shapes, and `update_weights`; splits kwargs into `TrainConfig` / `AlgoConfig` fields (unknown keys → `TypeError`). Returns a ready-to-run `BaseTrain`; call `.train(use_wandb=..., use_tb=...)`.
 
 ### Utility modules
 
