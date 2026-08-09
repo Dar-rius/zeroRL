@@ -1,7 +1,7 @@
 """Training loop for RL agents.
 
 Provides BaseTrain, which orchestrates the rollout-update cycle:
-collect experience, compute GAE, run the update_weights callable,
+collect experience, copute GAE, run the update_weights callable,
 and repeat.
 """
 
@@ -17,13 +17,15 @@ from tqdm import tqdm
 from typing import Callable
 from torch import Tensor
 from torch import optim
+from torch.optim.lr_scheduler import LambdaLR
+from torch.utils.tensorboard import SummaryWriter
 from zerorl.agent import BaseAgent
 from zerorl.common import Buffer
 from zerorl.config import TrainConfig, AlgoConfig
 from zerorl.env import BaseEnv
 from zerorl.processing import NormMeanStd
 from zerorl.errors import EmptyBufferError
-from torch.utils.tensorboard import SummaryWriter
+from zerorl.function import linear_schedule
 
 
 #Profiler Metric
@@ -50,12 +52,13 @@ class BaseTrain:
                  agent: BaseAgent,
                  env: BaseEnv,
                  buffer: Buffer,
-                 update_weights: Callable[[BaseAgent, Buffer,
+                 update_weights: Callable[[BaseAgent, Buffer, LambdaLR,
                                            optim.Optimizer, int, dict[str,Tensor],
                                            AlgoConfig | None], dict[str, Tensor]],
                  train_config: TrainConfig,
                  algo_config: AlgoConfig | None = None,
                  optimizer: optim.Optimizer | None = None,
+                 schedule_func: Callable | None = None,
                  require_buffer_size: int = 10):
         """Initialize the training loop.
 
@@ -87,12 +90,14 @@ class BaseTrain:
         obs_shape = env.observation_space.shape
         if obs_shape is None:
             raise ValueError("NormMeanStd requires environment with a defined observation shape")
+        self.schedule_func = schedule_func
+        if self.schedule_func is None: self.schedule_func = linear_schedule
+        self.require_buffer_size = require_buffer_size
         self.normalizer = NormMeanStd(obs_shape, train_config.device)
         tb_log_dir = os.path.join(self.train_config.model_save_path, "tensorboard", self.train_config.model_name)
         self.tb_writer = SummaryWriter(tb_log_dir)
         self.current_episode_reward: Tensor | None = None 
         self.episode_rewards: list[float] = []
-        self.require_buffer_size = require_buffer_size
 
 
     def rollout_phase(self, state: np.ndarray):
@@ -221,7 +226,7 @@ class BaseTrain:
             use_tb: Whether to log to TensorBoard.
         """
         is_profile = self.train_config.profile
-        is_cuda = self.train_config.device == "cuda" and torch.cuda.is_available()
+        is_cuda = self.train_config.device ==  torch.device("cuda") and torch.cuda.is_available()
         sync = torch.cuda.synchronize 
         if is_profile: sys.stderr.write("\033[96mZeroRL Profiler Enabled (TIME & VRAM).\033[0m\n")
         state, _ = self.env.reset()
@@ -229,9 +234,8 @@ class BaseTrain:
             if is_profile:
                 if is_cuda :
                     sync()
-                    torch.cuda.reset_peak_memory_stats()    
+                    torch.cuda.reset_peak_memory_stats()
                 t_start = time.perf_counter()
-                
 
             last_output = self.rollout_phase(state)
 
@@ -241,10 +245,13 @@ class BaseTrain:
 
             if self.buffer.size < self.require_buffer_size:
                 raise EmptyBufferError(self.buffer.size, self.require_buffer_size)
-
+            
+            scheduler = LambdaLR(self.optimizer,
+                                 lr_lambda=self.schedule_func)
             losses = self.update_weights(
                     self.agent,
                     self.buffer,
+                    scheduler,
                     self.optimizer,
                     step,
                     last_output,

@@ -36,11 +36,10 @@ class KeyBufferError(Exception):
 
     def __init__(self, arg_name: str, data_buffer: dict[str, object]):
         self.arg_name = arg_name
-        self.data_buffer = data_buffer 
+        self.data_buffer = data_buffer
 
     def __str__(self) -> str:
-        """Return a detailed error message with context and suggestion."""
-        details = f"Key '{self.arg_name}' (returned by agent.get_action) does not exist in the Buffer. \n"
+        details = f"Key '{self.arg_name}' (returned by agent.get_action) does not exist in the Buffer.\n"
         details += f"Please ensure your Buffer is initialized with the key '{self.arg_name}\n"
         details += f"Current valid keys are: {list(self.data_buffer.keys())}"
         return details
