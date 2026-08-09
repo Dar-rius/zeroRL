@@ -124,10 +124,13 @@ class BaseTrain:
                 trunc_tensor = trunc_tensor.unsqueeze(0)
 
             self.buffer.insert(
-                state = state_normalized,
-                reward = reward_tensor,
-                done = done_tensor,
-                **outputs
+                state=state_normalized,
+                reward=reward_tensor,
+                done=done_tensor,
+                actions=outputs["action"],
+                old_log_probs=outputs["log_prob"],
+                entropy=outputs["entropy"],
+                value=outputs["value"],
             )
             self.current_episode_reward += reward_tensor
             finished = (done_tensor > 0) | (trunc_tensor > 0)
