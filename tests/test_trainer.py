@@ -125,6 +125,27 @@ class TestPrototype:
         t.env.close()
 
     @pytest.mark.gpu
+    def test_prototype_ppo_update_weights(self, tmp_path: Path) -> None:
+        t = trainer.prototype(
+            algo="ppo",
+            env="CartPole-v1",
+            agent=None,
+            timestamp=64,
+            rollout_steps=8,
+            model_name="cartpole",
+            model_save_path=str(tmp_path),
+            batch_size=8,
+            epochs=1,
+        )
+        state, _ = t.env.reset(seed=0)
+        last = t.rollout_phase(state)
+        metrics = t.update_weights(
+            t.agent, t.buffer, t.optimizer, 0, last, t.algo_config
+        )
+        assert "loss" in metrics or "policy_loss" in metrics
+        t.env.close()
+
+    @pytest.mark.gpu
     def test_prototype_custom_agent_and_env(self, tmp_path: Path) -> None:
         env = _TinyEnv()
         agent = _CustomAgent()
