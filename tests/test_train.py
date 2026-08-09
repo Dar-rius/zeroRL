@@ -115,8 +115,8 @@ class TestBaseTrainRollout:
                 "state": (obs_dim,),
                 "reward": (),
                 "done": (),
-                "action": (),
-                "log_prob": (),
+                "actions": (),
+                "old_log_probs": (),
                 "entropy": (),
                 "value": (),
             },
@@ -207,7 +207,7 @@ class TestBaseTrainTrain:
         env = FakeVecEnv(num_envs=1, obs_dim=obs_dim, act_dim=act_dim, steps_until_done=(100,))
         buf = Buffer(step=rollout_steps, num_envs=1, data={
             "state": (obs_dim,), "reward": (), "done": (),
-            "action": (), "log_prob": (), "entropy": (), "value": (),
+            "actions": (), "old_log_probs": (), "entropy": (), "value": (),
         }, device=device)
         cfg = _make_train_config(tmp_path, device)
         cfg.rollout_steps = rollout_steps
@@ -230,7 +230,7 @@ class TestBaseTrainTrain:
         env = FakeVecEnv(num_envs=1, obs_dim=obs_dim, act_dim=act_dim, steps_until_done=(100,))
         buf = Buffer(step=rollout_steps, num_envs=1, data={
             "state": (obs_dim,), "reward": (), "done": (),
-            "action": (), "log_prob": (), "entropy": (), "value": (),
+            "actions": (), "old_log_probs": (), "entropy": (), "value": (),
         }, device=device)
         cfg = _make_train_config(tmp_path, device)
         cfg.rollout_steps = rollout_steps
@@ -252,7 +252,7 @@ class TestBaseTrainTrain:
         env = FakeVecEnv(num_envs=1, obs_dim=obs_dim, act_dim=act_dim, steps_until_done=(100,))
         buf = Buffer(step=rollout_steps, num_envs=1, data={
             "state": (obs_dim,), "reward": (), "done": (),
-            "action": (), "log_prob": (), "entropy": (), "value": (),
+            "actions": (), "old_log_probs": (), "entropy": (), "value": (),
         }, device=device)
         cfg = _make_train_config(tmp_path, device)
         cfg.rollout_steps = rollout_steps
@@ -275,7 +275,7 @@ class TestBaseTrainTrain:
         env = FakeVecEnv(num_envs=1, obs_dim=obs_dim, act_dim=act_dim, steps_until_done=(100,))
         buf = Buffer(step=rollout_steps, num_envs=1, data={
             "state": (obs_dim,), "reward": (), "done": (),
-            "action": (), "log_prob": (), "entropy": (), "value": (),
+            "actions": (), "old_log_probs": (), "entropy": (), "value": (),
         }, device=device)
         cfg = _make_train_config(tmp_path, device)
         cfg.rollout_steps = rollout_steps
@@ -362,7 +362,7 @@ class TestBaseTrainVectorizedRollout:
         env = FakeVecEnv(num_envs=num_envs, obs_dim=obs_dim, act_dim=act_dim, steps_until_done=(100, 100))
         buf = Buffer(step=rollout_steps, num_envs=num_envs, data={
             "state": (obs_dim,), "reward": (), "done": (),
-            "action": (), "log_prob": (), "entropy": (), "value": (),
+            "actions": (), "old_log_probs": (), "entropy": (), "value": (),
         }, device=device)
         cfg = _make_train_config(tmp_path, device)
         cfg.rollout_steps = rollout_steps
@@ -385,7 +385,7 @@ class TestBaseTrainVectorizedRollout:
                          steps_until_done=(3, 3), auto_reset=True)
         buf = Buffer(step=rollout_steps, num_envs=num_envs, data={
             "state": (obs_dim,), "reward": (), "done": (),
-            "action": (), "log_prob": (), "entropy": (), "value": (),
+            "actions": (), "old_log_probs": (), "entropy": (), "value": (),
         }, device=device)
         cfg = _make_train_config(tmp_path, device)
         cfg.rollout_steps = rollout_steps
@@ -406,7 +406,7 @@ class TestBaseTrainVectorizedRollout:
                          steps_until_done=(3, 100), auto_reset=False)
         buf = Buffer(step=rollout_steps, num_envs=num_envs, data={
             "state": (obs_dim,), "reward": (), "done": (),
-            "action": (), "log_prob": (), "entropy": (), "value": (),
+            "actions": (), "old_log_probs": (), "entropy": (), "value": (),
         }, device=device)
         cfg = _make_train_config(tmp_path, device)
         cfg.rollout_steps = rollout_steps

@@ -2,7 +2,7 @@
 
 ## Project
 
-RL training framework built on PyTorch + Gymnasium. Provides abstract base classes (`BaseAgent`, `BaseEnv`, `BaseTrain`) and standalone PPO functions (`gae_compute`, `ppo_loss`, `ppo`). Includes 88 tests, all passing (1 xfailed documenting a known vectorized-reset bug).
+RL training framework built on PyTorch + Gymnasium. Provides abstract base classes (`BaseAgent`, `BaseEnv`, `BaseTrain`) and standalone PPO functions (`gae_compute`, `ppo_loss`, `ppo`). Includes 111 tests, all passing (1 xfailed documenting a known vectorized-reset bug).
 
 ## Package management
 
@@ -40,6 +40,7 @@ zerorl/
   env.py                   # BaseEnv (ABC, gym.Env) — Gymnasium v1 API wrapper; register_env() decorator
   vector_env.py             # VectorEnv(BaseEnv) — vectorized env wrapper (env_id string or callable class)
   train.py                 # BaseTrain — rollout/update/save training loop
+  trainer.py               # make_env(), prototype() — DX factory over BaseTrain
   common.py                # Buffer — dict-based pre-allocated torch buffer
   config.py                # TrainConfig (computed fields), AlgoConfig (mutable dataclass)
   errors.py                # EmptyBufferError
@@ -52,19 +53,24 @@ zerorl/
       ppo.py               # gae_compute(), ppo_loss(), ppo() — standalone functions
 tests/
   __init__.py
-  test_agent.py              # 6 tests
-  test_buffer_integration.py # 4 tests
-  test_common.py             # 6 tests
   test_config.py             # 15 tests
-  test_continuous_actions.py # 1 test
-  test_env.py                # 5 tests
-  test_errors.py             # 7 tests
+  test_errors.py             # 12 tests
   test_function.py           # 4 tests
-  test_ppo.py                # 16 tests
   test_processing.py         # 3 tests
   test_train.py              # 13 tests
-  test_ppo_vector.py         # 1 test
-  test_env_vector.py         # 7 tests
+  test_trainer.py            # 14 tests
+  agent/
+    test_agent.py            # 6 tests
+    test_continuous_actions.py # 1 test
+  algo/ppo/
+    test_ppo.py              # 16 tests
+    test_ppo_vector.py       # 1 test
+  buffer/
+    test_buffer_integration.py # 4 tests
+    test_common.py           # 10 tests
+  env/
+    test_env.py              # 5 tests
+    test_env_vector.py       # 7 tests
 ```
 
 ## Key APIs
@@ -106,6 +112,13 @@ BaseTrain(agent, env, buffer, update_weights, train_config, algo_config=None, op
 
 `update_weights` is a `Callable[[BaseAgent, Buffer, Optimizer, int, dict[str,Tensor], AlgoConfig | None], dict[str, Tensor]]`. Methods: `rollout_phase(state)`, `_log_metrics(metrics, step, use_wandb, use_tb)`, `train(use_wandb, use_tb)`, `save_model()`.
 
+### trainer (`make_env` / `prototype`)
+
+Import as `from zerorl import trainer`.
+
+- `make_env(env, *, is_vector=False, num_envs=1) -> BaseEnv` — resolves a gym id `str`, callable env class, or existing `BaseEnv`; optionally wraps in `VectorEnv` when `is_vector=True`.
+- `prototype(*, algo="ppo", agent=None, env=None, is_vector=False, num_envs=1, timestamp=1_000_000, model_name="model", model_save_path="./checkpoints", rollout_steps=2048, **hyper_params) -> BaseTrain` — wires default MLP agent (when `agent=None`), PPO buffer shapes, and `update_weights`; splits kwargs into `TrainConfig` / `AlgoConfig` fields (unknown keys → `TypeError`). Returns a ready-to-run `BaseTrain`; call `.train(use_wandb=..., use_tb=...)`.
+
 ### Utility modules
 
 - `function.py`: `linear_schedule(step, num_update)`, `get_buffer_params_model(model) -> (params, buffers)`
@@ -124,8 +137,8 @@ BaseTrain(agent, env, buffer, update_weights, train_config, algo_config=None, op
 ## Testing
 
 ```
-CUDA_VISIBLE_DEVICES="" uv run python -m pytest tests/ -v    # run all 88 tests (CPU-only on this machine)
+CUDA_VISIBLE_DEVICES="" uv run python -m pytest tests/ -v    # run all 111 tests (CPU-only on this machine)
 ```
 
-- 87 pass, 1 xfailed (documents vectorized reset bug at `train.py:141-145`: all envs reset when any finishes)
+- 110 pass, 1 xfailed (documents vectorized reset bug at `train.py:141-145`: all envs reset when any finishes)
 - `test_train.py::test_rollout_phase_partial_finish_preserves_survivors` is the xfail test

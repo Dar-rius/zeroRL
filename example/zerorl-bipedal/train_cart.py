@@ -64,7 +64,7 @@ buffer = Buffer(
     step=config.rollout_steps,
     data={
         "state": (4,),
-        "old_log_prob": (),
+        "old_log_probs": (),
         "reward": (),
         "done": (),
         "entropy": (),
