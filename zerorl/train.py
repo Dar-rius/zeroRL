@@ -29,7 +29,6 @@ from torch.utils.tensorboard import SummaryWriter
 #Profiler Metric
 @dataclass
 class ProfileMetrics:
-    step: int
     fps: float
     rollout_ms: float
     update_ms: float
@@ -170,9 +169,9 @@ class BaseTrain:
 
     
     #Profiler display
-    def _log_profile_metrics(self, metrics: ProfileMetrics):
+    def _log_profile_metrics(self, step: int, metrics: ProfileMetrics):
         sys.stderr.write(
-                f"\033[94m[Profile] Step {metrics.step} | FPS: {metrics.fps:.0f} | "
+                f"\033[94m[Profile] Step {step} | FPS: {metrics.fps:.0f} | "
                 f"Rollout: {metrics.rollout_ms:.1f}ms | Update: {metrics.update_ms:1f}ms |"
                 f"VRAM: {metrics.vram_allocated_gb:.2f}GB (Peak: {metrics.vram_peak_gb:.2f}GB) | "
                 f"RAM: {metrics.ram_mb:.0f}MB\033[0m\n"
@@ -258,7 +257,6 @@ class BaseTrain:
                 ram_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
                 ram_mb = ram_kb /1024 if ram_kb > 0 else 0.0
                 profile_data = ProfileMetrics(
-                    step = step,
                     fps= (self.train_config.rollout_steps * self.train_config.num_envs) / (t_end - t_start),
                     rollout_ms = (t_rollout - t_start) * 1000,
                     update_ms = (t_end - t_rollout) * 1000,
@@ -266,7 +264,7 @@ class BaseTrain:
                     vram_peak_gb = torch.cuda.max_memory_allocated() / (1024 ** 3) if is_cuda else 0.0,
                     ram_mb = ram_mb
                     )
-                self._log_profile_metrics(profile_data)
+                self._log_profile_metrics(step, profile_data)
 
             if len(self.episode_rewards) > 0:
                 recent = self.episode_rewards[-10:]
@@ -278,7 +276,7 @@ class BaseTrain:
                 "mean_episode_reward": mean_reward,
                 "learning_rate": self.optimizer.param_groups[0]['lr']
             }
-            if use_wandb  and is_profile:
+            if use_wandb and is_profile:
                 wandb.log({f"profile/{k}": v for k, v in asdict(profile_data).items()})
             for k, v in losses.items(): metrics[k] = v
             self._log_metrics(metrics, step, use_wandb, use_tb)
