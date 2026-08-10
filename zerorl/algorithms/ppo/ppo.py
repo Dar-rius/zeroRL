@@ -88,7 +88,7 @@ def ppo_loss(
     """
     assert_agent_contract(agent,
                     {"forward": "Your agent should have the method `forward`",
-                     "get_action": "Your agent should have the method `build_distribution`"})
+                     "build_distribution": "Your agent should have the method `build_distribution`"})
     logits, new_values = torch.func.functional_call(agent, (params, buffers), (states,))
     dist = agent.build_distribution(logits) #type: ignore[operator]
     new_log_probs, dist_entropy = eval_action(dist, actions)
