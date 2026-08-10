@@ -24,7 +24,7 @@ from zerorl.common import Buffer
 from zerorl.config import TrainConfig, AlgoConfig
 from zerorl.env import BaseEnv
 from zerorl.processing import NormMeanStd
-from zerorl.errors import EmptyBufferError
+from zerorl.errors import EmptyBufferError, assert_agent_contract
 
 
 #Profiler Metric
@@ -76,6 +76,8 @@ class BaseTrain:
         super().__init__()
         self.train_config = train_config
         self.agent = agent.to(self.train_config.device)
+        assert_agent_contract(self.agent,
+                        {"get_action": "Your agent should have the method `get_action`"})
         self.env = env
         self.buffer = buffer
         self.update_weights = update_weights

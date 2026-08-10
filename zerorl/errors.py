@@ -3,7 +3,7 @@
 from zerorl.agent import BaseAgent
 
 
-def check_agent_attr(agent: BaseAgent, attr_search: dict[str, str]):
+def assert_agent_contract(agent: BaseAgent, attr_search: dict[str, str]):
     """
         Check if attributes exists in Agent
         agent: Agent
