@@ -11,4 +11,4 @@ wheels/
 .opencode
 uv.lock
 .checkpoints
-wanbd
+wandb/

@@ -14,11 +14,9 @@ class CartPoleAgent(BaseAgent):
     def __init__(self, input_layer, output_layer):
         super().__init__()
         self.extract_layer = nn.Sequential(
-                nn.Linear(input_layer, 128),
+                nn.Linear(input_layer, 64),
                 nn.Tanh(),
-                nn.Linear(128, 128),
-                nn.Tanh(),
-                nn.Linear(128,64)
+                nn.Linear(64, 64),
                 )
         self.actor = nn.Linear(64, output_layer)
         self.critic = nn.Linear(64, 1)
@@ -88,5 +86,5 @@ def update_weights(agent, buffer, scheduler, optimizer, step, last_output, algo_
             epochs=algo_config.epochs,
             device=agent.device)
 
-trainer = BaseTrain(agent, env, buffer, update_weights, config, algo_config)
+trainer = BaseTrain(agent, env, buffer, update_weights, config, algo_config, render_mode="human")
 trainer.train(use_wandb=True)

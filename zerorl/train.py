@@ -59,6 +59,7 @@ class BaseTrain:
                  algo_config: AlgoConfig | None = None,
                  optimizer: optim.Optimizer | None = None,
                  schedule_func: Callable[[int], float] | None = None,
+                 render_mode: str | None = None,
                  require_buffer_size: int = 10):
         """Initialize the training loop.
 
@@ -81,7 +82,7 @@ class BaseTrain:
                         {"get_action": "Your agent should have the method `get_action`"})
         self.env = env
         if not getattr(env, "auto_reset", False):
-            self.env = VectorEnv(lambda: self.env, self.config.num_envs)
+            self.env = VectorEnv(lambda: self.env, self.config.num_envs, render_mode)
         self.buffer = buffer
         self.update_weights = update_weights
         self.algo_config = algo_config
