@@ -128,7 +128,7 @@ class BaseTrain:
             self.normalizer.update(state_tensor)
             state_normalized = self.normalizer.normalize(state_tensor)
             with torch.inference_mode():
-                outputs = self.agent.get_action(state_normalized)
+                outputs = self.agent.get_action(state_normalized) #type: ignore[operator]
                 outputs["value"] = outputs["value"].squeeze(-1)
                 if str(env_device).startswith("cuda"):
                     action_input: np.ndarray | Tensor = outputs["action"]
@@ -175,7 +175,7 @@ class BaseTrain:
         with torch.inference_mode():
             self.normalizer.update(state_tensor)
             state_normalized = self.normalizer.normalize(state_tensor)
-            next_output = self.agent.get_action(state_normalized)
+            next_output = self.agent.get_action(state_normalized) #type: ignore[operator]
         return next_output
 
     

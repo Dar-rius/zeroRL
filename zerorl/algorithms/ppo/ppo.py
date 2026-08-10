@@ -90,7 +90,7 @@ def ppo_loss(
                     {"foward": "Your agent should have the method `forward`",
                      "get_action": "Your agent should have the method `build_distribution`"})
     logits, new_values = torch.func.functional_call(agent, (params, buffers), (states,))
-    dist = agent.build_distribution(logits)
+    dist = agent.build_distribution(logits) #type: ignore[operator]
     new_log_probs, dist_entropy = eval_action(dist, actions)
 
     idx_adv = advantages.view(-1)
