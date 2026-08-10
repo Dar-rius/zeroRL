@@ -19,6 +19,7 @@ from zerorl.errors import EmptyBufferError
 from zerorl.env import BaseEnv
 from zerorl.train import BaseTrain, ProfileMetrics
 from torch.optim.lr_scheduler import LambdaLR
+from zerorl.vector_env import VectorEnv
 
 
 @pytest.fixture
@@ -100,7 +101,7 @@ class TestBaseTrainInit:
 
         trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, algo_cfg)
         assert trainer.agent is agent
-        assert trainer.env is env
+        assert isinstance(trainer.env, VectorEnv)
         assert trainer.buffer is buf
         assert trainer.train_config is cfg
         assert trainer.algo_config is algo_cfg
@@ -229,7 +230,7 @@ class TestBaseTrainTrain:
         obs_dim, act_dim = 4, 2
         rollout_steps = 16
         agent = MockAgent(obs_dim, act_dim)
-        env = FakeVecEnv(num_envs=1, obs_dim=obs_dim, act_dim=act_dim, steps_until_done=(100,))
+        env = FakeVecEnv(num_envs=1, obs_dim=obs_dim, act_dim=act_dim, steps_until_done=(100,), auto_reset=True)
         buf = Buffer(step=rollout_steps, num_envs=1, data={
             "state": (obs_dim,), "reward": (), "done": (),
             "action": (), "log_prob": (), "entropy": (), "value": (),
@@ -252,7 +253,7 @@ class TestBaseTrainTrain:
         obs_dim, act_dim = 4, 2
         rollout_steps = 8
         agent = MockAgent(obs_dim, act_dim)
-        env = FakeVecEnv(num_envs=1, obs_dim=obs_dim, act_dim=act_dim, steps_until_done=(100,))
+        env = FakeVecEnv(num_envs=1, obs_dim=obs_dim, act_dim=act_dim, steps_until_done=(100,), auto_reset=True)
         buf = Buffer(step=rollout_steps, num_envs=1, data={
             "state": (obs_dim,), "reward": (), "done": (),
             "action": (), "log_prob": (), "entropy": (), "value": (),
@@ -274,7 +275,7 @@ class TestBaseTrainTrain:
         obs_dim, act_dim = 4, 2
         rollout_steps = 16
         agent = MockAgent(obs_dim, act_dim)
-        env = FakeVecEnv(num_envs=1, obs_dim=obs_dim, act_dim=act_dim, steps_until_done=(100,))
+        env = FakeVecEnv(num_envs=1, obs_dim=obs_dim, act_dim=act_dim, steps_until_done=(100,), auto_reset=True)
         buf = Buffer(step=rollout_steps, num_envs=1, data={
             "state": (obs_dim,), "reward": (), "done": (),
             "action": (), "log_prob": (), "entropy": (), "value": (),
@@ -297,7 +298,7 @@ class TestBaseTrainTrain:
         obs_dim, act_dim = 4, 2
         rollout_steps = 16
         agent = MockAgent(obs_dim, act_dim)
-        env = FakeVecEnv(num_envs=1, obs_dim=obs_dim, act_dim=act_dim, steps_until_done=(100,))
+        env = FakeVecEnv(num_envs=1, obs_dim=obs_dim, act_dim=act_dim, steps_until_done=(100,), auto_reset=True)
         buf = Buffer(step=rollout_steps, num_envs=1, data={
             "state": (obs_dim,), "reward": (), "done": (),
             "action": (), "log_prob": (), "entropy": (), "value": (),
@@ -384,7 +385,7 @@ class TestBaseTrainVectorizedRollout:
         num_envs, obs_dim, act_dim = 2, 4, 2
         rollout_steps = 8
         agent = MockAgent(obs_dim, act_dim)
-        env = FakeVecEnv(num_envs=num_envs, obs_dim=obs_dim, act_dim=act_dim, steps_until_done=(100, 100))
+        env = FakeVecEnv(num_envs=num_envs, obs_dim=obs_dim, act_dim=act_dim, steps_until_done=(100, 100), auto_reset=True)
         buf = Buffer(step=rollout_steps, num_envs=num_envs, data={
             "state": (obs_dim,), "reward": (), "done": (),
             "action": (), "log_prob": (), "entropy": (), "value": (),
@@ -563,7 +564,7 @@ class TestBaseTrainProfilerTrain:
     def test_train_profile_disabled_emits_nothing(self, tmp_path: Path,
                                                   device: torch.device) -> None:
         agent = MockAgent()
-        env = FakeVecEnv(num_envs=1, obs_dim=4, act_dim=2, steps_until_done=(100,))
+        env = FakeVecEnv(num_envs=1, obs_dim=4, act_dim=2, steps_until_done=(100,), auto_reset=True)
         buf = Buffer(step=8, num_envs=1, data={
             "state": (4,), "reward": (), "done": (),
             "action": (), "log_prob": (), "entropy": (), "value": (),
@@ -586,7 +587,7 @@ class TestBaseTrainProfilerTrain:
     def test_train_profile_banner_emitted_once(self, tmp_path: Path,
                                                device: torch.device) -> None:
         agent = MockAgent()
-        env = FakeVecEnv(num_envs=1, obs_dim=4, act_dim=2, steps_until_done=(100,))
+        env = FakeVecEnv(num_envs=1, obs_dim=4, act_dim=2, steps_until_done=(100,), auto_reset=True)
         buf = Buffer(step=8, num_envs=1, data={
             "state": (4,), "reward": (), "done": (),
             "action": (), "log_prob": (), "entropy": (), "value": (),
@@ -605,7 +606,7 @@ class TestBaseTrainProfilerTrain:
     def test_train_profile_emits_per_step_on_cpu(self, tmp_path: Path,
                                                  device: torch.device) -> None:
         agent = MockAgent()
-        env = FakeVecEnv(num_envs=1, obs_dim=4, act_dim=2, steps_until_done=(100,))
+        env = FakeVecEnv(num_envs=1, obs_dim=4, act_dim=2, steps_until_done=(100,), auto_reset=True)
         buf = Buffer(step=8, num_envs=1, data={
             "state": (4,), "reward": (), "done": (),
             "action": (), "log_prob": (), "entropy": (), "value": (),
@@ -631,7 +632,7 @@ class TestBaseTrainProfilerTrain:
     def test_train_profile_cuda_reset_and_sync_calls(self, tmp_path: Path,
                                                      device: torch.device) -> None:
         agent = MockAgent()
-        env = FakeVecEnv(num_envs=1, obs_dim=4, act_dim=2, steps_until_done=(100,))
+        env = FakeVecEnv(num_envs=1, obs_dim=4, act_dim=2, steps_until_done=(100,), auto_reset=True)
         buf = Buffer(step=8, num_envs=1, data={
             "state": (4,), "reward": (), "done": (),
             "action": (), "log_prob": (), "entropy": (), "value": (),
@@ -668,7 +669,7 @@ class TestBaseTrainProfilerTrain:
     def test_train_profile_cuda_vram_uses_memory_allocated(self, tmp_path: Path,
                                                            device: torch.device) -> None:
         agent = MockAgent()
-        env = FakeVecEnv(num_envs=1, obs_dim=4, act_dim=2, steps_until_done=(100,))
+        env = FakeVecEnv(num_envs=1, obs_dim=4, act_dim=2, steps_until_done=(100,), auto_reset=True)
         buf = Buffer(step=8, num_envs=1, data={
             "state": (4,), "reward": (), "done": (),
             "action": (), "log_prob": (), "entropy": (), "value": (),
@@ -698,7 +699,7 @@ class TestBaseTrainProfilerTrain:
     def test_train_profile_timing_with_mocked_clock(self, tmp_path: Path,
                                                     device: torch.device) -> None:
         agent = MockAgent()
-        env = FakeVecEnv(num_envs=2, obs_dim=4, act_dim=2, steps_until_done=(100, 100))
+        env = FakeVecEnv(num_envs=2, obs_dim=4, act_dim=2, steps_until_done=(100, 100), auto_reset=True)
         buf = Buffer(step=8, num_envs=2, data={
             "state": (4,), "reward": (), "done": (),
             "action": (), "log_prob": (), "entropy": (), "value": (),
@@ -739,7 +740,7 @@ class TestBaseTrainProfilerTrain:
     def test_train_profile_metrics_values_sane(self, tmp_path: Path,
                                                device: torch.device) -> None:
         agent = MockAgent()
-        env = FakeVecEnv(num_envs=1, obs_dim=4, act_dim=2, steps_until_done=(100,))
+        env = FakeVecEnv(num_envs=1, obs_dim=4, act_dim=2, steps_until_done=(100,), auto_reset=True)
         buf = Buffer(step=8, num_envs=1, data={
             "state": (4,), "reward": (), "done": (),
             "action": (), "log_prob": (), "entropy": (), "value": (),
@@ -770,7 +771,7 @@ class TestBaseTrainProfilerWandb:
     def test_train_profile_wandb_logs_profile_keys(self, tmp_path: Path,
                                                   device: torch.device) -> None:
         agent = MockAgent()
-        env = FakeVecEnv(num_envs=1, obs_dim=4, act_dim=2, steps_until_done=(100,))
+        env = FakeVecEnv(num_envs=1, obs_dim=4, act_dim=2, steps_until_done=(100,), auto_reset=True)
         buf = Buffer(step=8, num_envs=1, data={
             "state": (4,), "reward": (), "done": (),
             "action": (), "log_prob": (), "entropy": (), "value": (),
@@ -794,7 +795,7 @@ class TestBaseTrainProfilerWandb:
     def test_train_profile_wandb_step_alignment(self, tmp_path: Path,
                                                 device: torch.device) -> None:
         agent = MockAgent()
-        env = FakeVecEnv(num_envs=1, obs_dim=4, act_dim=2, steps_until_done=(100,))
+        env = FakeVecEnv(num_envs=1, obs_dim=4, act_dim=2, steps_until_done=(100,), auto_reset=True)
         buf = Buffer(step=8, num_envs=1, data={
             "state": (4,), "reward": (), "done": (),
             "action": (), "log_prob": (), "entropy": (), "value": (),
@@ -816,7 +817,7 @@ class TestBaseTrainProfilerWandb:
         # separate arg to _log_profile_metrics), so no `profile/step` should
         # be logged to wandb. Locks in the current dataclass shape.
         agent = MockAgent()
-        env = FakeVecEnv(num_envs=1, obs_dim=4, act_dim=2, steps_until_done=(100,))
+        env = FakeVecEnv(num_envs=1, obs_dim=4, act_dim=2, steps_until_done=(100,), auto_reset=True)
         buf = Buffer(step=8, num_envs=1, data={
             "state": (4,), "reward": (), "done": (),
             "action": (), "log_prob": (), "entropy": (), "value": (),
@@ -835,4 +836,134 @@ class TestBaseTrainProfilerWandb:
         for k in ("fps", "rollout_ms", "update_ms",
                   "vram_allocated_gb", "vram_peak_gb", "ram_mb"):
             assert f"profile/{k}" in joined_keys
+        env.close()
+
+
+# ---------------------------------------------------------------------------
+# TestBaseTrainRealEnvIntegration — end-to-end real Gymnasium envs
+# ---------------------------------------------------------------------------
+
+class _RawCartPoleEnv(BaseEnv):
+    """Real CartPole wrapper — forwards action as-is (no .item() workaround).
+
+    auto_reset=False forces BaseTrain.__init__ (train.py:83-84) to wrap this
+    in a VectorEnv, which dispatches the batched (1,) action to a scalar for
+    CartPole's Discrete(2) space.
+    """
+    def __init__(self):
+        super().__init__()
+        self._env = gym.make("CartPole-v1")
+        self.observation_space = self._env.observation_space
+        self.action_space = self._env.action_space
+
+    def reset(self, *, seed=None, options=None):
+        return self._env.reset(seed=seed, options=options)
+
+    def step(self, action):
+        return self._env.step(action)  # no manual reshaping
+
+    def close(self):
+        self._env.close()
+
+
+class _RawPendulumEnv(BaseEnv):
+    """Real Pendulum wrapper — forwards action as-is (continuous, Box((1,)))."""
+    def __init__(self):
+        super().__init__()
+        self._env = gym.make("Pendulum-v1")
+        self.observation_space = self._env.observation_space
+        self.action_space = self._env.action_space
+
+    def reset(self, *, seed=None, options=None):
+        return self._env.reset(seed=seed, options=options)
+
+    def step(self, action):
+        return self._env.step(action)  # no manual reshaping
+
+    def close(self):
+        self._env.close()
+
+
+class _ContinuousAgent(BaseAgent):
+    """Inline continuous agent for Pendulum (obs_dim=3, act_dim=1, Normal)."""
+    def __init__(self, obs_dim: int = 3, act_dim: int = 1):
+        super().__init__()
+        self.mean_layer = nn.Linear(obs_dim, act_dim)
+        self.log_std = nn.Parameter(torch.zeros(act_dim))
+        self.value = nn.Linear(obs_dim, 1)
+
+    def forward(self, state, **kwargs):
+        action_mean = self.mean_layer(state)
+        action_std = self.log_std.exp().expand_as(action_mean)
+        logits = torch.cat([action_mean, action_std], dim=-1)
+        return logits, self.value(state)
+
+    @staticmethod
+    def build_distribution(logits):
+        act_dim = logits.shape[-1] // 2
+        return torch.distributions.Normal(logits[..., :act_dim], logits[..., act_dim:])
+
+    def get_action(self, state, action=None, **kwargs):
+        logits, value = self.forward(state, **kwargs)
+        dist = self.build_distribution(logits)
+        if action is None: action = dist.sample()
+        log_prob, dist_entropy = eval_action(dist, action)
+        return {"action": action, "log_prob": log_prob,
+                "entropy": dist_entropy, "value": value}
+
+
+class TestBaseTrainRealEnvIntegration:
+    """End-to-end BaseTrain.train() with real Gymnasium envs — no action-shape
+    workaround in the wrapper. Locks in the train.py:83-84 VectorEnv wrapping
+    contract: single envs get wrapped so SyncVectorEnv dispatches batched
+    actions to the correct per-env shape.
+    """
+
+    @pytest.mark.gpu
+    def test_train_real_cartpole_no_workaround(self, tmp_path: Path,
+                                               device: torch.device) -> None:
+        obs_dim, act_dim = 4, 2
+        rollout_steps = 16
+        agent = MockAgent(obs_dim, act_dim)
+        env = _RawCartPoleEnv()
+        buf = Buffer(step=rollout_steps, num_envs=1, data={
+            "state": (obs_dim,), "reward": (), "done": (),
+            "action": (), "log_prob": (), "entropy": (), "value": (),
+        }, device=device)
+        cfg = _make_train_config(tmp_path, device)
+        cfg.rollout_steps = rollout_steps
+        cfg.timestamp = rollout_steps * 2
+        cfg.num_envs = 1
+        cfg.num_update = 2
+        trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, AlgoConfig(),
+                            require_buffer_size=4)
+        trainer.train(use_wandb=False, use_tb=False)
+        # buf is cleared at the end of each train step (train.py:297); the
+        # contract this test pins is "train() completes without the real
+        # env rejecting the action shape". Assert episode_rewards is a list
+        # (structural — confirms rollout ran, env.step accepted actions).
+        assert isinstance(trainer.episode_rewards, list)
+        env.close()
+
+    @pytest.mark.gpu
+    def test_train_real_pendulum_no_workaround(self, tmp_path: Path,
+                                               device: torch.device) -> None:
+        obs_dim, act_dim = 3, 1
+        rollout_steps = 16
+        agent = _ContinuousAgent(obs_dim, act_dim)
+        env = _RawPendulumEnv()
+        buf = Buffer(step=rollout_steps, num_envs=1, data={
+            "state": (obs_dim,), "reward": (), "done": (),
+            "action": (act_dim,), "log_prob": (), "entropy": (),
+            "value": (),
+        }, device=device)
+        cfg = _make_train_config(tmp_path, device)
+        cfg.rollout_steps = rollout_steps
+        cfg.timestamp = rollout_steps * 2
+        cfg.num_envs = 1
+        cfg.num_update = 2
+        trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, AlgoConfig(),
+                            require_buffer_size=4)
+        trainer.train(use_wandb=False, use_tb=False)
+        assert isinstance(trainer.episode_rewards, list)
         env.close()
