@@ -20,7 +20,7 @@ class VectorEnv(BaseEnv):
                 elif callable(env_spec):
                     env = env_spec()
                 else:
-                    env = env_spec
+                    raise ValueError("env_spec must be a string (Gymnasium ID) or a callable (Env class)")
 
                 env.reset(seed=seed)
                 return env
