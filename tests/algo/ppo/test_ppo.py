@@ -218,19 +218,20 @@ class TestPpoLossInternals:
         torch.testing.assert_close(result["policy_loss"], -advantage.mean())
 
     @pytest.mark.gpu
-    def test_ppo_loss_raises_when_dist_none(self, device) -> None:
+    def test_ppo_loss_raises_when_agent_missing_build_distribution(self, device) -> None:
         class NoDistAgent(BaseAgent):
             def __init__(self): super().__init__(); self.actor = nn.Linear(4, 2)
             def forward(self, state, **kwargs): return self.actor(state), torch.zeros(1)
-            @staticmethod
-            def build_distribution(logits): return None
-            def get_action(self, state, action=None, **kwargs): return {"action": torch.zeros(1), "log_prob": torch.zeros(1), "entropy": torch.zeros(1), "value": torch.zeros(1)}
+            def get_action(self, state, action=None, **kwargs):
+                return {"action": torch.zeros(1), "log_prob": torch.zeros(1),
+                        "entropy": torch.zeros(1), "value": torch.zeros(1)}
+            # NOTE: no build_distribution -> assert_agent_contract raises
         agent = NoDistAgent().to(device)
         state = torch.randn(16, 4, device=device)
         params = dict(agent.named_parameters())
         buffers = dict(agent.named_buffers())
         cfg = AlgoConfig()
-        with pytest.raises(NotImplementedError, match="buid_distribtion"):
+        with pytest.raises(NotImplementedError, match="build_distribution"):
             ppo_loss(agent, params, buffers, state, torch.zeros(16, device=device),
                      torch.zeros(16, device=device), torch.zeros(16, device=device),
                      torch.zeros(16, device=device), cfg)

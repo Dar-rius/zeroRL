@@ -1,11 +1,15 @@
 """Unit tests for custom exceptions (zerorl.errors).
 
-Verifies EmptyBufferError (raised on update with insufficient buffer)
-and KeyBufferError (raised by Buffer.insert() on unknown keys).
+Verifies EmptyBufferError (raised on update with insufficient buffer),
+KeyBufferError (raised by Buffer.insert() on unknown keys), and
+assert_agent_contract (runtime check for required agent methods).
 """
 
 import pytest
-from zerorl.errors import EmptyBufferError, KeyBufferError
+import torch
+import torch.nn as nn
+from zerorl.agent import BaseAgent
+from zerorl.errors import EmptyBufferError, KeyBufferError, assert_agent_contract
 
 
 class TestEmptyBufferError:
@@ -78,3 +82,62 @@ class TestKeyBufferError:
             raise KeyBufferError("bar", data)
         assert exc_info.value.arg_name == "bar"
         assert exc_info.value.data_buffer is data
+
+
+class _GoodAgent(BaseAgent):
+    """Minimal agent satisfying the full contract for positive-case tests."""
+    def __init__(self) -> None:
+        super().__init__(); self.actor = nn.Linear(4, 2)
+
+    def forward(self, state: torch.Tensor, **kwargs):
+        return self.actor(state), torch.zeros(1)
+
+    @staticmethod
+    def build_distribution(logits: torch.Tensor):
+        return torch.distributions.Categorical(logits=logits)
+
+    def get_action(self, state: torch.Tensor, action=None, **kwargs):
+        logits, v = self.forward(state)
+        d = self.build_distribution(logits)
+        a = d.sample() if action is None else action
+        return {"action": a, "log_prob": torch.zeros(1),
+                "entropy": torch.zeros(1), "value": v}
+
+
+class TestAssertAgentContract:
+    """Tests for assert_agent_contract (runtime agent method checks)."""
+
+    def test_passes_when_all_attrs_present(self) -> None:
+        agent = _GoodAgent()
+        assert_agent_contract(agent, {
+            "forward": "f", "get_action": "g", "build_distribution": "b"})
+
+    def test_raises_not_implemented_for_missing_attr(self) -> None:
+        # NOTE: can't test `forward` here — nn.Module defines a default
+        # `forward`, so hasattr(agent, "forward") is always True. The
+        # {"forward": ...} entry in ppo.py:90 is effectively a no-op.
+        # Use `get_action` instead (not inherited from nn.Module).
+        class NoGetAction(BaseAgent):
+            def __init__(self): super().__init__(); self.actor = nn.Linear(4, 2)
+            def forward(self, state, **kwargs):
+                return self.actor(state), torch.zeros(1)
+            @staticmethod
+            def build_distribution(logits: torch.Tensor):
+                return torch.distributions.Categorical(logits=logits)
+            # NOTE: no get_action -> assert_agent_contract raises
+        with pytest.raises(NotImplementedError, match="^g$"):
+            assert_agent_contract(NoGetAction(), {"get_action": "g"})
+
+    def test_message_matches_dict_value(self) -> None:
+        with pytest.raises(NotImplementedError, match="expected message"):
+            assert_agent_contract(_GoodAgent(), {"missing_attr": "expected message"})
+
+    def test_empty_dict_no_raise(self) -> None:
+        assert_agent_contract(_GoodAgent(), {})
+
+    def test_first_missing_attr_raises_in_dict_order(self) -> None:
+        # Documents dict-iteration semantics: the first missing attr raises,
+        # and the raised message is the dict VALUE (not the key).
+        agent = _GoodAgent()  # has forward, get_action, build_distribution
+        with pytest.raises(NotImplementedError, match="^msg1$"):
+            assert_agent_contract(agent, {"missing_one": "msg1", "missing_two": "msg2"})

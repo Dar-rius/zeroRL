@@ -24,7 +24,7 @@ from zerorl.common import Buffer
 from zerorl.config import TrainConfig, AlgoConfig
 from zerorl.env import BaseEnv
 from zerorl.processing import NormMeanStd
-from zerorl.errors import EmptyBufferError
+from zerorl.errors import EmptyBufferError, assert_agent_contract
 
 
 #Profiler Metric
@@ -76,6 +76,8 @@ class BaseTrain:
         super().__init__()
         self.train_config = train_config
         self.agent = agent.to(self.train_config.device)
+        assert_agent_contract(self.agent,
+                        {"get_action": "Your agent should have the method `get_action`"})
         self.env = env
         self.buffer = buffer
         self.update_weights = update_weights
@@ -126,7 +128,7 @@ class BaseTrain:
             self.normalizer.update(state_tensor)
             state_normalized = self.normalizer.normalize(state_tensor)
             with torch.inference_mode():
-                outputs = self.agent.get_action(state_normalized)
+                outputs: dict[str, Tensor] = self.agent.get_action(state_normalized) #type: ignore[operator]
                 outputs["value"] = outputs["value"].squeeze(-1)
                 if str(env_device).startswith("cuda"):
                     action_input: np.ndarray | Tensor = outputs["action"]
@@ -173,7 +175,7 @@ class BaseTrain:
         with torch.inference_mode():
             self.normalizer.update(state_tensor)
             state_normalized = self.normalizer.normalize(state_tensor)
-            next_output = self.agent.get_action(state_normalized)
+            next_output: dict[dict, Tensor] = self.agent.get_action(state_normalized) #type: ignore[operator]
         return next_output
 
     

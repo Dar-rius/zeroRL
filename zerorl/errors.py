@@ -1,5 +1,19 @@
 """Custom exceptions for the zerorl project."""
 
+from zerorl.agent import BaseAgent
+
+
+def assert_agent_contract(agent: BaseAgent, attr_search: dict[str, str]):
+    """
+        Check if attributes exists in Agent
+        agent: Agent
+        attr_search: Key -> Attribute Name
+                     Value -> Message Error
+    """
+    for attr, message in attr_search.items():
+        if not hasattr(agent, attr):
+            raise NotImplementedError(message)
+
 
 class EmptyBufferError(Exception):
     """Raised when an update is attempted on an insufficiently filled buffer.
