@@ -4,7 +4,7 @@ import torch.nn as nn
 from zerorl.agent import BaseAgent, eval_action
 from zerorl.env import BaseEnv
 from zerorl.train import BaseTrain
-from zerorl.common import Buffer
+from zerorl.buffer import Buffer
 from zerorl.config import TrainConfig, AlgoConfig
 from zerorl.algorithms.ppo import gae_compute, ppo
 
@@ -13,19 +13,28 @@ from zerorl.algorithms.ppo import gae_compute, ppo
 class CartPoleAgent(BaseAgent):
     def __init__(self, input_layer, output_layer):
         super().__init__()
-        self.actor = nn.Linear(input_layer, output_layer)
-        self.critic = nn.Linear(input_layer, 1)
+        self.extract_layer = nn.Sequential(
+                nn.Linear(input_layer, 128),
+                nn.Tanh(),
+                nn.Linear(128, 128),
+                nn.Tanh(),
+                nn.Linear(128,64)
+                )
+        self.actor = nn.Linear(64, output_layer)
+        self.critic = nn.Linear(64, 1)
 
     def forward(self, state: torch.Tensor):
-        state_t = torch.as_tensor(state, dtype=torch.float32)
-        return self.actor(state_t), self.critic(state_t)
+        x = self.extract_layer(state)
+        logits = self.actor(x)
+        value = self.critic(x)
+        return logits, value
 
     @staticmethod
     def build_distribution(logits: torch.Tensor):
         return torch.distributions.Categorical(logits=logits)
     
-    def get_action(self, state: torch.Tensor, action: torch.Tensor | None = None, **kwargs):
-        logits, value = self.forward(state, **kwargs)
+    def get_action(self, state: torch.Tensor, action: torch.Tensor | None = None):
+        logits, value = self.forward(state)
         dist = self.build_distribution(logits)
         if action is None: action = dist.sample()
         log_prob, dist_entropy = eval_action(dist, action)
@@ -51,9 +60,10 @@ class CartPoleEnv(BaseEnv):
 
 
 # 3. Configure and train
-config = TrainConfig(model_name="cartpole", model_save_path="./checkpoints", profile=True)
+config = TrainConfig(project_name="cartpole_example", model_name="cartpole", model_save_path=".checkpoints")
 config.device = torch.device("cpu")
 algo_config = AlgoConfig(lr=3e-4, gamma=0.99, clip_eps=0.2, ent_coef=0.01)
+
 
 env = CartPoleEnv()
 input_layer = env.observation_space.shape
@@ -62,38 +72,21 @@ agent = CartPoleAgent(input_layer[0], output_layer)
 buffer = Buffer(
     step=config.rollout_steps,
     data={
-        "state": input_layer,
-        "action": output_layer.shape,
-        "old_log_prob": (),
-        "reward": (),
-        "done": (),
-        "entropy": (),
-        "value": (),
-        "adv": (),
-        "return": (),
-        "log_prob": (),
-        'advantage': (),
-    },
-    device=config.device,
-)
+        "state": input_layer, "action": output_layer.shape, "old_log_prob": (),
+        "reward": (), "done": (), "entropy": (), "value": (),
+        "adv": (), "return": (), "log_prob": (), "advantage": ()},
+    device=config.device)
+
 
 def update_weights(agent, buffer, scheduler, optimizer, step, last_output, algo_config):
     """Compute GAE advantages then run PPO update."""
     all_data = buffer.get_all()
     # Compute GAE from rollout data
-    gae_compute(
-        all_data["reward"],
-        all_data["value"],
-        last_output["value"],
-        all_data["done"],
-        algo_config
-    )
-    return ppo(
-        agent, optimizer, buffer, algo_config, scheduler,
-        batch_size=algo_config.batch_size,
-        epochs=algo_config.epochs,
-        device=agent.device,
-    )
+    gae_compute(all_data["reward"], all_data["value"],last_output["value"], all_data["done"], algo_config)
+    return ppo(agent, optimizer, buffer, algo_config, scheduler,
+            batch_size=algo_config.batch_size,
+            epochs=algo_config.epochs,
+            device=agent.device)
 
 trainer = BaseTrain(agent, env, buffer, update_weights, config, algo_config)
-trainer.train(use_wandb=False, use_tb=False)
+trainer.train(use_wandb=True)

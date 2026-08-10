@@ -20,7 +20,7 @@ from torch import optim
 from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.tensorboard import SummaryWriter
 from zerorl.agent import BaseAgent
-from zerorl.common import Buffer
+from zerorl.buffer import Buffer
 from zerorl.config import TrainConfig, AlgoConfig
 from zerorl.env import BaseEnv
 from zerorl.processing import NormMeanStd
@@ -55,7 +55,7 @@ class BaseTrain:
                  update_weights: Callable[[BaseAgent, Buffer, LambdaLR,
                                            optim.Optimizer, int, dict[str,Tensor],
                                            AlgoConfig | None], dict[str, Tensor]],
-                 train_config: TrainConfig,
+                 config: TrainConfig,
                  algo_config: AlgoConfig | None = None,
                  optimizer: optim.Optimizer | None = None,
                  schedule_func: Callable[[int], float] | None = None,
@@ -69,19 +69,19 @@ class BaseTrain:
             update_weights: Callable that computes the weight update from
                 collected rollout data. Signature:
                 (agent, buffer, optimizer, last_output, algo_config) -> dict[str, Tensor].
-            train_config: Training configuration (device, paths, hyperparams).
+            config: Training configuration (device, paths, hyperparams).
             algo_config: Algorithm hyperparameters (passed to update_weights).
             optimizer: Optional optimizer. If None, creates Adam with algo_config.lr.
             require_buffer_size: Minimum buffer size before an update is allowed.
         """
         super().__init__()
-        self.train_config = train_config
-        self.agent = agent.to(self.train_config.device)
+        self.config = config
+        self.agent = agent.to(self.config.device)
         assert_agent_contract(self.agent,
                         {"get_action": "Your agent should have the method `get_action`"})
         self.env = env
         if not getattr(env, "auto_reset", False):
-            self.env = VectorEnv(lambda: self.env, self.train_config.num_envs)
+            self.env = VectorEnv(lambda: self.env, self.config.num_envs)
         self.buffer = buffer
         self.update_weights = update_weights
         self.algo_config = algo_config
@@ -98,18 +98,18 @@ class BaseTrain:
             raise ValueError("NormMeanStd requires environment with a defined observation shape")
 
         if schedule_func is None:
-            schedule_func = lambda current_step: 1.0 - (current_step / self.train_config.num_update)
+            schedule_func = lambda current_step: 1.0 - (current_step / self.config.num_update)
         self.scheduler = LambdaLR(self.optimizer, schedule_func)
 
         self.require_buffer_size = require_buffer_size
-        self.normalizer = NormMeanStd(obs_shape, train_config.device)
-        tb_log_dir = os.path.join(self.train_config.model_save_path, "tensorboard", self.train_config.model_name)
+        self.normalizer = NormMeanStd(obs_shape, config.device)
+        tb_log_dir = os.path.join(self.config.model_save_path, "tensorboard", self.config.model_name)
         self.tb_writer = SummaryWriter(tb_log_dir)
         self.current_episode_reward: Tensor | None = None
         self.episode_rewards: list[float] = []
 
 
-    def rollout_phase(self, state: np.ndarray):
+    def rollout_phase(self, state: np.ndarray | Tensor):
         """Collect experience by running the agent in the environment.
 
         Stores each transition in the buffer and resets on episode end.
@@ -118,7 +118,7 @@ class BaseTrain:
         Args:
             state: Initial observation to start the rollout from.
         """
-        dev = self.train_config.device
+        dev = self.config.device
         env_device = getattr(self.env, "device", "cpu")
         state_tensor = torch.as_tensor(state, dtype=torch.float32, device=dev)
         if state_tensor.dim() == 1: state_tensor = state_tensor.unsqueeze(0)
@@ -127,7 +127,7 @@ class BaseTrain:
         if self.current_episode_reward is None:
             self.current_episode_reward = torch.zeros(num_envs, device=dev)
 
-        for _ in range(self.train_config.rollout_steps):
+        for _ in range(self.config.rollout_steps):
             self.normalizer.update(state_tensor)
             state_normalized = self.normalizer.normalize(state_tensor)
             with torch.inference_mode():
@@ -225,7 +225,7 @@ class BaseTrain:
 
 
 
-    def train(self, *, use_wandb: bool = False, use_tb: bool = False):
+    def train(self, *, save_model: bool = False, use_wandb: bool = False, use_tb: bool = False):
         """Run the full training loop.
 
         Repeats rollout -> update_weights -> log -> clear for num_update steps.
@@ -234,12 +234,20 @@ class BaseTrain:
             use_wandb: Whether to log to Weights & Biases.
             use_tb: Whether to log to TensorBoard.
         """
-        is_profile = self.train_config.profile
-        is_cuda = self.train_config.device ==  torch.device("cuda") and torch.cuda.is_available()
+        #Configure env
+        is_profile = self.config.profile
+        is_cuda = self.config.device ==  torch.device("cuda") and torch.cuda.is_available()
         sync = torch.cuda.synchronize
         if is_profile: sys.stderr.write("\033[96mZeroRL Profiler Enabled (TIME & VRAM).\033[0m\n")
         state, _ = self.env.reset()
-        for step in tqdm(range(self.train_config.num_update)):
+        if use_wandb:
+            try:
+                wandb.init(project=self.config.project_name, 
+                        config={"Train Configs": self.config.__dict__,
+                                "Hyper Paramaters": self.algo_config.__dict__ if self.algo_config else {}})
+            except ImportError:
+                raise ImportError("`wandb` is not installed. Install it with: pip install wandb")
+        for step in tqdm(range(self.config.num_update)):
             if is_profile:
                 if is_cuda :
                     sync()
@@ -271,7 +279,7 @@ class BaseTrain:
                 ram_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
                 ram_mb = ram_kb /1024 if ram_kb > 0 else 0.0
                 profile_data = ProfileMetrics(
-                    fps= (self.train_config.rollout_steps * self.train_config.num_envs) / (t_end - t_start),
+                    fps= (self.config.rollout_steps * self.config.num_envs) / (t_end - t_start),
                     rollout_ms = (t_rollout - t_start) * 1000,
                     update_ms = (t_end - t_rollout) * 1000,
                     vram_allocated_gb = torch.cuda.memory_allocated() / (1024 ** 3) if is_cuda else 0.0,
@@ -295,9 +303,14 @@ class BaseTrain:
             for k, v in losses.items(): metrics[k] = v
             self._log_metrics(metrics, step, use_wandb, use_tb)
             self.buffer.clear()
+        #Close Wandb or TensorBoard
+        if use_wandb: wandb.finish()
+        if use_tb: self.tb_writer.close()
+        #Save model
+        if save_model: self.save_model()
 
 
     def save_model(self):
-        """Save agent weights to the path in train_config.model_path."""
-        os.makedirs(os.path.dirname(self.train_config.model_path), exist_ok=True)
-        torch.save(self.agent.state_dict(), self.train_config.model_path)
+        """Save agent weights to the path inconfig.model_path."""
+        os.makedirs(os.path.dirname(self.config.model_path), exist_ok=True)
+        torch.save(self.agent.state_dict(), self.config.model_path)
