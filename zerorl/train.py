@@ -25,6 +25,7 @@ from zerorl.config import TrainConfig, AlgoConfig
 from zerorl.env import BaseEnv
 from zerorl.processing import NormMeanStd
 from zerorl.errors import EmptyBufferError, assert_agent_contract
+from zerorl.vector_env import VectorEnv
 
 
 #Profiler Metric
@@ -79,6 +80,8 @@ class BaseTrain:
         assert_agent_contract(self.agent,
                         {"get_action": "Your agent should have the method `get_action`"})
         self.env = env
+        if not getattr(env, "auto_reset", False):
+            self.env = VectorEnv(lambda: self.env, self.train_config.num_envs)
         self.buffer = buffer
         self.update_weights = update_weights
         self.algo_config = algo_config

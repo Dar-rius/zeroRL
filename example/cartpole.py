@@ -11,10 +11,10 @@ from zerorl.algorithms.ppo import gae_compute, ppo
 
 # 1. Define your agent
 class CartPoleAgent(BaseAgent):
-    def __init__(self):
+    def __init__(self, input_layer, output_layer):
         super().__init__()
-        self.actor = nn.Linear(4, 2)
-        self.critic = nn.Linear(4, 1)
+        self.actor = nn.Linear(input_layer, output_layer)
+        self.critic = nn.Linear(input_layer, 1)
 
     def forward(self, state: torch.Tensor):
         state_t = torch.as_tensor(state, dtype=torch.float32)
@@ -52,22 +52,27 @@ class CartPoleEnv(BaseEnv):
 
 # 3. Configure and train
 config = TrainConfig(model_name="cartpole", model_save_path="./checkpoints", profile=True)
+config.device = torch.device("cpu")
 algo_config = AlgoConfig(lr=3e-4, gamma=0.99, clip_eps=0.2, ent_coef=0.01)
 
-agent = CartPoleAgent()
 env = CartPoleEnv()
+input_layer = env.observation_space.shape
+output_layer = env.action_space.n
+agent = CartPoleAgent(input_layer[0], output_layer)
 buffer = Buffer(
     step=config.rollout_steps,
     data={
-        "state": (4,),
+        "state": input_layer,
+        "action": output_layer.shape,
         "old_log_prob": (),
         "reward": (),
         "done": (),
         "entropy": (),
         "value": (),
         "adv": (),
-        "returns": (),
-        "actions": (),
+        "return": (),
+        "log_prob": (),
+        'advantage': (),
     },
     device=config.device,
 )
@@ -76,14 +81,13 @@ def update_weights(agent, buffer, scheduler, optimizer, step, last_output, algo_
     """Compute GAE advantages then run PPO update."""
     all_data = buffer.get_all()
     # Compute GAE from rollout data
-    returns, advantages, _ = gae_compute(
+    gae_compute(
         all_data["reward"],
         all_data["value"],
         last_output["value"],
         all_data["done"],
-        algo_config,
+        algo_config
     )
-    buffer.insert(returns=returns, adv=advantages)
     return ppo(
         agent, optimizer, buffer, algo_config, scheduler,
         batch_size=algo_config.batch_size,
