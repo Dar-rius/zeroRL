@@ -10,3 +10,5 @@ wheels/
 .venv
 .opencode
 uv.lock
+.checkpoints
+wandb/

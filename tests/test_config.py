@@ -74,13 +74,14 @@ class TestTrainConfig:
     """Tests for TrainConfig with __post_init__ computed fields."""
 
     def test_model_path_computed(self) -> None:
-        cfg = TrainConfig(model_name="ppo_agent", model_save_path="/tmp/models")
-        assert cfg.model_path == "/tmp/models/ppo_agent.pt"
+        cfg = TrainConfig(model_name="ppo_agent", model_save_path="/tmp/models", project_name="test")
+        assert cfg.model_path == "./tmp/models/ppo_agent.pt"
 
     def test_num_update_computed(self) -> None:
         cfg = TrainConfig(
             model_name="m",
             model_save_path="/tmp",
+            project_name="test",
             timestamp=6_000_000,
             rollout_steps=2048,
         )
@@ -88,30 +89,30 @@ class TestTrainConfig:
 
     def test_num_update_custom_values(self) -> None:
         cfg = TrainConfig(
-            model_name="m", model_save_path="/tmp", timestamp=1000, rollout_steps=100
+            model_name="m", model_save_path="/tmp", project_name="test", timestamp=1000, rollout_steps=100
         )
         assert cfg.num_update == 10
 
     def test_no_print_on_init(self, capsys: pytest.CaptureFixture[str]) -> None:
-        _ = TrainConfig(model_name="m", model_save_path="/tmp")
+        _ = TrainConfig(model_name="m", model_save_path="/tmp", project_name="test")
         captured = capsys.readouterr()
         assert captured.out == ""
         assert captured.err == ""
 
     def test_default_values(self) -> None:
-        cfg = TrainConfig(model_name="m", model_save_path="/tmp")
+        cfg = TrainConfig(model_name="m", model_save_path="/tmp", project_name="test")
         assert cfg.rollout_steps == 2048
         assert cfg.timestamp == 1_000_000
         assert isinstance(cfg.device, torch.device)
 
     def test_model_path_with_nested_dir(self) -> None:
-        cfg = TrainConfig(model_name="agent", model_save_path="/a/b/c/d")
-        assert cfg.model_path == "/a/b/c/d/agent.pt"
+        cfg = TrainConfig(model_name="agent", model_save_path="/a/b/c/d", project_name="test")
+        assert cfg.model_path == "./a/b/c/d/agent.pt"
 
     def test_device_field_exists(self) -> None:
-        cfg = TrainConfig(model_name="m", model_save_path="/tmp")
+        cfg = TrainConfig(model_name="m", model_save_path="/tmp", project_name="test")
         assert hasattr(cfg, "device")
 
     def test_no_batch_size_field(self) -> None:
-        cfg = TrainConfig(model_name="m", model_save_path="/tmp")
+        cfg = TrainConfig(model_name="m", model_save_path="/tmp", project_name="test")
         assert not hasattr(cfg, "batch_size")

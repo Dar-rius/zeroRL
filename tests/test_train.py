@@ -13,7 +13,7 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock
 from gymnasium import spaces
 from zerorl.agent import BaseAgent, eval_action
-from zerorl.common import Buffer
+from zerorl.buffer import Buffer
 from zerorl.config import AlgoConfig, TrainConfig
 from zerorl.errors import EmptyBufferError
 from zerorl.env import BaseEnv
@@ -84,7 +84,7 @@ def _mock_update_weights(
 
 def _make_train_config(tmp_path: Path, device: torch.device) -> TrainConfig:
     """Create TrainConfig with specific device."""
-    cfg = TrainConfig(model_name="test", model_save_path=str(tmp_path))
+    cfg = TrainConfig(model_name="test", model_save_path=str(tmp_path), project_name="test")
     cfg.device = device
     return cfg
 
@@ -103,7 +103,7 @@ class TestBaseTrainInit:
         assert trainer.agent is agent
         assert isinstance(trainer.env, VectorEnv)
         assert trainer.buffer is buf
-        assert trainer.train_config is cfg
+        assert trainer.config is cfg
         assert trainer.algo_config is algo_cfg
         env.close()
 
@@ -286,7 +286,7 @@ class TestBaseTrainTrain:
         cfg.num_envs = 1
         trainer = BaseTrain(agent, env, buf, _make_counting_update_weights([]),
                             cfg, AlgoConfig(), require_buffer_size=4)
-        with patch("wandb.log") as mock_log:
+        with patch("wandb.init"), patch("wandb.log") as mock_log:
             trainer.train(use_wandb=True, use_tb=False)
         assert mock_log.called
         logged = mock_log.call_args.args[0]
@@ -339,7 +339,7 @@ class TestBaseTrainSaveModel:
         env = FakeVecEnv(num_envs=1, obs_dim=obs_dim, act_dim=act_dim)
         buf = Buffer(step=8, data={"state": (obs_dim,)}, device=device)
         nested = tmp_path / "nested" / "sub" / "dir"
-        cfg = TrainConfig(model_name="m", model_save_path=str(nested))
+        cfg = TrainConfig(model_name="m", model_save_path=str(nested), project_name="test")
         cfg.device = device
         trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, AlgoConfig())
         trainer.save_model()
@@ -451,7 +451,7 @@ class TestBaseTrainVectorizedRollout:
 def _make_profile_config(tmp_path: Path, device: torch.device,
                           profile: bool = True, rollout_steps: int = 8,
                           num_envs: int = 1, num_steps: int = 3) -> TrainConfig:
-    cfg = TrainConfig(model_name="profile_test", model_save_path=str(tmp_path))
+    cfg = TrainConfig(model_name="profile_test", model_save_path=str(tmp_path), project_name="test")
     cfg.device = device
     cfg.rollout_steps = rollout_steps
     cfg.num_envs = num_envs
@@ -642,7 +642,7 @@ class TestBaseTrainProfilerTrain:
         cfg = _make_profile_config(tmp_path, torch.device("cpu"), profile=True, num_steps=3)
         trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, AlgoConfig(),
                             require_buffer_size=4)
-        trainer.train_config.device = torch.device("cuda")
+        trainer.config.device = torch.device("cuda")
         # Stub the normalizer via patch.object (avoids mypy method-assign):
         # its real `normalize` is `@torch.compile`-decorated and dynamo's
         # compile-time probe of triton's CUDA capability would call
@@ -677,7 +677,7 @@ class TestBaseTrainProfilerTrain:
         cfg = _make_profile_config(tmp_path, torch.device("cpu"), profile=True, num_steps=1)
         trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, AlgoConfig(),
                             require_buffer_size=4)
-        trainer.train_config.device = torch.device("cuda")
+        trainer.config.device = torch.device("cuda")
         written: list[str] = []
         with ExitStack() as stack:
             stack.enter_context(patch.object(trainer.normalizer, "update", lambda x: None))
@@ -779,7 +779,7 @@ class TestBaseTrainProfilerWandb:
         cfg = _make_profile_config(tmp_path, device, profile=True, num_steps=1)
         trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, AlgoConfig(),
                             require_buffer_size=4)
-        with patch("wandb.log") as mock_log:
+        with patch("wandb.init"), patch("wandb.log") as mock_log:
             trainer.train(use_wandb=True, use_tb=False)
         logged_dicts = [c.args[0] for c in mock_log.call_args_list if c.args]
         joined_keys = set()
@@ -803,7 +803,7 @@ class TestBaseTrainProfilerWandb:
         cfg = _make_profile_config(tmp_path, device, profile=True, num_steps=2)
         trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, AlgoConfig(),
                             require_buffer_size=4)
-        with patch("wandb.log") as mock_log:
+        with patch("wandb.init"), patch("wandb.log") as mock_log:
             trainer.train(use_wandb=True, use_tb=False)
         assert mock_log.call_count == 2  # expect exactly one wandb.log per step
         for c in mock_log.call_args_list:
@@ -825,7 +825,7 @@ class TestBaseTrainProfilerWandb:
         cfg = _make_profile_config(tmp_path, device, profile=True, num_steps=1)
         trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, AlgoConfig(),
                             require_buffer_size=4)
-        with patch("wandb.log") as mock_log:
+        with patch("wandb.init"), patch("wandb.log") as mock_log:
             trainer.train(use_wandb=True, use_tb=False)
         logged_dicts = [c.args[0] for c in mock_log.call_args_list if c.args]
         joined_keys = set()

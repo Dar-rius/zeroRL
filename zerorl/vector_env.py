@@ -11,12 +11,12 @@ class VectorEnv(BaseEnv):
     Accept either a registered Gymnasium env_id (string) or a custom
     ZeroRL env class (callable)
     """
-    def __init__(self, env_spec: str | Callable, num_envs: int = 1):
+    def __init__(self, env_spec: str | Callable, num_envs: int = 1, render_mode: str | None = None):
         super().__init__()
         def make_env_fn(seed:int) -> Callable:
             def _init():
                 if isinstance(env_spec, str):
-                    env = gym.make(env_spec)
+                    env = gym.make(env_spec, render_mode = render_mode)
                 elif callable(env_spec):
                     env = env_spec()
                 else:

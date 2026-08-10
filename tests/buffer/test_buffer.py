@@ -1,8 +1,8 @@
-"""Unit tests for the Buffer class (zerorl.common)."""
+"""Unit tests for the Buffer class (zerorl.buffer)."""
 
 import pytest
 import torch
-from zerorl.common import Buffer
+from zerorl.buffer import Buffer
 from zerorl.errors import KeyBufferError
 
 @pytest.fixture

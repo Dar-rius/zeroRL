@@ -36,7 +36,7 @@ from torch.optim.lr_scheduler import LambdaLR
 from zerorl.agent import BaseAgent
 from zerorl.env import BaseEnv
 from zerorl.train import BaseTrain
-from zerorl.common import Buffer
+from zerorl.buffer import Buffer
 from zerorl.config import TrainConfig, AlgoConfig
 from zerorl.algorithms.ppo import gae_compute, ppo
 

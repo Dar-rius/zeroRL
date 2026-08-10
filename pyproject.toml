@@ -42,7 +42,8 @@ exclude=[
     "build/",
     "dist/",
     "docs/",
-    "test/"
+    "test/",
+    "examples/"
 ]
 ignore_missing_imports=true
 
