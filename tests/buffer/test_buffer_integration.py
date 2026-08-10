@@ -2,7 +2,7 @@
 
 import pytest
 import torch
-from zerorl.common import Buffer
+from zerorl.buffer import Buffer
 
 @pytest.fixture
 def device() -> torch.device:

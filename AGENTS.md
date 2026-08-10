@@ -28,7 +28,7 @@ No pre-commit hooks, no CI, no formatter config beyond ruff defaults.
 ## Import style
 
 - `train.py` uses **absolute imports** (`from zerorl.agent import BaseAgent`)
-- `ppo.py` uses **relative imports** (`from ...common import Buffer`, `from ...config import AlgoConfig`)
+- `ppo.py` uses **absolute imports** (`from zerorl.buffer import Buffer`, `from zerorl.config import AlgoConfig`)
 - `algorithms/__init__.py` is empty; `algorithms/ppo/__init__.py` re-exports `ppo` and `gae_compute`
 
 ## Structure
@@ -40,7 +40,7 @@ zerorl/
   env.py                   # BaseEnv (ABC, gym.Env) — Gymnasium v1 API wrapper; register_env() decorator
   vector_env.py             # VectorEnv(BaseEnv) — vectorized env wrapper (env_id string or callable class)
   train.py                 # BaseTrain — rollout/update/save training loop
-  common.py                # Buffer — dict-based pre-allocated torch buffer
+  buffer.py                # Buffer — dict-based pre-allocated torch buffer
   config.py                # TrainConfig (computed fields), AlgoConfig (mutable dataclass)
   errors.py                # EmptyBufferError
   function.py              # get_buffer_params_model()
@@ -54,7 +54,7 @@ tests/
   __init__.py
   test_agent.py              # 6 tests
   test_buffer_integration.py # 4 tests
-  test_common.py             # 6 tests
+  test_buffer.py             # 6 tests
   test_config.py             # 15 tests
   test_continuous_actions.py # 1 test
   test_env.py                # 5 tests
@@ -118,7 +118,7 @@ BaseTrain(agent, env, buffer, update_weights, train_config, algo_config=None, op
 - Abstract base classes use `@abstractmethod` with concrete bodies (template method pattern) — subclasses override and optionally call `super()`
 - `Buffer` pre-allocates torch tensors and uses a slice pointer with a `size` property and bounds checking in `insert()`
 - GPU detection is automatic in `TrainConfig.device`
-- Tests use pytest, import zerorl as a package (`from zerorl.common import Buffer`)
+- Tests use pytest, import zerorl as a package (`from zerorl.buffer import Buffer`)
 - `train.py` includes wandb and tensorboard logging via `_log_metrics()`
 
 ## Testing
