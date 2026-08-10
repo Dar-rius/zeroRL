@@ -107,6 +107,26 @@ class TestBaseTrainInit:
         env.close()
 
 
+class TestBaseTrainContract:
+    @pytest.mark.gpu
+    def test_basetrain_init_raises_when_agent_missing_get_action(
+        self, tmp_path: Path, device: torch.device) -> None:
+        # Pins the current narrow contract: BaseTrain.__init__ checks only
+        # `get_action` (train.py:79-80). A missing `forward`/`build_distribution`
+        # would NOT raise here — they surface later at call time.
+        class NoGetActionAgent(BaseAgent):
+            def __init__(self): super().__init__(); self.actor = nn.Linear(4, 2)
+            def forward(self, state, **kw): return self.actor(state), torch.zeros(1)
+            # NOTE: no get_action -> assert_agent_contract raises
+        agent = NoGetActionAgent()
+        env = FakeVecEnv(num_envs=1, obs_dim=4, act_dim=2)
+        buf = Buffer(step=8, data={"state": (4,)}, device=device)
+        cfg = _make_train_config(tmp_path, device)
+        with pytest.raises(NotImplementedError, match="get_action"):
+            BaseTrain(agent, env, buf, _mock_update_weights, cfg, AlgoConfig())
+        env.close()
+
+
 class TestBaseTrainRollout:
     @pytest.mark.gpu
     def test_rollout_phase_fills_buffer(self, tmp_path: Path, device: torch.device) -> None:
@@ -622,13 +642,14 @@ class TestBaseTrainProfilerTrain:
         trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, AlgoConfig(),
                             require_buffer_size=4)
         trainer.train_config.device = torch.device("cuda")
-        # Stub the normalizer: its real `normalize` is `@torch.compile`-decorated
-        # and dynamo's compile-time probe of triton's CUDA capability would
-        # call `torch.cuda.current_device()` -> CUDA init -> RuntimeError on
+        # Stub the normalizer via patch.object (avoids mypy method-assign):
+        # its real `normalize` is `@torch.compile`-decorated and dynamo's
+        # compile-time probe of triton's CUDA capability would call
+        # `torch.cuda.current_device()` -> CUDA init -> RuntimeError on
         # CPU-only. We don't care about normalization in profiler tests.
-        trainer.normalizer.update = lambda x: None
-        trainer.normalizer.normalize = lambda x: x
         with ExitStack() as stack:
+            stack.enter_context(patch.object(trainer.normalizer, "update", lambda x: None))
+            stack.enter_context(patch.object(trainer.normalizer, "normalize", lambda x: x))
             stack.enter_context(patch("torch.cuda.is_available", return_value=True))
             mock_sync = stack.enter_context(patch("torch.cuda.synchronize"))
             mock_reset = stack.enter_context(patch("torch.cuda.reset_peak_memory_stats"))
@@ -656,10 +677,10 @@ class TestBaseTrainProfilerTrain:
         trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, AlgoConfig(),
                             require_buffer_size=4)
         trainer.train_config.device = torch.device("cuda")
-        trainer.normalizer.update = lambda x: None
-        trainer.normalizer.normalize = lambda x: x
         written: list[str] = []
         with ExitStack() as stack:
+            stack.enter_context(patch.object(trainer.normalizer, "update", lambda x: None))
+            stack.enter_context(patch.object(trainer.normalizer, "normalize", lambda x: x))
             stack.enter_context(patch("torch.cuda.is_available", return_value=True))
             stack.enter_context(patch("torch.cuda.synchronize"))
             stack.enter_context(patch("torch.cuda.reset_peak_memory_stats"))
