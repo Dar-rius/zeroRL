@@ -69,8 +69,8 @@ class AcrobotEnv(BaseEnv):
 
 
 # 3. Configure and train
-config = TrainConfig(project_name="acrobot_example", model_name="agent_1", model_save_path=".checkpoints")
-#config.device = torch.device("cpu")
+config = TrainConfig(project_name="acrobot_example", model_name="agent_1", model_save_path=".checkpoints", profile=True)
+config.device = torch.device("cpu")
 algo_config = AlgoConfig(lr=3e-4, gamma=0.99, clip_eps=0.2, ent_coef=0.01)
 
 
@@ -97,5 +97,5 @@ def update_weights(agent, buffer, scheduler, optimizer, step, last_output, algo_
             epochs=algo_config.epochs,
             device=agent.device)
 
-trainer = BaseTrain(agent, env, buffer, update_weights, config, algo_config)
-trainer.train(use_wandb=True, save_model=True)
+trainer = BaseTrain(agent, env, buffer, update_weights, config, algo_config, render_mode="human")
+trainer.train(use_wandb=True)
