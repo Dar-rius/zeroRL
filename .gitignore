@@ -12,3 +12,4 @@ wheels/
 uv.lock
 .checkpoints
 wandb/
+tmp/

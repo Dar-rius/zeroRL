@@ -32,7 +32,7 @@ class TestVectorEnvInit:
         env = VectorEnv(env_spec="CartPole-v1", num_envs=4)
         assert isinstance(env, BaseEnv)
         assert env.observation_space.shape == (4, 4) 
-        assert env.action_space.shape == (4,)
+        assert env.action_space.n == 2
         env.close()
 
     def test_init_with_callable_class(self) -> None:

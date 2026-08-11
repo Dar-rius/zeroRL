@@ -53,7 +53,7 @@ class BaseTrain:
                  env: BaseEnv,
                  buffer: Buffer,
                  update_weights: Callable[[BaseAgent, Buffer, LambdaLR,
-                                           optim.Optimizer, int, dict[str,Tensor],
+                                           optim.Optimizer, dict[str,Tensor],
                                            AlgoConfig | None], dict[str, Tensor]],
                  config: TrainConfig,
                  algo_config: AlgoConfig | None = None,
@@ -180,7 +180,8 @@ class BaseTrain:
         with torch.inference_mode():
             self.normalizer.update(state_tensor)
             state_normalized = self.normalizer.normalize(state_tensor)
-            next_output: dict[dict, Tensor] = self.agent.get_action(state_normalized) #type: ignore[operator]
+            next_output: dict[str, Tensor] = self.agent.get_action(state_normalized) #type: ignore[operator]
+            next_output["value"] = next_output["value"].squeeze(-1)
         return next_output
 
     
@@ -209,7 +210,7 @@ class BaseTrain:
 
         for k, v in metrics.items():
             if isinstance(v, Tensor):
-                tensor_keys.append(k)
+                tensor_keys.append(f"train/{k}")
                 tensor_vals.append(v.detach())
             else:
                 clean_metrics[k] = float(v)
@@ -219,7 +220,7 @@ class BaseTrain:
             for k, v in zip(tensor_keys, cpu_vals):
                 clean_metrics[k] = float(v)
 
-        if use_wandb: wandb.log(clean_metrics, step=step)
+        if use_wandb: wandb.log(clean_metrics, step=step) #type: ignore[attr-defined]
 
         if use_tb:
             for key, value in clean_metrics.items():
@@ -244,9 +245,8 @@ class BaseTrain:
         state, _ = self.env.reset()
         if use_wandb:
             try:
-                wandb.init(project=self.config.project_name, 
-                        config={"Train Configs": self.config.__dict__,
-                                "Hyper Paramaters": self.algo_config.__dict__ if self.algo_config else {}})
+                wandb.init(project=self.config.project_name, config={"Train Configs": self.config.__dict__, #type: ignore[attr-defined]
+                         "Hyper Paramaters": self.algo_config.__dict__ if self.algo_config else {}}) 
             except ImportError:
                 raise ImportError("`wandb` is not installed. Install it with: pip install wandb")
         for step in tqdm(range(self.config.num_update)):
@@ -270,10 +270,8 @@ class BaseTrain:
                     self.buffer,
                     self.scheduler,
                     self.optimizer,
-                    step,
                     last_output,
-                    self.algo_config
-                    )
+                    self.algo_config)
                
             if is_profile:
                 if is_cuda: sync()
@@ -296,15 +294,16 @@ class BaseTrain:
             else:
                 mean_reward = 0.0
 
-            metrics = {
-                "mean_episode_reward": mean_reward,
-                "learning_rate": self.optimizer.param_groups[0]['lr']
-            }
+            metrics = {"train/mean_episode_reward": mean_reward,
+                        "train/learning_rate": self.optimizer.param_groups[0]['lr']}
+            if use_wandb and is_profile:
+                for k, v in asdict(profile_data).items(): metrics[f"profile/{k}"] = v
             for k, v in losses.items(): metrics[k] = v
             self._log_metrics(metrics, step, use_wandb, use_tb)
             self.buffer.clear()
+
         #Close Wandb or TensorBoard
-        if use_wandb: wandb.finish()
+        if use_wandb: wandb.finish() #type: ignore[attr-defined]
         if use_tb: self.tb_writer.close()
         #Save model
         if save_model: self.save_model()

@@ -28,7 +28,7 @@ class VectorEnv(BaseEnv):
     
         self._env = gym.vector.SyncVectorEnv([make_env_fn(i) for i in range(num_envs)])
         self.observation_space = self._env.observation_space
-        self.action_space = self._env.action_space
+        self.action_space = getattr(self._env, "single_action_space", self._env.action_space)
 
 
     @property

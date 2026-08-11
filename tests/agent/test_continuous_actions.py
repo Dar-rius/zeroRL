@@ -167,8 +167,8 @@ class TestPPOContinuousIntegration:
         w_before = {k: v.clone() for k, v in agent.state_dict().items()}
         
         result = ppo(
-            agent, optimizer, raw_buf, cfg, scheduler, 
-            batch_size=32, epochs=3, device=device
+            agent, optimizer, raw_buf, cfg, scheduler,
+            device=device
         )
         
         w_after = agent.state_dict()

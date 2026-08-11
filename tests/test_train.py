@@ -75,7 +75,6 @@ def _mock_update_weights(
     buffer: Buffer,
     scheduler: LambdaLR,
     optimizer: torch.optim.Optimizer,
-    step: int,
     last_output: dict[str, torch.Tensor],
     algo_config: AlgoConfig | None,
 ) -> dict[str, torch.Tensor]:
@@ -218,8 +217,8 @@ class FakeVecEnv(BaseEnv):
 
 
 def _make_counting_update_weights(counter: list[int]):
-    def _update(agent, buffer, scheduler, optimizer, step, last_output, algo_config):
-        counter.append(step)
+    def _update(agent, buffer, scheduler, optimizer, last_output, algo_config):
+        counter.append(len(counter))
         return {"loss": torch.tensor(0.0, device=next(agent.parameters()).device)}
     return _update
 
@@ -290,7 +289,7 @@ class TestBaseTrainTrain:
             trainer.train(use_wandb=True, use_tb=False)
         assert mock_log.called
         logged = mock_log.call_args.args[0]
-        assert "loss" in logged and "mean_episode_reward" in logged and "learning_rate" in logged
+        assert "train/loss" in logged and "train/mean_episode_reward" in logged and "train/learning_rate" in logged
         env.close()
 
     @pytest.mark.gpu
@@ -313,7 +312,7 @@ class TestBaseTrainTrain:
         trainer.train(use_wandb=False, use_tb=True)
         assert trainer.tb_writer.add_scalar.called
         keys_logged = {call.args[0] for call in trainer.tb_writer.add_scalar.call_args_list}
-        assert "loss" in keys_logged
+        assert "train/loss" in keys_logged
         env.close()
 
 
@@ -360,7 +359,7 @@ class TestBaseTrainLogMetrics:
         with patch("wandb.log") as mock_log:
             trainer._log_metrics(metrics, step=0, use_wandb=True, use_tb=True)
         logged = mock_log.call_args.args[0]
-        assert logged["x"] == 1.5 and isinstance(logged["x"], float)
+        assert logged["train/x"] == 1.5 and isinstance(logged["train/x"], float)
         assert logged["y"] == 2.5
         env.close()
 
@@ -789,9 +788,6 @@ class TestBaseTrainProfilerWandb:
         env.close()
 
     @pytest.mark.gpu
-    @pytest.mark.xfail(reason="profiler emits two wandb.log calls per step — "
-                              "profile call lacks step= (train.py:279-282), "
-                              "metrics misalign on the wandb dashboard")
     def test_train_profile_wandb_step_alignment(self, tmp_path: Path,
                                                 device: torch.device) -> None:
         agent = MockAgent()
@@ -844,12 +840,7 @@ class TestBaseTrainProfilerWandb:
 # ---------------------------------------------------------------------------
 
 class _RawCartPoleEnv(BaseEnv):
-    """Real CartPole wrapper — forwards action as-is (no .item() workaround).
-
-    auto_reset=False forces BaseTrain.__init__ (train.py:83-84) to wrap this
-    in a VectorEnv, which dispatches the batched (1,) action to a scalar for
-    CartPole's Discrete(2) space.
-    """
+    """Real CartPole wrapper — forwards action as-is (no .item() workaround)."""
     def __init__(self):
         super().__init__()
         self._env = gym.make("CartPole-v1")
@@ -860,7 +851,7 @@ class _RawCartPoleEnv(BaseEnv):
         return self._env.reset(seed=seed, options=options)
 
     def step(self, action):
-        return self._env.step(action)  # no manual reshaping
+        return self._env.step(action)
 
     def close(self):
         self._env.close()
@@ -878,7 +869,7 @@ class _RawPendulumEnv(BaseEnv):
         return self._env.reset(seed=seed, options=options)
 
     def step(self, action):
-        return self._env.step(action)  # no manual reshaping
+        return self._env.step(action)
 
     def close(self):
         self._env.close()
@@ -914,7 +905,7 @@ class _ContinuousAgent(BaseAgent):
 
 class TestBaseTrainRealEnvIntegration:
     """End-to-end BaseTrain.train() with real Gymnasium envs — no action-shape
-    workaround in the wrapper. Locks in the train.py:83-84 VectorEnv wrapping
+    workaround in the wrapper. Locks in the train.py VectorEnv wrapping
     contract: single envs get wrapped so SyncVectorEnv dispatches batched
     actions to the correct per-env shape.
     """
@@ -938,10 +929,6 @@ class TestBaseTrainRealEnvIntegration:
         trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, AlgoConfig(),
                             require_buffer_size=4)
         trainer.train(use_wandb=False, use_tb=False)
-        # buf is cleared at the end of each train step (train.py:297); the
-        # contract this test pins is "train() completes without the real
-        # env rejecting the action shape". Assert episode_rewards is a list
-        # (structural — confirms rollout ran, env.step accepted actions).
         assert isinstance(trainer.episode_rewards, list)
         env.close()
 
