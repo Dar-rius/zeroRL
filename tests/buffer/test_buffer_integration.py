@@ -1,4 +1,4 @@
-"""Integration tests for Buffer (zerorl.common)."""
+"""Integration tests for Buffer (zerorl.buffer)."""
 
 import pytest
 import torch
