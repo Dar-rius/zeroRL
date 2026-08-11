@@ -22,7 +22,7 @@ def get_actor_critic_buffer(state_space: tuple, action_space: tuple, config: Tra
 #Auto create new Actor-Critic BaseAgent
 class ActorCriticAgent(BaseAgent):
     def __init__(self, input_dim: int, output_dim: int, is_discrete: bool, hidden_dim: int = 64):
-        self.discrete = is_discrete
+        self.is_discrete = is_discrete
         output_dim = output_dim if self.is_discrete else output_dim * 2
         
         super().__init__()
