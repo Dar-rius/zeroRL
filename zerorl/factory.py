@@ -13,7 +13,7 @@ def get_env(env_id: str, num_envs: int, render_mode: str | None): return VectorE
 #Auto create Actor-Critic buffer
 def get_actor_critic_buffer(state_space: tuple, action_space: tuple, config: TrainConfig): 
     buffer = Buffer(step = config.rollout_steps,
-             data = {"state": (state_space, ), "action": action_space,
+             data = {"state": state_space, "action": action_space,
                 "reward": (), "done": (), "entropy": (), "value": (),
                 "adv": (), "return": (), "log_prob": (), "advantage": ()},
                 device=config.device)
@@ -21,18 +21,21 @@ def get_actor_critic_buffer(state_space: tuple, action_space: tuple, config: Tra
 
 #Auto create new Actor-Critic BaseAgent
 class ActorCriticAgent(BaseAgent):
-    def __init__(self, input_layer: int, output_layer: int, hidden_layer: int = 64):
+    def __init__(self, input_dim: int, output_dim: int, is_discrete: bool, hidden_dim: int = 64):
+        self.discrete = is_discrete
+        output_dim = output_dim if self.is_discrete else output_dim * 2
+        
         super().__init__()
         # Feature Extractor
         self.extract_layer = nn.Sequential(
-                nn.Linear(input_layer, hidden_layer),
+                nn.Linear(input_dim, hidden_dim),
                 nn.Tanh(),
-                nn.Linear(hidden_layer, hidden_layer),
+                nn.Linear(hidden_dim, hidden_dim),
                 )
         # Actor
-        self.actor = nn.Linear(hidden_layer, output_layer)
+        self.actor = nn.Linear(hidden_dim, output_dim)
         # Critic
-        self.critic = nn.Linear(hidden_layer,  1)
+        self.critic = nn.Linear(hidden_dim,  1)
 
     def forward(self, state: Tensor):
         x = self.extract_layer(state)
@@ -40,9 +43,12 @@ class ActorCriticAgent(BaseAgent):
         value = self.critic(x)
         return (logits, value)
 
-    @staticmethod
-    def build_distribution(logits: torch.Tensor):
-        return torch.distributions.Categorical(logits=logits)
+    def build_distribution(self, logits: torch.Tensor):
+        if self.is_discrete:
+            return torch.distributions.Categorical(logits=logits)
+        mean, log_std = logits.chunk(2, dim=-1)
+        std = log_std.exp()
+        return torch.distributions.Normal(mean, std)
     
     def get_action(self, state: torch.Tensor, action: torch.Tensor | None = None):
         logits, value = self.forward(state)

@@ -1,4 +1,5 @@
 from typing import Callable
+from gymnasium import spaces
 from torch import optim
 from zerorl.factory import get_env, get_actor_critic_buffer, ActorCriticAgent
 from zerorl.train import BaseTrain
@@ -21,16 +22,17 @@ def easy_train_ppo(config: TrainConfig,
         env = base_env
     else:
         env = get_env(env_id, config.num_envs, render_mode)
-
-    obs_dim = env.observation_space.shape[-1] #type: ignore
-    act_dim = env.action_space.n #type: ignore[attr-defined]
+    
+    obs_dim = env.observation_space
+    act_dim = env.action_space
+    is_discrete = isinstance(act_dim, spaces.Discrete)
     
     if base_agent is not None:
         agent = base_agent
-    else: 
-        agent = ActorCriticAgent(obs_dim, act_dim, hidden_layer)
+    else:
+        agent = ActorCriticAgent(obs_dim.shape[-1], act_dim.n, is_discrete, hidden_layer) #type: ignore
 
-    buffer = get_actor_critic_buffer(obs_dim, act_dim, config) #type: ignore
+    buffer = get_actor_critic_buffer(obs_dim.shape, act_dim.shape, config) #type: ignore
 
     #update weights function
     def easy_update_weights(agent, buffer, scheduler, optimizer, last_output, algo_config):
