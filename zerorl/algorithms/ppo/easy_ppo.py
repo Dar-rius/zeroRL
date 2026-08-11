@@ -33,7 +33,7 @@ def easy_train_ppo(config: TrainConfig,
     buffer = get_actor_critic_buffer(obs_dim, act_dim, config) #type: ignore
 
     #update weights function
-    def easy_update_weights(agent, buffer, scheduler, optimizer, step, last_output, config):
+    def easy_update_weights(agent, buffer, scheduler, optimizer, last_output, config):
         data = buffer.get_all()
         gae_compute(data["reward"], data["value"], last_output["value"], data["done"], config) 
         return ppo(agent, optimizer, buffer, algo_config, scheduler, agent.device)
