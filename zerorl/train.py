@@ -180,7 +180,8 @@ class BaseTrain:
         with torch.inference_mode():
             self.normalizer.update(state_tensor)
             state_normalized = self.normalizer.normalize(state_tensor)
-            next_output: dict[dict, Tensor] = self.agent.get_action(state_normalized) #type: ignore[operator]
+            next_output: dict[str, Tensor] = self.agent.get_action(state_normalized) #type: ignore[operator]
+            next_output["value"] = next_output["value"].squeeze(-1)
         return next_output
 
     

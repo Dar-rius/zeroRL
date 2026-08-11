@@ -21,7 +21,7 @@ def gae_compute(rewards: Tensor,
             values: Tensor,
             last_value: Tensor,
             dones: Tensor,
-            hyper_params: AlgoConfig,
+            algo_config: AlgoConfig,
             buffer:Buffer | None = None) -> tuple[Tensor, Tensor, Tensor]:
     """Compute Generalized Advantage Estimation.
 
@@ -48,9 +48,9 @@ def gae_compute(rewards: Tensor,
     next_values = torch.cat((values[1:], last_value.unsqueeze(0)), 0)
     total_size = rewards.shape[0]
     advantages = torch.zeros_like(rewards)
-    delta = rewards + hyper_params.gamma * next_values * mask - values
+    delta = rewards + algo_config.gamma * next_values * mask - values
     for step in reversed(range(total_size)):
-        gae = delta[step] + hyper_params.gamma * hyper_params.gae_lambda * mask[step] * gae
+        gae = delta[step] + algo_config.gamma * algo_config.gae_lambda * mask[step] * gae
         advantages[step] = gae
     returns = advantages + values
     if buffer is not None:
@@ -68,7 +68,7 @@ def ppo_loss(
         old_log_prob: Tensor,
         advantages: Tensor,
         returns: Tensor,
-        hyper_params: AlgoConfig
+        algo_config: AlgoConfig
         ) -> dict[str, Tensor]:
     """Compute PPO clipped surrogate loss, value loss, and entropy bonus.
 
@@ -81,7 +81,7 @@ def ppo_loss(
         old_log_prob: Log probabilities from the old policy.
         advantages: GAE advantage estimates.
         returns: GAE return estimates.
-        hyper_params: Algorithm hyperparameters.
+        algo_config: Algorithm configuration. 
 
     Returns:
         Dict with keys "loss", "policy_loss", "value_loss", "entropy_loss".
@@ -101,15 +101,15 @@ def ppo_loss(
 
     surr1 = ratio * idx_adv
     surr2 = torch.clamp(ratio,
-                        1.0 - hyper_params.clip_eps,
-                        1.0 + hyper_params.clip_eps) * idx_adv
+                        1.0 - algo_config.clip_eps,
+                        1.0 + algo_config.clip_eps) * idx_adv
 
     policy_loss = -torch.min(surr1, surr2).mean()
     value_loss = nn.functional.mse_loss(new_values.view(-1), idx_return)
     entropy_loss = dist_entropy.mean()
     loss = policy_loss + \
-            (hyper_params.value_coef * value_loss) - \
-            (hyper_params.ent_coef * entropy_loss)
+            (algo_config.value_coef * value_loss) - \
+            (algo_config.ent_coef * entropy_loss)
     return {'loss': loss, 
             'policy_loss': policy_loss,
             'value_loss': value_loss,
@@ -119,10 +119,8 @@ def ppo_loss(
 def ppo(agent: BaseAgent,
         optimizer: Optimizer,
         buffer: Buffer,
-        hyper_params: AlgoConfig,
+        algo_config: AlgoConfig,
         scheduler: LambdaLR,
-        batch_size: int,
-        epochs: int,
         device: torch.device = torch.device("cpu")
         ) ->  dict[str, Tensor]:
     """Run a full PPO update on collected rollout data.
@@ -135,7 +133,7 @@ def ppo(agent: BaseAgent,
         optimizer: Optimizer for the agent parameters.
         buffer: Buffer containing rollout data with keys "state", "action",
             "log_prob", "advantage", "return".
-        hyper_params: Algorithm hyperparameters.
+        algo_config: Algorithm  Configuration.
         scheduler: Learning rate scheduler (stepped once per call).
         batch_size: Minibatch size.
         epochs: Number of passes over the data.
@@ -162,9 +160,9 @@ def ppo(agent: BaseAgent,
                     old_log_prob: Tensor,
                     advantage: Tensor,
                     return_: Tensor,
-                    hyper_params: AlgoConfig) -> dict[str, Tensor]:
+                    algo_config: AlgoConfig) -> dict[str, Tensor]:
         global_losses = ppo_loss(agent, params, buffers, state, action,
-                            old_log_prob, advantage, return_, hyper_params)
+                            old_log_prob, advantage, return_, algo_config)
         global_losses["loss"].backward()
         return global_losses
 
@@ -175,10 +173,10 @@ def ppo(agent: BaseAgent,
         minibatch SGD with the clipped surrogate loss.
         """
         history = []
-        for _ in range(epochs):
+        for _ in range(algo_config.epochs):
             shuffle_index = torch.randperm(dataset_size, device=device)
-            for start in range(0, dataset_size, batch_size):
-                end = start + batch_size
+            for start in range(0, dataset_size, algo_config.batch_size):
+                end = start + algo_config.batch_size
                 idx = shuffle_index[start:end]
                 if idx.numel() == 0:
                     continue  # Skip empty batches
@@ -187,7 +185,7 @@ def ppo(agent: BaseAgent,
                 optimizer.zero_grad(set_to_none=True)
                 global_losses = ppo_backward(agent, params, buffers, flat_data["state"][idx],
                                 flat_data["action"][idx], flat_data["log_prob"][idx], adv_norm[idx],
-                                returns[idx], hyper_params)
+                                returns[idx], algo_config)
                 torch.nn.utils.clip_grad_norm_(agent.parameters(), 1.0)
                 optimizer.step()
                 history.append({k: v.detach().clone() for k, v in global_losses.items()})
