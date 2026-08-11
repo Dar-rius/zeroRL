@@ -14,12 +14,23 @@ class CartPoleAgent(BaseAgent):
     def __init__(self, input_layer, output_layer):
         super().__init__()
         self.extract_layer = nn.Sequential(
-                nn.Linear(input_layer, 64),
+                nn.Linear(input_layer, 128),
                 nn.Tanh(),
-                nn.Linear(64, 64),
+                nn.Linear(128, 64),
                 )
-        self.actor = nn.Linear(64, output_layer)
-        self.critic = nn.Linear(64, 1)
+
+        self.actor = nn.Sequential(
+                nn.Linear(64, 64),
+                nn.ReLU(),
+                nn.Linear(64,  output_layer)
+                )
+        
+        self.critic = nn.Sequential(
+                nn.Linear(64, 64),
+                nn.ReLU(),
+                nn.Linear(64,  1)
+                )
+
 
     def forward(self, state: torch.Tensor):
         x = self.extract_layer(state)
@@ -43,7 +54,7 @@ class CartPoleAgent(BaseAgent):
 class CartPoleEnv(BaseEnv):
     def __init__(self):
         super().__init__()
-        self._env = gym.make("CartPole-v1")
+        self._env = gym.make("Acrobot-v1")
         self.observation_space = self._env.observation_space
         self.action_space = self._env.action_space
 
@@ -58,8 +69,8 @@ class CartPoleEnv(BaseEnv):
 
 
 # 3. Configure and train
-config = TrainConfig(project_name="cartpole_example", model_name="cartpole", model_save_path=".checkpoints")
-config.device = torch.device("cpu")
+config = TrainConfig(project_name="acrobot_example", model_name="agent_1", model_save_path=".checkpoints")
+#config.device = torch.device("cpu")
 algo_config = AlgoConfig(lr=3e-4, gamma=0.99, clip_eps=0.2, ent_coef=0.01)
 
 
@@ -70,7 +81,7 @@ agent = CartPoleAgent(input_layer[0], output_layer)
 buffer = Buffer(
     step=config.rollout_steps,
     data={
-        "state": input_layer, "action": output_layer.shape, "old_log_prob": (),
+        "state": input_layer, "action": output_layer.shape, 
         "reward": (), "done": (), "entropy": (), "value": (),
         "adv": (), "return": (), "log_prob": (), "advantage": ()},
     device=config.device)
@@ -80,11 +91,11 @@ def update_weights(agent, buffer, scheduler, optimizer, step, last_output, algo_
     """Compute GAE advantages then run PPO update."""
     all_data = buffer.get_all()
     # Compute GAE from rollout data
-    gae_compute(all_data["reward"], all_data["value"],last_output["value"], all_data["done"], algo_config)
+    gae_compute(all_data["reward"], all_data["value"],last_output["value"], all_data["done"], algo_config, buffer)
     return ppo(agent, optimizer, buffer, algo_config, scheduler,
             batch_size=algo_config.batch_size,
             epochs=algo_config.epochs,
             device=agent.device)
 
-trainer = BaseTrain(agent, env, buffer, update_weights, config, algo_config, render_mode="human")
-trainer.train(use_wandb=True)
+trainer = BaseTrain(agent, env, buffer, update_weights, config, algo_config)
+trainer.train(use_wandb=True, save_model=True)
