@@ -270,7 +270,6 @@ class BaseTrain:
                     self.buffer,
                     self.scheduler,
                     self.optimizer,
-                    step,
                     last_output,
                     self.algo_config)
                
