@@ -76,6 +76,7 @@ class BaseTrain:
             require_buffer_size: Minimum buffer size before an update is allowed.
         """
         super().__init__()
+        torch.set_float32_matmul_precision('high')
         self.config = config
         self.agent = agent.to(self.config.device)
         assert_agent_contract(self.agent,
@@ -299,8 +300,6 @@ class BaseTrain:
                 "mean_episode_reward": mean_reward,
                 "learning_rate": self.optimizer.param_groups[0]['lr']
             }
-            if use_wandb and is_profile:
-                wandb.log({f"profile/{k}": v for k, v in asdict(profile_data).items()})
             for k, v in losses.items(): metrics[k] = v
             self._log_metrics(metrics, step, use_wandb, use_tb)
             self.buffer.clear()
