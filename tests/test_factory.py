@@ -2,12 +2,9 @@
 
 import pytest
 import torch
-import torch.nn as nn
 from zerorl.factory import get_env, get_actor_critic_buffer, ActorCriticAgent
 from zerorl.vector_env import VectorEnv
-from zerorl.buffer import Buffer
 from zerorl.config import TrainConfig
-from zerorl.agent import BaseAgent
 
 
 @pytest.fixture
@@ -64,20 +61,20 @@ class TestGetActorCriticBuffer:
 
 class TestActorCriticAgent:
     def test_forward_returns_tuple(self, device) -> None:
-        agent = ActorCriticAgent(input_layer=4, output_layer=2).to(device)
+        agent = ActorCriticAgent(input_dim=4, output_dim=2, is_discrete=True).to(device)
         state = torch.randn(1, 4, device=device)
         logits, value = agent.forward(state)
         assert logits.shape == (1, 2)
         assert value.shape == (1, 1)
 
     def test_get_action_returns_correct_keys(self, device) -> None:
-        agent = ActorCriticAgent(input_layer=4, output_layer=2).to(device)
+        agent = ActorCriticAgent(input_dim=4, output_dim=2, is_discrete=True).to(device)
         state = torch.randn(1, 4, device=device)
         result = agent.get_action(state)
         assert set(result.keys()) == {"action", "log_prob", "entropy", "value"}
 
     def test_hidden_layer_default(self, device) -> None:
-        agent = ActorCriticAgent(input_layer=4, output_layer=2, hidden_layer=128).to(device)
+        agent = ActorCriticAgent(input_dim=4, output_dim=2, is_discrete=True, hidden_dim=128).to(device)
         state = torch.randn(1, 4, device=device)
         logits, _ = agent.forward(state)
         assert logits.shape == (1, 2)

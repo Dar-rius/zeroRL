@@ -80,7 +80,7 @@ class TestEasyTrainPpo:
         algo = AlgoConfig()
         env = CustomCartPole()
         train = easy_train_ppo(config=tmp_config, algo_config=algo, base_env=env)
-        assert train.env is env or env in train.env.__dict__.values()
+        assert train.env._env.envs[0] is env
         train.env.close()
 
     def test_default_env_from_id(self, tmp_config) -> None:
