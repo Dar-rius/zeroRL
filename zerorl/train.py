@@ -209,7 +209,7 @@ class BaseTrain:
 
         for k, v in metrics.items():
             if isinstance(v, Tensor):
-                tensor_keys.append(k)
+                tensor_keys.append(f"train/{k}")
                 tensor_vals.append(v.detach())
             else:
                 clean_metrics[k] = float(v)
@@ -219,7 +219,7 @@ class BaseTrain:
             for k, v in zip(tensor_keys, cpu_vals):
                 clean_metrics[k] = float(v)
 
-        if use_wandb: wandb.log(clean_metrics, step=step)
+        if use_wandb: wandb.log(clean_metrics, step=step) #type: ignore[attr-defined]
 
         if use_tb:
             for key, value in clean_metrics.items():
@@ -244,9 +244,8 @@ class BaseTrain:
         state, _ = self.env.reset()
         if use_wandb:
             try:
-                wandb.init(project=self.config.project_name, 
-                        config={"Train Configs": self.config.__dict__,
-                                "Hyper Paramaters": self.algo_config.__dict__ if self.algo_config else {}})
+                wandb.init(project=self.config.project_name, config={"Train Configs": self.config.__dict__, #type: ignore[attr-defined]
+                         "Hyper Paramaters": self.algo_config.__dict__ if self.algo_config else {}}) 
             except ImportError:
                 raise ImportError("`wandb` is not installed. Install it with: pip install wandb")
         for step in tqdm(range(self.config.num_update)):
@@ -272,8 +271,7 @@ class BaseTrain:
                     self.optimizer,
                     step,
                     last_output,
-                    self.algo_config
-                    )
+                    self.algo_config)
                
             if is_profile:
                 if is_cuda: sync()
@@ -296,15 +294,16 @@ class BaseTrain:
             else:
                 mean_reward = 0.0
 
-            metrics = {
-                "mean_episode_reward": mean_reward,
-                "learning_rate": self.optimizer.param_groups[0]['lr']
-            }
+            metrics = {"train/mean_episode_reward": mean_reward,
+                        "train/learning_rate": self.optimizer.param_groups[0]['lr']}
+            if use_wandb and is_profile:
+                for k, v in asdict(profile_data).items(): metrics[f"profile/{k}"] = v
             for k, v in losses.items(): metrics[k] = v
             self._log_metrics(metrics, step, use_wandb, use_tb)
             self.buffer.clear()
+
         #Close Wandb or TensorBoard
-        if use_wandb: wandb.finish()
+        if use_wandb: wandb.finish() #type: ignore[attr-defined]
         if use_tb: self.tb_writer.close()
         #Save model
         if save_model: self.save_model()
