@@ -10,7 +10,7 @@ from zerorl.algorithms.ppo import gae_compute, ppo
 
 
 # 1. Define your agent
-class CartPoleAgent(BaseAgent):
+class Agent(BaseAgent):
     def __init__(self, input_layer, output_layer):
         super().__init__()
         self.extract_layer = nn.Sequential(
@@ -51,7 +51,7 @@ class CartPoleAgent(BaseAgent):
 
 
 # 2. Define your environment (or use a Gymnasium wrapper)
-class CartPoleEnv(BaseEnv):
+class AcrobotEnv(BaseEnv):
     def __init__(self):
         super().__init__()
         self._env = gym.make("Acrobot-v1")
@@ -74,10 +74,10 @@ config = TrainConfig(project_name="acrobot_example", model_name="agent_1", model
 algo_config = AlgoConfig(lr=3e-4, gamma=0.99, clip_eps=0.2, ent_coef=0.01)
 
 
-env = CartPoleEnv()
+env = AcrobotEnv()
 input_layer = env.observation_space.shape
 output_layer = env.action_space.n
-agent = CartPoleAgent(input_layer[0], output_layer)
+agent = Agent(input_layer[0], output_layer)
 buffer = Buffer(
     step=config.rollout_steps,
     data={
