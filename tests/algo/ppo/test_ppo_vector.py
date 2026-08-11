@@ -119,8 +119,6 @@ class TestPPOVectorizedIntegration:
         
         result = ppo(
             agent, optimizer, buf, cfg, scheduler,
-            batch_size=16,
-            epochs=2,
             device=device,
         )
 

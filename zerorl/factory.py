@@ -13,7 +13,7 @@ def get_env(env_id: str, num_envs: int, render_mode: str | None): return VectorE
 #Auto create Actor-Critic buffer
 def get_actor_critic_buffer(state_space: tuple, action_space: tuple, config: TrainConfig): 
     buffer = Buffer(step = config.rollout_steps,
-             data = {"state": state_space, "action": action_space,
+             data = {"state": (state_space, ), "action": action_space,
                 "reward": (), "done": (), "entropy": (), "value": (),
                 "adv": (), "return": (), "log_prob": (), "advantage": ()},
                 device=config.device)

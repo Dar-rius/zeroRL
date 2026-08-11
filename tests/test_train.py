@@ -75,7 +75,6 @@ def _mock_update_weights(
     buffer: Buffer,
     scheduler: LambdaLR,
     optimizer: torch.optim.Optimizer,
-    step: int,
     last_output: dict[str, torch.Tensor],
     algo_config: AlgoConfig | None,
 ) -> dict[str, torch.Tensor]:
@@ -218,8 +217,8 @@ class FakeVecEnv(BaseEnv):
 
 
 def _make_counting_update_weights(counter: list[int]):
-    def _update(agent, buffer, scheduler, optimizer, step, last_output, algo_config):
-        counter.append(step)
+    def _update(agent, buffer, scheduler, optimizer, last_output, algo_config):
+        counter.append(len(counter))
         return {"loss": torch.tensor(0.0, device=next(agent.parameters()).device)}
     return _update
 
