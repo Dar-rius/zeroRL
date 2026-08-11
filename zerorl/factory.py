@@ -8,7 +8,7 @@ from torch import Tensor
 
 
 #Auto create new BaseEnv
-def get_env(env_id: str, num_envs: int, render_mode: str): return VectorEnv(env_id, num_envs, render_mode)
+def get_env(env_id: str, num_envs: int, render_mode: str | None): return VectorEnv(env_id, num_envs, render_mode)
 
 #Auto create Actor-Critic buffer
 def get_actor_critic_buffer(state_space: tuple, action_space: tuple, config: TrainConfig): 

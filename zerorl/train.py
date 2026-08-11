@@ -53,7 +53,7 @@ class BaseTrain:
                  env: BaseEnv,
                  buffer: Buffer,
                  update_weights: Callable[[BaseAgent, Buffer, LambdaLR,
-                                           optim.Optimizer, int, dict[str,Tensor],
+                                           optim.Optimizer, dict[str,Tensor],
                                            AlgoConfig | None], dict[str, Tensor]],
                  config: TrainConfig,
                  algo_config: AlgoConfig | None = None,

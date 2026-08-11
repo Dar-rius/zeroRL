@@ -87,17 +87,14 @@ buffer = Buffer(
     device=config.device)
 
 
-def update_weights(agent, buffer, scheduler, optimizer, step, last_output, algo_config):
+def update_weights(agent, buffer, scheduler, optimizer, last_output, algo_config):
     """Compute GAE advantages then run PPO update."""
     all_data = buffer.get_all()
     # Compute GAE from rollout data
     gae_compute(all_data["reward"], all_data["value"], last_output["value"], all_data["done"], algo_config, buffer)
     print(last_output["value"].shape)
     print(all_data["value"].shape)
-    return ppo(agent, optimizer, buffer, algo_config, scheduler,
-            batch_size=algo_config.batch_size,
-            epochs=algo_config.epochs,
-            device=agent.device)
+    return ppo(agent, optimizer, buffer, algo_config, scheduler, device=agent.device)
 
 trainer = BaseTrain(agent, env, buffer, update_weights, config, algo_config, render_mode="human")
 trainer.train()
