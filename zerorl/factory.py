@@ -25,7 +25,6 @@ class ActorCriticAgent(BaseAgent):
         super().__init__()
 
         self.is_discrete = is_discrete
-        output_dim = output_dim if self.is_discrete else output_dim * 2
         
         # Feature Extractor
         self.extract_layer = nn.Sequential(
