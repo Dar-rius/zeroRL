@@ -22,7 +22,7 @@ class Agent(BaseAgent):
         self.actor = nn.Sequential(
                 nn.Linear(64, 64),
                 nn.ReLU(),
-                nn.Linear(64,  output_layer)
+                nn.Linear(64, output_layer)
                 )
         
         self.critic = nn.Sequential(
@@ -73,17 +73,16 @@ config = TrainConfig(project_name="acrobot_example", model_name="agent_1", model
 config.device = torch.device("cpu")
 algo_config = AlgoConfig(lr=3e-4, gamma=0.99, clip_eps=0.2, ent_coef=0.01)
 
-
 env = AcrobotEnv()
 input_layer = env.observation_space.shape
 output_layer = env.action_space.n
-agent = Agent(input_layer[0], output_layer)
+agent = Agent(input_layer[-1], output_layer)
 buffer = Buffer(
     step=config.rollout_steps,
     data={
         "state": input_layer, "action": output_layer.shape, 
         "reward": (), "done": (), "entropy": (), "value": (),
-        "adv": (), "return": (), "log_prob": (), "advantage": ()},
+        "return": (), "log_prob": (), "advantage": ()},
     device=config.device)
 
 
@@ -95,4 +94,4 @@ def update_weights(agent, buffer, scheduler, optimizer, last_output, algo_config
     return ppo(agent, optimizer, buffer, algo_config, scheduler, device=agent.device)
 
 trainer = BaseTrain(agent, env, buffer, update_weights, config, algo_config, render_mode="human")
-trainer.train()
+trainer.train(use_wandb=True)
