@@ -70,7 +70,7 @@ class AcrobotEnv(BaseEnv):
 
 # 3. Configure and train
 config = TrainConfig(project_name="acrobot_example", model_name="agent_1", model_save_path=".checkpoints")
-#config.device = torch.device("cpu")
+config.device = torch.device("cpu")
 algo_config = AlgoConfig(lr=3e-4, gamma=0.99, clip_eps=0.2, ent_coef=0.01)
 
 env = AcrobotEnv()
