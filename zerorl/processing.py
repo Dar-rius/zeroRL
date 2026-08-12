@@ -6,6 +6,7 @@ for preprocessing observations before feeding them to the agent.
 
 import torch
 from torch import Tensor
+from zerorl.function import maybe_compile
 
 
 class NormMeanStd:
@@ -50,7 +51,7 @@ class NormMeanStd:
         self.var = m2 / new_count
         self.count =  new_count
 
-    @torch.compile
+    @maybe_compile
     def normalize(self, x: Tensor):
         """Normalize observations using current running statistics."""
         return (x - self.mean) / torch.sqrt(self.var + 1e-8)
@@ -70,7 +71,7 @@ class NormMinMax:
         self.high = high.to(device)
         self.scale = 1.0 / (self.high - self.low + 1e-8)
 
-    @torch.compile
+    @maybe_compile
     def normalize(self, x: Tensor):
         """Normalize observations using min-max scaling."""
         return (x - self.low) * self.scale
