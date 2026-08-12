@@ -25,20 +25,20 @@ def sync_gpu():
 # ==========================================
 # 1. ZERO RL
 # ==========================================
-from zerorl.easy_ppo import easy_train_ppo
+from zerorl.algorithms.ppo.easy_ppo import easy_train_ppo
 from zerorl.config import TrainConfig, AlgoConfig
 
 def benchmark_zerorl():
-    config = TrainConfig(model_name="bench", model_save_path="/tmp", timestamp=TOTAL_STEPS, num_envs=1)
+    config = TrainConfig(model_name="bench", model_save_path="/tmp", project_name="bench", timestamp=TOTAL_STEPS)
     algo_config = AlgoConfig(lr=LR, gamma=GAMMA, batch_size=BATCH_SIZE, epochs=10)
     
-    # LA LIGNE MAGIQUE : Tout est créé pour l'utilisateur !
     trainer = easy_train_ppo(config, algo_config, env_id=ENV_ID, hidden_layer=64)
-    
+
     # Warmup
     state, _ = trainer.env.reset()
     trainer.rollout_phase(state)
-    
+    trainer.buffer.clear()
+
     times, rewards = [], []
     start_time = time.time()
     steps_done = 0
@@ -94,19 +94,28 @@ def benchmark_sb3():
 # ==========================================
 def benchmark_tianshou():
     from tianshou.env import DummyVectorEnv
-    from tianshou.policy import PPOPolicy
+    from tianshou.policy.modelfree.ppo import PPOPolicy
     from tianshou.data import Collector, VectorReplayBuffer
     from tianshou.utils.net.common import Net
     from tianshou.utils.net.discrete import Actor, Critic
     
     env = DummyVectorEnv([lambda: gym.make(ENV_ID)])
+    
+    # Architecture identique : 64x64 avec activation Tanh
     net = Net(state_shape=env.observation_space.shape, hidden_sizes=[64, 64], device=DEVICE, activation=nn.Tanh)
     actor = Actor(net, env.action_space.n, device=DEVICE).to(DEVICE)
     critic = Critic(net, device=DEVICE).to(DEVICE)
     optim = torch.optim.Adam(list(actor.parameters()) + list(critic.parameters()), lr=LR)
     
-    policy = PPOPolicy(actor, critic, optim, torch.distributions.Categorical, 
-                       action_space=env.action_space, action_scaling=False, discount_factor=GAMMA, max_grad_norm=1.0)
+    # Instantiation de la policy (les arguments ont aussi légèrement changé)
+    policy = PPOPolicy(
+        actor, critic, optim, torch.distributions.Categorical, 
+        action_space=env.action_space, 
+        action_scaling=False, 
+        discount_factor=GAMMA, 
+        max_grad_norm=1.0
+    )
+                       
     collector = Collector(policy, env, VectorReplayBuffer(ROLLOUT_STEPS, 1))
     
     # Warmup
@@ -130,13 +139,11 @@ def benchmark_tianshou():
 # ==========================================
 # PLOT GRAPH
 # ==========================================
-def plot_results(zerorl_data, sb3_data, tianshou_data):
+def plot_results(zerorl_data, sb3_data):
     plt.figure(figsize=(10, 6))
     
     if zerorl_data[0]:
         plt.plot(zerorl_data[0], zerorl_data[1], label='ZeroRL (Ours)', color='#0052cc', linewidth=3)
-    if tianshou_data[0]:
-        plt.plot(tianshou_data[0], tianshou_data[1], label='Tianshou', color='#2ca02c', linewidth=3, linestyle='-')
     if sb3_data[0]:
         plt.plot(sb3_data[0], sb3_data[1], label='Stable-Baselines3', color='#d62728', linewidth=3, linestyle='--')
 
@@ -161,12 +168,8 @@ if __name__ == "__main__":
     z_times, z_rewards = benchmark_zerorl()
     print(f" Finish in {z_times[-1]:.1f}s. Reward max: {max(z_rewards):.1f}")
     
-    print("\n2. Run of Tianshou...")
-    t_times, t_rewards = benchmark_tianshou()
-    print(f"    Finish in  {t_times[-1]:.1f}s. Reward max: {max(t_rewards):.1f}")
-    
-    print("\n3. Run of Stable-Baselines3...")
+    print("\n2. Run of Stable-Baselines3...")
     s_times, s_rewards = benchmark_sb3()
     print(f"    Finish in  {s_times[-1]:.1f}s. Reward max: {max(s_rewards):.1f}")
     
-    plot_results((z_times, z_rewards), (s_times, s_rewards), (t_times, t_rewards))
+    plot_results((z_times, z_rewards), (s_times, s_rewards))
