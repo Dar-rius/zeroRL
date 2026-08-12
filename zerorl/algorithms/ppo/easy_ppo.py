@@ -26,13 +26,19 @@ def easy_train_ppo(config: TrainConfig,
     obs_dim = env.observation_space
     act_dim = env.action_space
     is_discrete = isinstance(act_dim, spaces.Discrete)
+    if is_discrete:
+        act_n = act_dim.n #type: ignore
+        act_shape = ()
+    else:
+        act_n = act_dim.shape[0] #type: ignore
+        act_shape = (act_n, ) #type: ignore
     
     if base_agent is not None:
         agent = base_agent
     else:
-        agent = ActorCriticAgent(obs_dim.shape[-1], act_dim.n, is_discrete, hidden_layer) #type: ignore
+        agent = ActorCriticAgent(obs_dim.shape[-1], act_n, is_discrete, hidden_layer) #type: ignore
 
-    buffer = get_actor_critic_buffer(obs_dim.shape[-1], act_dim.shape, config) #type: ignore
+    buffer = get_actor_critic_buffer(obs_dim.shape[-1], act_shape, config) #type: ignore
 
     #update weights function
     def easy_update_weights(agent, buffer, scheduler, optimizer, last_output, algo_config):
