@@ -22,20 +22,33 @@ def get_actor_critic_buffer(state_space: int, action_space: tuple, config: Train
 #Auto create new Actor-Critic BaseAgent
 class ActorCriticAgent(BaseAgent):
     def __init__(self, input_dim: int, output_dim: int, is_discrete: bool, hidden_dim: int = 64):
+        super().__init__()
+
         self.is_discrete = is_discrete
         output_dim = output_dim if self.is_discrete else output_dim * 2
         
-        super().__init__()
         # Feature Extractor
         self.extract_layer = nn.Sequential(
                 nn.Linear(input_dim, hidden_dim),
                 nn.Tanh(),
                 nn.Linear(hidden_dim, hidden_dim),
+                nn.Tanh()
                 )
         # Actor
         self.actor = nn.Linear(hidden_dim, output_dim)
         # Critic
         self.critic = nn.Linear(hidden_dim,  1)
+
+        if not is_discrete:
+            self.log_std = nn.Parameter(torch.zeros(output_dim))
+
+        self.apply(self._orthogonal_init)
+
+    def _orthogonal_init(self, module):
+        if isinstance(module, nn.Linear):
+            nn.init.orthogonal_(module.weight, gain=1.0)
+            if module.bias is not None:
+                nn.init.constant_(module.bias, 0.0)
 
     def forward(self, state: Tensor):
         x = self.extract_layer(state)
@@ -46,9 +59,8 @@ class ActorCriticAgent(BaseAgent):
     def build_distribution(self, logits: torch.Tensor):
         if self.is_discrete:
             return torch.distributions.Categorical(logits=logits)
-        mean, log_std = logits.chunk(2, dim=-1)
-        std = log_std.exp()
-        return torch.distributions.Normal(mean, std)
+        std = self.log_std.exp().expand_as(logits)
+        return torch.distributions.Normal(logits, std)
     
     def get_action(self, state: torch.Tensor, action: torch.Tensor | None = None):
         logits, value = self.forward(state)
