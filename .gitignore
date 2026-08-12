@@ -11,5 +11,6 @@ wheels/
 .opencode
 uv.lock
 .checkpoints
+checkpoints
 wandb/
 tmp/

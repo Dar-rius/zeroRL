@@ -32,19 +32,19 @@ def easy_train_ppo(config: TrainConfig,
     else:
         agent = ActorCriticAgent(obs_dim.shape[-1], act_dim.n, is_discrete, hidden_layer) #type: ignore
 
-    buffer = get_actor_critic_buffer(obs_dim.shape, act_dim.shape, config) #type: ignore
+    buffer = get_actor_critic_buffer(obs_dim.shape[-1], act_dim.shape, config) #type: ignore
 
     #update weights function
     def easy_update_weights(agent, buffer, scheduler, optimizer, last_output, algo_config):
         data = buffer.get_all()
         gae_compute(data["reward"], data["value"], last_output["value"], data["done"], algo_config, buffer)
-        return ppo(agent, optimizer, buffer, algo_config, scheduler, agent.device)
+        return ppo(agent, optimizer, buffer, algo_config, scheduler, device=agent.device)
 
     train = BaseTrain(
-            agent=agent,
-            env=env,
-            buffer=buffer,
-            update_weights=easy_update_weights,
+            agent = agent,
+            env = env,
+            buffer = buffer,
+            update_weights = easy_update_weights,
             config = config,
             algo_config = algo_config,
             optimizer = optimizer,
