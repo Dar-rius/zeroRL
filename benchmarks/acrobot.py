@@ -59,6 +59,7 @@ def benchmark_zerorl():
         
     return times, rewards
 
+
 # ==========================================
 # 2. STABLE BASELINES 3
 # ==========================================
@@ -89,52 +90,6 @@ def benchmark_sb3():
         
     return times, rewards
 
-# ==========================================
-# 3. TIANGSHOU
-# ==========================================
-def benchmark_tianshou():
-    from tianshou.env import DummyVectorEnv
-    from tianshou.policy.modelfree.ppo import PPOPolicy
-    from tianshou.data import Collector, VectorReplayBuffer
-    from tianshou.utils.net.common import Net
-    from tianshou.utils.net.discrete import Actor, Critic
-    
-    env = DummyVectorEnv([lambda: gym.make(ENV_ID)])
-    
-    # Architecture identique : 64x64 avec activation Tanh
-    net = Net(state_shape=env.observation_space.shape, hidden_sizes=[64, 64], device=DEVICE, activation=nn.Tanh)
-    actor = Actor(net, env.action_space.n, device=DEVICE).to(DEVICE)
-    critic = Critic(net, device=DEVICE).to(DEVICE)
-    optim = torch.optim.Adam(list(actor.parameters()) + list(critic.parameters()), lr=LR)
-    
-    # Instantiation de la policy (les arguments ont aussi légèrement changé)
-    policy = PPOPolicy(
-        actor, critic, optim, torch.distributions.Categorical, 
-        action_space=env.action_space, 
-        action_scaling=False, 
-        discount_factor=GAMMA, 
-        max_grad_norm=1.0
-    )
-                       
-    collector = Collector(policy, env, VectorReplayBuffer(ROLLOUT_STEPS, 1))
-    
-    # Warmup
-    collector.collect(n_step=ROLLOUT_STEPS*2)
-    
-    times, rewards = [], []
-    start_time = time.time()
-    steps_done = 0
-    
-    while steps_done < TOTAL_STEPS:
-        collector.reset()
-        result = collector.collect(n_step=ROLLOUT_STEPS)
-        policy.update(ROLLOUT_STEPS, collector.buffer)
-        sync_gpu()
-        times.append(time.time() - start_time)
-        rewards.append(np.mean(result.returns))
-        steps_done += ROLLOUT_STEPS
-        
-    return times, rewards
 
 # ==========================================
 # PLOT GRAPH
