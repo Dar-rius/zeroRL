@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 from zerorl.vector_env import VectorEnv
 from zerorl.agent import BaseAgent, eval_action
@@ -45,7 +46,7 @@ class ActorCriticAgent(BaseAgent):
 
     def _orthogonal_init(self, module):
         if isinstance(module, nn.Linear):
-            nn.init.orthogonal_(module.weight, gain=1.0)
+            nn.init.orthogonal_(module.weight, gain=np.sqrt(2))
             if module.bias is not None:
                 nn.init.constant_(module.bias, 0.0)
 

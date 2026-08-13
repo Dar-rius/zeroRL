@@ -14,9 +14,15 @@ ENV_ID = "Acrobot-v1"
 TOTAL_STEPS = 100_000
 ROLLOUT_STEPS = 2048
 BATCH_SIZE = 64
+N_EPOCHS = 10
 LR = 3e-4
 GAMMA = 0.99
+GAE_LAMBDA = 0.95
+CLIP_RANGE = 0.2
+ENT_COEF = 0.0
+VF_COEF = 0.5
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+SEED = 42
 
 def sync_gpu():
     if DEVICE == "cuda":
@@ -29,35 +35,84 @@ from zerorl.algorithms.ppo.easy_ppo import easy_train_ppo
 from zerorl.config import TrainConfig, AlgoConfig
 
 def benchmark_zerorl():
-    config = TrainConfig(model_name="bench", model_save_path="/tmp", project_name="bench", timestamp=TOTAL_STEPS)
-    algo_config = AlgoConfig(lr=LR, gamma=GAMMA, batch_size=BATCH_SIZE, epochs=10)
+    config = TrainConfig(
+        model_name="bench_zerorl",
+        project_name = "bench",
+        model_save_path="/tmp/zerorl_bench",
+        timestamp=TOTAL_STEPS,
+        rollout_steps=ROLLOUT_STEPS,
+        num_envs=1
+    )
     
-    trainer = easy_train_ppo(config, algo_config, env_id=ENV_ID, hidden_layer=64)
+    algo_config = AlgoConfig(
+        lr=LR,
+        gamma=GAMMA,
+        gae_lambda=GAE_LAMBDA,
+        clip_eps=CLIP_RANGE,
+        ent_coef=ENT_COEF,
+        value_coef=VF_COEF,
+        batch_size=BATCH_SIZE,
+        epochs=N_EPOCHS
+    )
+    
+    trainer = easy_train_ppo(
+        config=config,
+        algo_config=algo_config,
+        env_id=ENV_ID,
+        hidden_layer=64
+    )
+
+    obs, _ = trainer.env.reset(seed=SEED)
+    trainer.state = torch.as_tensor(obs, dtype=torch.float32, device=DEVICE)
+    if trainer.state.dim() == 1:
+        trainer.state = trainer.state.unsqueeze(0)
 
     # Warmup
-    state, _ = trainer.env.reset()
-    trainer.rollout_phase(state)
-    trainer.buffer.clear()
+    for _ in range(2):
+        last_output = trainer.rollout_phase()
+        trainer.update_weights(
+            trainer.agent, trainer.buffer, trainer.scheduler,
+            trainer.optimizer, last_output, trainer.algo_config
+        )
+        trainer.buffer.clear()
 
-    times, rewards = [], []
+    wall_times = []
+    timesteps = []
+    rewards = []
+    
     start_time = time.time()
     steps_done = 0
-    
+
     while steps_done < TOTAL_STEPS:
         sync_gpu()
-        last_output = trainer.rollout_phase(state)
-        trainer.update_weights(trainer.agent, trainer.buffer, trainer.scheduler, trainer.optimizer, last_output, trainer.algo_config)
+        
+        last_output = trainer.rollout_phase()
+        trainer.update_weights(
+            trainer.agent, trainer.buffer, trainer.scheduler,
+            trainer.optimizer, last_output, trainer.algo_config
+        )
         trainer.buffer.clear()
+        
         sync_gpu()
         
-        times.append(time.time() - start_time)
-        if len(trainer.episode_rewards) > 0:
-            rewards.append(np.mean(trainer.episode_rewards[-10:]))
+        # Reward
+        if hasattr(trainer, "episode_rewards") and len(trainer.episode_rewards) > 0:
+            mean_r = np.mean(trainer.episode_rewards[-10:])
         else:
-            rewards.append(-500)
+            mean_r = -500.0
+            
+        current_time = time.time() - start_time
         steps_done += ROLLOUT_STEPS
         
-    return times, rewards
+        wall_times.append(current_time)
+        timesteps.append(steps_done)
+        rewards.append(mean_r)
+
+    return {
+        "wall_times": wall_times,
+        "timesteps": timesteps,
+        "rewards": rewards
+    }
 
 
 # ==========================================
@@ -65,67 +120,113 @@ def benchmark_zerorl():
 # ==========================================
 def benchmark_sb3():
     from stable_baselines3 import PPO
+    from stable_baselines3.common.monitor import Monitor
+
+    env = Monitor(gym.make(ENV_ID))
     
-    env = gym.make(ENV_ID)
-    model = PPO("MlpPolicy", env, n_steps=ROLLOUT_STEPS, batch_size=BATCH_SIZE, learning_rate=LR, gamma=GAMMA, 
-                policy_kwargs=dict(net_arch=[64, 64], activation_fn=nn.Tanh), verbose=0, device=DEVICE)
-    
+    model = PPO(
+        "MlpPolicy",
+        env,
+        n_steps=ROLLOUT_STEPS,
+        batch_size=BATCH_SIZE,
+        n_epochs=N_EPOCHS,
+        learning_rate=LR,
+        gamma=GAMMA,
+        gae_lambda=GAE_LAMBDA,
+        clip_range=CLIP_RANGE,
+        ent_coef=ENT_COEF,
+        vf_coef=VF_COEF,
+        policy_kwargs=dict(
+            net_arch=dict(pi=[64, 64], vf=[64, 64]),
+            activation_fn=nn.Tanh
+        ),
+        verbose=0,
+        device=DEVICE,
+        seed=SEED
+    )
+
     # Warmup
-    model.learn(total_timesteps=ROLLOUT_STEPS*2)
+    model.learn(total_timesteps=ROLLOUT_STEPS * 2, reset_num_timesteps=False)
+
+    wall_times = []
+    timesteps = []
+    rewards = []
     
-    times, rewards = [], []
     start_time = time.time()
     steps_done = 0
-    
+
     while steps_done < TOTAL_STEPS:
-        model.learn(total_timesteps=ROLLOUT_STEPS)
+        model.learn(total_timesteps=ROLLOUT_STEPS, reset_num_timesteps=False)
         sync_gpu()
-        times.append(time.time() - start_time)
         
-        if len(model.ep_info_buffer) > 0:
-            recent_episodes = list(model.ep_info_buffer)[-10:]
-            rewards.append(np.mean([ep["r"] for ep in recent_episodes]))
-        else:
-            rewards.append(-500)
+        current_time = time.time() - start_time
         steps_done += ROLLOUT_STEPS
         
-    return times, rewards
+        if len(model.ep_info_buffer) > 0:
+            recent = list(model.ep_info_buffer)[-10:]
+            mean_r = np.mean([ep["r"] for ep in recent])
+        else:
+            mean_r = -500.0
+            
+        wall_times.append(current_time)
+        timesteps.append(steps_done)
+        rewards.append(mean_r)
+
+    return {
+        "wall_times": wall_times,
+        "timesteps": timesteps,
+        "rewards": rewards
+    }
 
 
 # ==========================================
-# PLOT GRAPH
+# PLOTS (les deux)
 # ==========================================
 def plot_results(zerorl_data, sb3_data):
-    plt.figure(figsize=(10, 6))
-    
-    if zerorl_data[0]:
-        plt.plot(zerorl_data[0], zerorl_data[1], label='ZeroRL (Ours)', color='#0052cc', linewidth=3)
-    if sb3_data[0]:
-        plt.plot(sb3_data[0], sb3_data[1], label='Stable-Baselines3', color='#d62728', linewidth=3, linestyle='--')
+    fig, axes = plt.subplots(1, 2, figsize=(16, 6))
 
-    plt.title(f'PPO on {ENV_ID} : Time to Convergence', fontsize=16, fontweight='bold', pad=20)
-    plt.xlabel('Wall-clock Time (seconds)', fontsize=14)
-    plt.ylabel('Mean Episode Reward', fontsize=14)
-    plt.grid(True, linestyle=':', alpha=0.6)
-    plt.legend(fontsize=12, loc='lower right', frameon=True, shadow=True)
+    # ----- Graphique 1 : Wall-clock Time -----
+    axes[0].plot(zerorl_data["wall_times"], zerorl_data["rewards"], 
+                 label='ZeroRL', color='#0052cc', linewidth=2.5)
+    axes[0].plot(sb3_data["wall_times"], sb3_data["rewards"], 
+                 label='Stable-Baselines3', color='#d62728', linewidth=2.5, linestyle='--')
     
+    axes[0].set_title(f'PPO on {ENV_ID} — Wall-clock Time', fontsize=14, fontweight='bold')
+    axes[0].set_xlabel('Wall-clock Time (seconds)', fontsize=12)
+    axes[0].set_ylabel('Mean Episode Reward (last 10)', fontsize=12)
+    axes[0].grid(True, linestyle=':', alpha=0.5)
+    axes[0].legend(fontsize=11)
+
+    # ----- Graphique 2 : Timesteps -----
+    axes[1].plot(zerorl_data["timesteps"], zerorl_data["rewards"], 
+                 label='ZeroRL', color='#0052cc', linewidth=2.5)
+    axes[1].plot(sb3_data["timesteps"], sb3_data["rewards"], 
+                 label='Stable-Baselines3', color='#d62728', linewidth=2.5, linestyle='--')
+    
+    axes[1].set_title(f'PPO on {ENV_ID} — Timesteps', fontsize=14, fontweight='bold')
+    axes[1].set_xlabel('Timesteps', fontsize=12)
+    axes[1].set_ylabel('Mean Episode Reward (last 10)', fontsize=12)
+    axes[1].grid(True, linestyle=':', alpha=0.5)
+    axes[1].legend(fontsize=11)
+
     plt.tight_layout()
-    filename = f'benchmark_{ENV_ID.lower()}.png'
+    filename = f'benchmark_{ENV_ID.lower()}_both.png'
     plt.savefig(filename, dpi=300, bbox_inches='tight')
-    print(f"\nGraphique sauvegardé sous '{filename}'")
+    print(f"\nGraphique sauvegardé : {filename}")
+
 
 # ==========================================
-# EXECUTION
+# MAIN
 # ==========================================
 if __name__ == "__main__":
-    print(f"Démarrage du Benchmark sur {ENV_ID} ({DEVICE.upper()})...\n")
+    print(f"Benchmark PPO — {ENV_ID} | Device: {DEVICE.upper()} | Seed: {SEED}\n")
     
-    print("1. Run of ZeroRL...")
-    z_times, z_rewards = benchmark_zerorl()
-    print(f" Finish in {z_times[-1]:.1f}s. Reward max: {max(z_rewards):.1f}")
+    print("→ Running ZeroRL...")
+    z_data = benchmark_zerorl()
+    print(f"  Finished in {z_data['wall_times'][-1]:.1f}s | Best reward: {max(z_data['rewards']):.1f}")
     
-    print("\n2. Run of Stable-Baselines3...")
-    s_times, s_rewards = benchmark_sb3()
-    print(f"    Finish in  {s_times[-1]:.1f}s. Reward max: {max(s_rewards):.1f}")
+    print("\n→ Running Stable-Baselines3...")
+    s_data = benchmark_sb3()
+    print(f"  Finished in {s_data['wall_times'][-1]:.1f}s | Best reward: {max(s_data['rewards']):.1f}")
     
-    plot_results((z_times, z_rewards), (s_times, s_rewards))
+    plot_results(z_data, s_data)

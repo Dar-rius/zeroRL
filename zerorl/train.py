@@ -82,6 +82,7 @@ class BaseTrain:
         assert_agent_contract(self.agent,
                         {"get_action": "Your agent should have the method `get_action`"})
         self.env = env
+        self.state: Tensor | None = None
         if not getattr(env, "auto_reset", False):
             self.env = VectorEnv(lambda: self.env, self.config.num_envs, render_mode)
         self.buffer = buffer
@@ -111,7 +112,7 @@ class BaseTrain:
         self.episode_rewards: list[float] = []
 
 
-    def rollout_phase(self, state: np.ndarray | Tensor):
+    def rollout_phase(self):
         """Collect experience by running the agent in the environment.
 
         Stores each transition in the buffer and resets on episode end.
@@ -122,7 +123,7 @@ class BaseTrain:
         """
         dev = self.config.device
         env_device = getattr(self.env, "device", "cpu")
-        state_tensor = torch.as_tensor(state, dtype=torch.float32, device=dev)
+        state_tensor = self.state
         if state_tensor.dim() == 1: state_tensor = state_tensor.unsqueeze(0)
 
         num_envs = state_tensor.shape[0]
@@ -182,6 +183,7 @@ class BaseTrain:
             state_normalized = self.normalizer.normalize(state_tensor)
             next_output: dict[str, Tensor] = self.agent.get_action(state_normalized) #type: ignore[operator]
             next_output["value"] = next_output["value"].squeeze(-1)
+        self.state = state_tensor
         return next_output
 
     
@@ -243,6 +245,7 @@ class BaseTrain:
         sync = torch.cuda.synchronize
         if is_profile: sys.stderr.write("\033[96mZeroRL Profiler Enabled (TIME & VRAM).\033[0m\n")
         state, _ = self.env.reset()
+        self.state = torch.as_tensor(state, dtype=torch.float32, device=dev)
         if use_wandb:
             try:
                 wandb.init(project=self.config.project_name, config={"Train Configs": self.config.__dict__, #type: ignore[attr-defined]
@@ -256,7 +259,7 @@ class BaseTrain:
                     torch.cuda.reset_peak_memory_stats()
                 t_start = time.perf_counter()
 
-            last_output = self.rollout_phase(state)
+            last_output = self.rollout_phase()
 
             if is_profile:
                 if is_cuda: sync()
