@@ -83,7 +83,8 @@ def benchmark_sb3():
         times.append(time.time() - start_time)
         
         if len(model.ep_info_buffer) > 0:
-            rewards.append(np.mean([ep["r"] for ep in model.ep_info_buffer[-10:]]))
+            recent_episodes = list(model.ep_info_buffer)[-10:]
+            rewards.append(np.mean([ep["r"] for ep in recent_episodes]))
         else:
             rewards.append(-500)
         steps_done += ROLLOUT_STEPS
