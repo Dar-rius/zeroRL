@@ -92,7 +92,7 @@ class BaseTrain:
 
         if optimizer is None:
             lr = getattr(self.algo_config, 'lr', 3e-4)
-            self.optimizer = optim.Adam(self.agent.parameters(), lr=lr)
+            self.optimizer = optim.Adam(self.agent.parameters(), lr=lr, eps=1e-5)
         else:
             self.optimizer = optimizer
 
@@ -131,10 +131,11 @@ class BaseTrain:
             self.current_episode_reward = torch.zeros(num_envs, device=dev)
 
         for _ in range(self.config.rollout_steps):
-            self.normalizer.update(state_tensor)
-            state_normalized = self.normalizer.normalize(state_tensor)
+            if self.config.normalize:
+                self.normalizer.update(state_tensor)
+                state_tensor = self.normalizer.normalize(state_tensor)
             with torch.inference_mode():
-                outputs: dict[str, Tensor] = self.agent.get_action(state_normalized) #type: ignore[operator]
+                outputs: dict[str, Tensor] = self.agent.get_action(state_tensor) #type: ignore[operator]
                 outputs["value"] = outputs["value"].squeeze(-1)
                 if str(env_device).startswith("cuda"):
                     action_input: np.ndarray | Tensor = outputs["action"]
@@ -144,7 +145,8 @@ class BaseTrain:
             # Convention: truncate = terminated (episode naturally ended)
             #done = truncated (episode cut short by time limit)
             next_state, reward, done, truncate, _ = self.env.step(action_input)
-            done_tensor = torch.as_tensor(done, dtype=torch.float32, device=dev)
+            done_or_trunc = done | truncate
+            done_tensor = torch.as_tensor(done_or_trunc, dtype=torch.float32, device=dev)
             trunc_tensor = torch.as_tensor(truncate, dtype=torch.float32, device=dev)
             reward_tensor = torch.as_tensor(reward, dtype=torch.float32, device=dev)
             next_state = torch.as_tensor(next_state, dtype=torch.float32, device=dev)
@@ -156,7 +158,7 @@ class BaseTrain:
                 trunc_tensor = trunc_tensor.unsqueeze(0)
 
             self.buffer.insert(
-                state = state_normalized,
+                state = state_tensor,
                 reward = reward_tensor,
                 done = done_tensor,
                 **outputs
@@ -179,9 +181,10 @@ class BaseTrain:
                 state_tensor = state_tensor.unsqueeze(0)
 
         with torch.inference_mode():
-            self.normalizer.update(state_tensor)
-            state_normalized = self.normalizer.normalize(state_tensor)
-            next_output: dict[str, Tensor] = self.agent.get_action(state_normalized) #type: ignore[operator]
+            if self.config.normalize:
+                self.normalizer.update(state_tensor)
+                state_tensor = self.normalizer.normalize(state_tensor)
+            next_output: dict[str, Tensor] = self.agent.get_action(state_tensor) #type: ignore[operator]
             next_output["value"] = next_output["value"].squeeze(-1)
         self.state = state_tensor
         return next_output

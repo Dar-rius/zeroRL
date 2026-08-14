@@ -66,9 +66,10 @@ def ppo_loss(
         states: Tensor,
         actions: Tensor,
         old_log_prob: Tensor,
+        old_values: Tensor,
         advantages: Tensor,
         returns: Tensor,
-        algo_config: AlgoConfig
+        algo_config: AlgoConfig,
         ) -> dict[str, Tensor]:
     """Compute PPO clipped surrogate loss, value loss, and entropy bonus.
 
@@ -95,18 +96,28 @@ def ppo_loss(
 
     idx_adv = advantages.view(-1)
     idx_return = returns.view(-1)
+    new_values = new_values.view(-1)
+    old_values = old_values.view(-1)
+    old_log_prob = old_log_prob.view(-1)
 
     logratio = new_log_probs - old_log_prob
     ratio = torch.exp(logratio)
 
-    surr1 = ratio * idx_adv
-    surr2 = torch.clamp(ratio,
-                        1.0 - algo_config.clip_eps,
-                        1.0 + algo_config.clip_eps) * idx_adv
 
+    clip_eps = algo_config.clip_eps
+    surr1 = ratio * idx_adv
+    surr2 = torch.clamp(ratio, 1.0 - clip_eps, 1.0 + clip_eps) * idx_adv
     policy_loss = -torch.min(surr1, surr2).mean()
-    value_loss = nn.functional.mse_loss(new_values.view(-1), idx_return)
+    
+    clip_vf = getattr(algo_config, "clip_vf", False)
+    if clip_vf:
+        value_pred_clipped = old_values + (new_values - old_values).clamp(-clip_eps, clip_eps)
+        value_loss  = 0.5 * torch.max((idx_return - old_values).pow(2), (value_pred_clipped - idx_return).pow(2)).mean() 
+    else:
+        value_loss = 0.5 * nn.functional.mse_loss(new_values, idx_return)
+
     entropy_loss = dist_entropy.mean()
+
     loss = policy_loss + \
             (algo_config.value_coef * value_loss) - \
             (algo_config.ent_coef * entropy_loss)
@@ -146,8 +157,8 @@ def ppo(agent: BaseAgent,
     all_data = buffer.get_all()
     flat_data = {key: tensor.reshape(-1, *tensor.shape[2:]) 
                 for key, tensor in all_data.items()}
-    adv_norm = (flat_data["advantage"] - flat_data["advantage"].mean()) / (flat_data["advantage"].std() + 1e-8)
-    returns = (flat_data["return"] - flat_data["return"].mean()) / (flat_data["return"].std() + 1e-8)
+    returns = flat_data["return"]
+
     dataset_size = flat_data["action"].size(0)
     final_metrics: dict[str, Tensor] = {}
 
@@ -158,11 +169,12 @@ def ppo(agent: BaseAgent,
                     state: Tensor,
                     action: Tensor,
                     old_log_prob: Tensor,
+                    old_values: Tensor,
                     advantage: Tensor,
                     return_: Tensor,
                     algo_config: AlgoConfig) -> dict[str, Tensor]:
         global_losses = ppo_loss(agent, params, buffers, state, action,
-                            old_log_prob, advantage, return_, algo_config)
+                            old_log_prob, old_values, advantage, return_, algo_config)
         global_losses["loss"].backward()
         return global_losses
 
@@ -178,15 +190,17 @@ def ppo(agent: BaseAgent,
             for start in range(0, dataset_size, algo_config.batch_size):
                 end = start + algo_config.batch_size
                 idx = shuffle_index[start:end]
-                if idx.numel() == 0:
-                    continue  # Skip empty batches
                 
-                torch.compiler.cudagraph_mark_step_begin()
+
+                mb_advantages = flat_data["advantage"][idx]
+                adv_norm = (mb_advantages - mb_advantages.mean()) / (mb_advantages.std() + 1e-8)
+    
                 optimizer.zero_grad(set_to_none=True)
+                torch.compiler.cudagraph_mark_step_begin()
                 global_losses = ppo_backward(agent, params, buffers, flat_data["state"][idx],
-                                flat_data["action"][idx], flat_data["log_prob"][idx], adv_norm[idx],
-                                returns[idx], algo_config)
-                torch.nn.utils.clip_grad_norm_(agent.parameters(), 1.0)
+                                flat_data["action"][idx], flat_data["log_prob"][idx], flat_data["value"][idx],
+                                adv_norm, returns[idx], algo_config)
+                torch.nn.utils.clip_grad_norm_(agent.parameters(), 0.5)
                 optimizer.step()
                 history.append({k: v.detach().clone() for k, v in global_losses.items()})
         return history

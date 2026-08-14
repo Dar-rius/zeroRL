@@ -10,9 +10,10 @@ warnings.filterwarnings("ignore")
 # ==========================================
 # BENCHMARK CONFIGURATION
 # ==========================================
-ENV_ID = "CartPole-v1"
+ENV_ID = "Acrobot-v1"
 TOTAL_STEPS = 100_000
 ROLLOUT_STEPS = 2048
+NUM_ENVS = 4
 BATCH_SIZE = 64
 N_EPOCHS = 10
 LR = 3e-4
@@ -37,11 +38,11 @@ from zerorl.config import TrainConfig, AlgoConfig
 def benchmark_zerorl():
     config = TrainConfig(
         model_name="bench_zerorl",
-        project_name = "bench",
+        project_name="bench",
         model_save_path="/tmp/zerorl_bench",
         timestamp=TOTAL_STEPS,
         rollout_steps=ROLLOUT_STEPS,
-        num_envs=1
+        num_envs=NUM_ENVS
     )
     
     algo_config = AlgoConfig(
@@ -53,6 +54,7 @@ def benchmark_zerorl():
         value_coef=VF_COEF,
         batch_size=BATCH_SIZE,
         epochs=N_EPOCHS,
+        clip_vf = True
     )
     
     trainer = easy_train_ppo(
@@ -64,6 +66,8 @@ def benchmark_zerorl():
 
     obs, _ = trainer.env.reset(seed=SEED)
     trainer.state = torch.as_tensor(obs, dtype=torch.float32, device=DEVICE)
+    if trainer.state.dim() == 1:
+        trainer.state = trainer.state.unsqueeze(0)
 
     # Warmup
     for _ in range(2):
@@ -80,6 +84,7 @@ def benchmark_zerorl():
     
     start_time = time.time()
     steps_done = 0
+    steps_per_rollout = ROLLOUT_STEPS * NUM_ENVS
 
     while steps_done < TOTAL_STEPS:
         sync_gpu()
@@ -93,14 +98,13 @@ def benchmark_zerorl():
         
         sync_gpu()
         
-        # Reward
         if hasattr(trainer, "episode_rewards") and len(trainer.episode_rewards) > 0:
             mean_r = np.mean(trainer.episode_rewards[-10:])
         else:
             mean_r = -500.0
             
         current_time = time.time() - start_time
-        steps_done += ROLLOUT_STEPS
+        steps_done += steps_per_rollout
         
         wall_times.append(current_time)
         timesteps.append(steps_done)
@@ -119,8 +123,10 @@ def benchmark_zerorl():
 def benchmark_sb3():
     from stable_baselines3 import PPO
     from stable_baselines3.common.monitor import Monitor
+    from stable_baselines3.common.vec_env import DummyVecEnv
 
-    env = Monitor(gym.make(ENV_ID))
+    # Création de 4 envs vectorisés pour SB3
+    env = DummyVecEnv([lambda: Monitor(gym.make(ENV_ID)) for _ in range(NUM_ENVS)])
     
     model = PPO(
         "MlpPolicy",
@@ -137,15 +143,17 @@ def benchmark_sb3():
         policy_kwargs=dict(
             net_arch=[64, 64],
             activation_fn=nn.Tanh,
-            ortho_init = True
+            ortho_init=True
         ),
         verbose=0,
         device=DEVICE,
         seed=SEED
     )
 
+    steps_per_rollout = ROLLOUT_STEPS * NUM_ENVS
+
     # Warmup
-    model.learn(total_timesteps=ROLLOUT_STEPS * 2, reset_num_timesteps=False)
+    model.learn(total_timesteps=steps_per_rollout * 2, reset_num_timesteps=False)
 
     wall_times = []
     timesteps = []
@@ -155,11 +163,11 @@ def benchmark_sb3():
     steps_done = 0
 
     while steps_done < TOTAL_STEPS:
-        model.learn(total_timesteps=ROLLOUT_STEPS, reset_num_timesteps=False)
+        model.learn(total_timesteps=steps_per_rollout, reset_num_timesteps=False)
         sync_gpu()
         
         current_time = time.time() - start_time
-        steps_done += ROLLOUT_STEPS
+        steps_done += steps_per_rollout
         
         if len(model.ep_info_buffer) > 0:
             recent = list(model.ep_info_buffer)[-10:]
@@ -190,7 +198,7 @@ def plot_results(zerorl_data, sb3_data):
     axes[0].plot(sb3_data["wall_times"], sb3_data["rewards"], 
                  label='Stable-Baselines3', color='#d62728', linewidth=2.5, linestyle='--')
     
-    axes[0].set_title(f'PPO on {ENV_ID} — Wall-clock Time', fontsize=14, fontweight='bold')
+    axes[0].set_title(f'PPO on {ENV_ID} ({NUM_ENVS} Env) — Wall-clock Time', fontsize=14, fontweight='bold')
     axes[0].set_xlabel('Wall-clock Time (seconds)', fontsize=12)
     axes[0].set_ylabel('Mean Episode Reward (last 10)', fontsize=12)
     axes[0].grid(True, linestyle=':', alpha=0.5)
@@ -202,14 +210,14 @@ def plot_results(zerorl_data, sb3_data):
     axes[1].plot(sb3_data["timesteps"], sb3_data["rewards"], 
                  label='Stable-Baselines3', color='#d62728', linewidth=2.5, linestyle='--')
     
-    axes[1].set_title(f'PPO on {ENV_ID} — Timesteps', fontsize=14, fontweight='bold')
+    axes[1].set_title(f'PPO on {ENV_ID} ({NUM_ENVS} Env) — Timesteps', fontsize=14, fontweight='bold')
     axes[1].set_xlabel('Timesteps', fontsize=12)
     axes[1].set_ylabel('Mean Episode Reward (last 10)', fontsize=12)
     axes[1].grid(True, linestyle=':', alpha=0.5)
     axes[1].legend(fontsize=11)
 
     plt.tight_layout()
-    filename = f'benchmark_{ENV_ID.lower()}_both.png'
+    filename = f'benchmark_{ENV_ID.lower()}_{NUM_ENVS}envs.png'
     plt.savefig(filename, dpi=300, bbox_inches='tight')
     print(f"\nGraphique sauvegardé : {filename}")
 
@@ -218,7 +226,7 @@ def plot_results(zerorl_data, sb3_data):
 # MAIN
 # ==========================================
 if __name__ == "__main__":
-    print(f"Benchmark PPO — {ENV_ID} | Device: {DEVICE.upper()} | Seed: {SEED}\n")
+    print(f"Benchmark PPO — {ENV_ID} | {NUM_ENVS} Env | Device: {DEVICE.upper()} | Seed: {SEED}\n")
     
     print("→ Running ZeroRL...")
     z_data = benchmark_zerorl()
