@@ -153,7 +153,10 @@ class TestBaseTrainRollout:
         trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, algo_cfg)
 
         state, _ = env.reset(seed=42)
-        last_output = trainer.rollout_phase(state)
+        trainer.state = torch.as_tensor(state, dtype=torch.float32, device=device)
+        if trainer.state.dim() == 1:
+            trainer.state = trainer.state.unsqueeze(0)
+        last_output = trainer.rollout_phase()
 
         assert buf.size == rollout_steps
         assert "action" in last_output
@@ -394,7 +397,10 @@ class TestBaseTrainVectorizedRollout:
         cfg.num_envs = num_envs
         trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, AlgoConfig())
         state, _ = env.reset(seed=42)
-        trainer.rollout_phase(state)
+        trainer.state = torch.as_tensor(state, dtype=torch.float32, device=device)
+        if trainer.state.dim() == 1:
+            trainer.state = trainer.state.unsqueeze(0)
+        trainer.rollout_phase()
         assert buf.size == rollout_steps
         assert buf.get_all()["state"].shape == (rollout_steps, num_envs, obs_dim)
         assert trainer.current_episode_reward is not None
@@ -417,7 +423,10 @@ class TestBaseTrainVectorizedRollout:
         cfg.num_envs = num_envs
         trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, AlgoConfig())
         state, _ = env.reset(seed=42)
-        trainer.rollout_phase(state)
+        trainer.state = torch.as_tensor(state, dtype=torch.float32, device=device)
+        if trainer.state.dim() == 1:
+            trainer.state = trainer.state.unsqueeze(0)
+        trainer.rollout_phase()
         assert env.reset_calls == 1
         env.close()
 
@@ -438,7 +447,10 @@ class TestBaseTrainVectorizedRollout:
         cfg.num_envs = num_envs
         trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, AlgoConfig())
         state, _ = env.reset(seed=42)
-        trainer.rollout_phase(state)
+        trainer.state = torch.as_tensor(state, dtype=torch.float32, device=device)
+        if trainer.state.dim() == 1:
+            trainer.state = trainer.state.unsqueeze(0)
+        trainer.rollout_phase()
         assert env.counters[1] == 5
         env.close()
 

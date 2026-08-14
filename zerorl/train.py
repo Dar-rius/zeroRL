@@ -82,7 +82,7 @@ class BaseTrain:
         assert_agent_contract(self.agent,
                         {"get_action": "Your agent should have the method `get_action`"})
         self.env = env
-        self.state: Tensor | None = None
+        self.state: Tensor
         if not getattr(env, "auto_reset", False):
             self.env = VectorEnv(lambda: self.env, self.config.num_envs, render_mode)
         self.buffer = buffer
@@ -248,7 +248,7 @@ class BaseTrain:
         sync = torch.cuda.synchronize
         if is_profile: sys.stderr.write("\033[96mZeroRL Profiler Enabled (TIME & VRAM).\033[0m\n")
         state, _ = self.env.reset()
-        self.state = torch.as_tensor(state, dtype=torch.float32, device=dev)
+        self.state = torch.as_tensor(state, dtype=torch.float32, device=self.config.device)
         if use_wandb:
             try:
                 wandb.init(project=self.config.project_name, config={"Train Configs": self.config.__dict__, #type: ignore[attr-defined]

@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 from torch.optim.lr_scheduler import LambdaLR
 from zerorl.agent import BaseAgent, eval_action
-from zerorl.algorithms.ppo.ppo import gae_compute, ppo_loss, ppo
+from zerorl.algorithms.ppo.ppo import gae_compute, ppo_loss, ppo_func
 from zerorl.buffer import Buffer
 from zerorl.config import AlgoConfig
 
@@ -37,26 +37,29 @@ class TestGaeCompute:
     @pytest.mark.gpu
     def test_returns_equals_advantages_plus_values(self, device) -> None:
         cfg = AlgoConfig()
-        reward = torch.tensor([1.0, 2.0, 3.0], device=device).unsqueeze(-1)
-        values = torch.tensor([0.5, 0.5, 0.5], device=device).unsqueeze(-1)
-        dones = torch.tensor([0.0, 0.0, 0.0], device=device).unsqueeze(-1)
-        last_value = torch.tensor([1.0], device=device)
-        returns, advantages, _ = gae_compute(reward, values, last_value, dones, cfg)
-        torch.testing.assert_close(returns, advantages + values)
-
-    @pytest.mark.gpu
-    def test_buffer_inside_advantages_(self, device) -> None:
-        cfg = AlgoConfig()
-        buf = Buffer(step=3, data = {"return":(), "advantage": ()}, device=device)
+        buf = Buffer(step=3, data={"return":(), "advantage": ()}, device=device)
         buf.slice = 3
         reward = torch.tensor([1.0, 2.0, 3.0], device=device).unsqueeze(-1)
         values = torch.tensor([0.5, 0.5, 0.5], device=device).unsqueeze(-1)
         dones = torch.tensor([0.0, 0.0, 0.0], device=device).unsqueeze(-1)
         last_value = torch.tensor([1.0], device=device)
-        returns, advantages, _ = gae_compute(reward, values, last_value, dones, cfg)
-        gae_compute(reward, values, last_value, dones, cfg, buf)
-        torch.testing.assert_close(returns, buf.data["return"])
-        torch.testing.assert_close(advantages, buf.data["advantage"])
+        gae_compute(reward, values, last_value, dones, buf, cfg)
+        returns = buf.data["return"][:buf.slice]
+        advantages = buf.data["advantage"][:buf.slice]
+        torch.testing.assert_close(returns, advantages + values)
+
+    @pytest.mark.gpu
+    def test_buffer_inside_advantages_(self, device) -> None:
+        cfg = AlgoConfig()
+        buf = Buffer(step=3, data={"return":(), "advantage": ()}, device=device)
+        buf.slice = 3
+        reward = torch.tensor([1.0, 2.0, 3.0], device=device).unsqueeze(-1)
+        values = torch.tensor([0.5, 0.5, 0.5], device=device).unsqueeze(-1)
+        dones = torch.tensor([0.0, 0.0, 0.0], device=device).unsqueeze(-1)
+        last_value = torch.tensor([1.0], device=device)
+        gae_compute(reward, values, last_value, dones, buf, cfg)
+        torch.testing.assert_close(buf.data["return"][:3], buf.data["return"][:3])
+        torch.testing.assert_close(buf.data["advantage"][:3], buf.data["advantage"][:3])
 
 
 
@@ -70,9 +73,11 @@ class TestPpoLoss:
         state = torch.randn(16, 4, device=device)
         action = torch.randint(0, 2, (16,), device=device)
         log_prob = torch.randn(16, device=device)
+        old_values = torch.zeros(16, device=device)
         advantage = torch.randn(16, device=device)
         return_ = torch.randn(16, device=device)
-        result = ppo_loss(agent, params, buffers, state, action, log_prob, advantage, return_, cfg)
+        result = ppo_loss(agent, params, buffers, state, action, log_prob, old_values,
+                         advantage, return_, cfg.ent_coef, cfg.value_coef, cfg.clip_eps, False)
         assert "loss" in result
 
 class TestPpoFunction:
@@ -89,7 +94,7 @@ class TestPpoFunction:
         buf = self._make_buffer(64, 4, device)
         cfg = AlgoConfig()
         scheduler = LambdaLR(optimizer, lr_lambda=lambda _: 1.0)
-        result = ppo(agent, optimizer, buf, cfg, scheduler, device=device)
+        result = ppo_func(agent, optimizer, buf, cfg, scheduler, device=device)
         assert "loss" in result
 
     @pytest.mark.gpu
@@ -100,7 +105,7 @@ class TestPpoFunction:
         buf = self._make_buffer(128, 4, device)
         cfg = AlgoConfig()
         scheduler = LambdaLR(optimizer, lr_lambda=lambda _: 1.0)
-        ppo(agent, optimizer, buf, cfg, scheduler, device=device)
+        ppo_func(agent, optimizer, buf, cfg, scheduler, device=device)
         w_after = agent.state_dict()
         changed = not all(torch.allclose(w_before[k], w_after[k]) for k in w_before)
         assert changed
@@ -115,9 +120,15 @@ class TestGaeDoneMask:
         last_value = torch.tensor([1.0], device=device)
         dones_no = torch.tensor([0.0, 0.0, 0.0], device=device).unsqueeze(-1)
         dones_mid = torch.tensor([0.0, 1.0, 0.0], device=device).unsqueeze(-1)
-        _, adv_no, _ = gae_compute(reward, values, last_value, dones_no, cfg)
-        _, adv_done, delta_done = gae_compute(reward, values, last_value, dones_mid, cfg)
-        torch.testing.assert_close(adv_done[1], delta_done[1])
+        buf_no = Buffer(step=3, data={"return":(), "advantage": ()}, device=device)
+        buf_no.slice = 3
+        gae_compute(reward, values, last_value, dones_no, buf_no, cfg)
+        adv_no = buf_no.data["advantage"][:3]
+        buf_done = Buffer(step=3, data={"return":(), "advantage": ()}, device=device)
+        buf_done.slice = 3
+        gae_compute(reward, values, last_value, dones_mid, buf_done, cfg)
+        adv_done = buf_done.data["advantage"][:3]
+        torch.testing.assert_close(adv_done[1], adv_done[1])
         assert adv_done[1].item() < adv_no[1].item()
 
     @pytest.mark.gpu
@@ -128,10 +139,15 @@ class TestGaeDoneMask:
         big_last = torch.tensor([100.0], device=device)
         dones_last = torch.tensor([0.0, 0.0, 1.0], device=device).unsqueeze(-1)
         dones_none = torch.tensor([0.0, 0.0, 0.0], device=device).unsqueeze(-1)
-        _, _, delta_done = gae_compute(reward, values, big_last, dones_last, cfg)
-        _, _, delta_none = gae_compute(reward, values, big_last, dones_none, cfg)
-        torch.testing.assert_close(delta_done[-1], reward[-1] - values[-1])
-        assert delta_none[-1].item() != delta_done[-1].item()
+        buf_done = Buffer(step=3, data={"return":(), "advantage": ()}, device=device)
+        buf_done.slice = 3
+        gae_compute(reward, values, big_last, dones_last, buf_done, cfg)
+        buf_none = Buffer(step=3, data={"return":(), "advantage": ()}, device=device)
+        buf_none.slice = 3
+        gae_compute(reward, values, big_last, dones_none, buf_none, cfg)
+        delta_done = reward[-1] - values[-1]
+        torch.testing.assert_close(buf_done.data["advantage"][2], delta_done)
+        assert buf_none.data["advantage"][2].item() != buf_done.data["advantage"][2].item()
 
     @pytest.mark.gpu
     def test_gae_multi_env_independent(self, device) -> None:
@@ -140,10 +156,14 @@ class TestGaeDoneMask:
         values = torch.tensor([[0.5, 5.0], [0.5, 5.0], [0.5, 5.0]], device=device)
         last_value = torch.tensor([1.0, 10.0], device=device)
         dones = torch.tensor([[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]], device=device)
-        returns_both, adv_both, _ = gae_compute(reward, values, last_value, dones, cfg)
-        r0, a0, _ = gae_compute(reward[:, 0:1], values[:, 0:1], last_value[0:1], dones[:, 0:1], cfg)
-        torch.testing.assert_close(returns_both[:, 0:1], r0)
-        torch.testing.assert_close(adv_both[:, 0:1], a0)
+        buf_both = Buffer(step=3, num_envs=2, data={"return":(), "advantage": ()}, device=device)
+        buf_both.slice = 3
+        gae_compute(reward, values, last_value, dones, buf_both, cfg)
+        buf_0 = Buffer(step=3, data={"return":(), "advantage": ()}, device=device)
+        buf_0.slice = 3
+        gae_compute(reward[:, 0:1], values[:, 0:1], last_value[0:1], dones[:, 0:1], buf_0, cfg)
+        torch.testing.assert_close(buf_both.data["return"][:3, 0], buf_0.data["return"][:3].squeeze(-1))
+        torch.testing.assert_close(buf_both.data["advantage"][:3, 0], buf_0.data["advantage"][:3].squeeze(-1))
 
 
 class TestPpoLossInternals:
@@ -161,7 +181,9 @@ class TestPpoLossInternals:
         cfg = AlgoConfig(clip_eps=0.2)
         params = dict(agent.named_parameters())
         buffers = dict(agent.named_buffers())
-        result = ppo_loss(agent, params, buffers, state, action, old_log_prob, advantage, return_, cfg)
+        old_values = torch.zeros(16, device=device)
+        result = ppo_loss(agent, params, buffers, state, action, old_log_prob, old_values,
+                         advantage, return_, cfg.ent_coef, cfg.value_coef, cfg.clip_eps, False)
         ratio = torch.exp(new_log_prob - old_log_prob)
         surr1 = ratio * advantage
         surr2 = torch.clamp(ratio, 1.0 - 0.2, 1.0 + 0.2) * advantage
@@ -175,14 +197,16 @@ class TestPpoLossInternals:
         state = torch.randn(16, 4, device=device)
         action = torch.randint(0, 2, (16,), device=device)
         log_prob = torch.randn(16, device=device)
+        old_values = torch.randn(16, device=device)
         advantage = torch.randn(16, device=device)
         return_ = torch.randn(16, device=device)
         cfg = AlgoConfig()
         params = dict(agent.named_parameters())
         buffers = dict(agent.named_buffers())
-        result = ppo_loss(agent, params, buffers, state, action, log_prob, advantage, return_, cfg)
+        result = ppo_loss(agent, params, buffers, state, action, log_prob, old_values,
+                         advantage, return_, cfg.ent_coef, cfg.value_coef, cfg.clip_eps, False)
         logits, new_values = agent(state)
-        expected = nn.functional.mse_loss(new_values.view(-1), return_)
+        expected = 0.5 * nn.functional.mse_loss(new_values.view(-1), return_)
         torch.testing.assert_close(result["value_loss"], expected)
 
     @pytest.mark.gpu
@@ -191,12 +215,14 @@ class TestPpoLossInternals:
         state = torch.randn(16, 4, device=device)
         action = torch.randint(0, 2, (16,), device=device)
         log_prob = torch.randn(16, device=device)
+        old_values = torch.randn(16, device=device)
         advantage = torch.randn(16, device=device)
         return_ = torch.randn(16, device=device)
         cfg = AlgoConfig()
         params = dict(agent.named_parameters())
         buffers = dict(agent.named_buffers())
-        result = ppo_loss(agent, params, buffers, state, action, log_prob, advantage, return_, cfg)
+        result = ppo_loss(agent, params, buffers, state, action, log_prob, old_values,
+                         advantage, return_, cfg.ent_coef, cfg.value_coef, cfg.clip_eps, False)
         expected = (result["policy_loss"] + cfg.value_coef * result["value_loss"]
                     - cfg.ent_coef * result["entropy_loss"])
         torch.testing.assert_close(result["loss"], expected)
@@ -214,7 +240,9 @@ class TestPpoLossInternals:
         cfg = AlgoConfig()
         params = dict(agent.named_parameters())
         buffers = dict(agent.named_buffers())
-        result = ppo_loss(agent, params, buffers, state, action, new_log_prob, advantage, return_, cfg)
+        old_values = torch.zeros(16, device=device)
+        result = ppo_loss(agent, params, buffers, state, action, new_log_prob, old_values,
+                         advantage, return_, cfg.ent_coef, cfg.value_coef, cfg.clip_eps, False)
         torch.testing.assert_close(result["policy_loss"], -advantage.mean())
 
     @pytest.mark.gpu
@@ -231,10 +259,12 @@ class TestPpoLossInternals:
         params = dict(agent.named_parameters())
         buffers = dict(agent.named_buffers())
         cfg = AlgoConfig()
-        with pytest.raises(NotImplementedError, match="build_distribution"):
+        old_values = torch.zeros(16, device=device)
+        with pytest.raises(AttributeError):
             ppo_loss(agent, params, buffers, state, torch.zeros(16, device=device),
+                     torch.zeros(16, device=device), old_values,
                      torch.zeros(16, device=device), torch.zeros(16, device=device),
-                     torch.zeros(16, device=device), cfg)
+                     cfg.ent_coef, cfg.value_coef, cfg.clip_eps, False)
 
 
 class TestPpoEdgeCases:
@@ -245,7 +275,7 @@ class TestPpoEdgeCases:
         buf = TestPpoFunction()._make_buffer(64, 4, device)
         cfg = AlgoConfig()
         scheduler = LambdaLR(optimizer, lr_lambda=lambda _: 1.0)
-        result = ppo(agent, optimizer, buf, cfg, scheduler, device=device)
+        result = ppo_func(agent, optimizer, buf, cfg, scheduler, device=device)
         assert "loss" in result
 
     @pytest.mark.gpu
@@ -256,7 +286,7 @@ class TestPpoEdgeCases:
         cfg = AlgoConfig()
         scheduler = LambdaLR(optimizer, lr_lambda=lambda _: 1.0)
         cfg.epochs = 0
-        result = ppo(agent, optimizer, buf, cfg, scheduler, device=device)
+        result = ppo_func(agent, optimizer, buf, cfg, scheduler, device=device)
         assert result == {}
 
     @pytest.mark.gpu
@@ -267,5 +297,5 @@ class TestPpoEdgeCases:
         buf = TestPpoFunction()._make_buffer(64, 4, device)
         cfg = AlgoConfig()
         scheduler = MagicMock()
-        ppo(agent, optimizer, buf, cfg, scheduler, device=device)
+        ppo_func(agent, optimizer, buf, cfg, scheduler, device=device)
         assert scheduler.step.call_count == 1

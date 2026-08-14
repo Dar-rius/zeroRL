@@ -8,7 +8,7 @@ from gymnasium import spaces
 from torch.optim.lr_scheduler import LambdaLR
 
 from zerorl.agent import BaseAgent, eval_action
-from zerorl.algorithms.ppo.ppo import gae_compute, ppo
+from zerorl.algorithms.ppo.ppo import gae_compute, ppo_func
 from zerorl.buffer import Buffer
 from zerorl.config import AlgoConfig
 from zerorl.env import BaseEnv
@@ -159,14 +159,14 @@ class TestPPOContinuousIntegration:
             all_data["value"],
             last_value,
             all_data["done"],
-            cfg,
             raw_buf,
+            cfg,
         )
 
         # 5. Run PPO Update and verify weights change
         w_before = {k: v.clone() for k, v in agent.state_dict().items()}
         
-        result = ppo(
+        result = ppo_func(
             agent, optimizer, raw_buf, cfg, scheduler,
             device=device
         )
