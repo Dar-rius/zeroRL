@@ -7,5 +7,5 @@ config = TrainConfig(model_name="agent-carl", project_name="cartpole-example")
 config.device = torch.device("cpu")
 algo_config = AlgoConfig()
 
-trainer = easy_train_ppo(config, algo_config, "MountainCar-v0")
+trainer = easy_train_ppo(config, algo_config, "CartPole-v1")
 trainer.train(use_wandb=True)

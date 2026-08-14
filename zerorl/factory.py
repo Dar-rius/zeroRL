@@ -48,8 +48,6 @@ class ActorCriticAgent(BaseAgent):
 
         self.apply(self._orthogonal_init)
 
-    def _orthogonal_init(self, module):
-        import numpy as np
 
     def _orthogonal_init(self, module: nn.Module):
         if isinstance(module, nn.Linear):
@@ -58,7 +56,7 @@ class ActorCriticAgent(BaseAgent):
             elif module.out_features == 1:
                 nn.init.orthogonal_(module.weight, gain=1.0)
             else:
-                nn.init.orthogonal_(module.weight, gain=1.0)
+                nn.init.orthogonal_(module.weight, gain=0.01)
                 
             if module.bias is not None:
                 nn.init.constant_(module.bias, 0.0)
