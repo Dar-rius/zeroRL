@@ -14,10 +14,11 @@ def get_env(env_id: str, num_envs: int, render_mode: str | None): return VectorE
 #Auto create Actor-Critic buffer
 def get_actor_critic_buffer(state_space: int, action_space: tuple, config: TrainConfig): 
     buffer = Buffer(step = config.rollout_steps,
-             data = {"state": (state_space, ), "action": action_space,
-                "reward": (), "done": (), "entropy": (), "value": (),
-                "return": (), "log_prob": (), "advantage": ()},
-                device=config.device)
+                    num_envs = config.num_envs,
+                    data = {"state": (state_space, ), "action": action_space,
+                    "reward": (), "done": (), "entropy": (), "value": (),
+                    "return": (), "log_prob": (), "advantage": ()},
+                    device=config.device)
     return buffer
 
 #Auto create new Actor-Critic BaseAgent
@@ -26,18 +27,21 @@ class ActorCriticAgent(BaseAgent):
         super().__init__()
 
         self.is_discrete = is_discrete
+        self.hidden_dim = hidden_dim
+        self.input_dim = input_dim
+        self.output_dim = output_dim
         
         # Feature Extractor
         self.extract_layer = nn.Sequential(
-                nn.Linear(input_dim, hidden_dim),
+                nn.Linear(self.input_dim, self.hidden_dim),
                 nn.Tanh(),
-                nn.Linear(hidden_dim, hidden_dim),
+                nn.Linear(self.hidden_dim, self.hidden_dim),
                 nn.Tanh()
                 )
         # Actor
-        self.actor = nn.Linear(hidden_dim, output_dim)
+        self.actor = nn.Linear(self.hidden_dim, self.output_dim)
         # Critic
-        self.critic = nn.Linear(hidden_dim,  1)
+        self.critic = nn.Linear(self.hidden_dim,  1)
 
         if not is_discrete:
             self.log_std = nn.Parameter(torch.zeros(output_dim))
@@ -45,8 +49,17 @@ class ActorCriticAgent(BaseAgent):
         self.apply(self._orthogonal_init)
 
     def _orthogonal_init(self, module):
+        import numpy as np
+
+    def _orthogonal_init(self, module: nn.Module):
         if isinstance(module, nn.Linear):
-            nn.init.orthogonal_(module.weight, gain=np.sqrt(2))
+            if module.out_features == self.hidden_dim:
+                nn.init.orthogonal_(module.weight, gain=np.sqrt(2))
+            elif module.out_features == 1:
+                nn.init.orthogonal_(module.weight, gain=1.0)
+            else:
+                nn.init.orthogonal_(module.weight, gain=1.0)
+                
             if module.bias is not None:
                 nn.init.constant_(module.bias, 0.0)
 

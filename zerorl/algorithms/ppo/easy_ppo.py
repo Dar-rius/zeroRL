@@ -16,7 +16,7 @@ def easy_train_ppo(config: TrainConfig,
                     base_agent: BaseAgent | None = None,
                     base_env: BaseEnv | None = None,
                     optimizer: optim.Optimizer | None = None,
-                    schedule_func: Callable[[int], float] | None = None
+                    schedule_func: Callable[[int], float] | None = None,
                    ):
     if base_env is not None:
         env = base_env

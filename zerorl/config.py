@@ -30,6 +30,7 @@ class TrainConfig:
     timestamp: int = 1_000_000
     rollout_steps: int = 2048
     num_envs: int = 1
+    normalize: bool = False
     profile: bool = False
 
     device: torch.device = field(init=False)
