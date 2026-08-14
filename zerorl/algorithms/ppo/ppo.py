@@ -135,11 +135,12 @@ def ppo_loss(
             'entropy_loss':entropy_loss}
 
 
-def ppo(agent: BaseAgent,
+def ppo_func(agent: BaseAgent,
         optimizer: Optimizer,
         buffer: Buffer,
         algo_config: AlgoConfig,
         scheduler: LambdaLR,
+        *,
         ppo_loss_func: Callable[[BaseAgent, dict, dict, Tensor, Tensor,
                                  Tensor, Tensor, Tensor, Tensor, float,
                                  float, float, float], dict[str, Tensor]] = ppo_loss,

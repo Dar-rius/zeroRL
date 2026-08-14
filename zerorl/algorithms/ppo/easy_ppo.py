@@ -3,7 +3,7 @@ from gymnasium import spaces
 from torch import optim
 from zerorl.factory import get_env, get_actor_critic_buffer, ActorCriticAgent
 from zerorl.train import BaseTrain
-from zerorl.algorithms.ppo import ppo, gae_compute
+from zerorl.algorithms.ppo import ppo_func, gae_compute
 from zerorl.config import TrainConfig, AlgoConfig
 from zerorl.agent import BaseAgent
 from zerorl.env import BaseEnv
@@ -44,7 +44,7 @@ def easy_train_ppo(config: TrainConfig,
     def easy_update_weights(agent, buffer, scheduler, optimizer, last_output, algo_config):
         data = buffer.get_all()
         gae_compute(data["reward"], data["value"], last_output["value"], data["done"], buffer, algo_config)
-        return ppo(agent, optimizer, buffer, algo_config, scheduler, device=agent.device)
+        return ppo_func(agent, optimizer, buffer, algo_config, scheduler, device=agent.device)
 
     train = BaseTrain(
             agent = agent,
