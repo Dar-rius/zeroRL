@@ -14,7 +14,7 @@ from torch.optim.lr_scheduler import LambdaLR
 from zerorl.buffer import Buffer
 from zerorl.agent import BaseAgent, eval_action
 from zerorl.config import AlgoConfig
-from zerorl.function import get_buffer_params_model
+from zerorl.function import get_buffer_params_model, maybe_compile
 from zerorl.errors import assert_agent_contract
 
 
@@ -187,7 +187,7 @@ def ppo_func(agent: BaseAgent,
     dataset_size = flat_data["action"].size(0)
     final_metrics: dict[str, Tensor] = {}
 
-    @torch.compile(mode="reduce-overhead")
+    @maybe_compile(mode="reduce-overhead")
     def ppo_backward(agent: BaseAgent,
                     params: dict,
                     buffers: dict,

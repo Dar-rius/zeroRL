@@ -8,7 +8,10 @@ and repeat.
 import os
 import sys
 import time
-import resource
+try:
+    import resource
+except ImportError: 
+    resource = None
 import numpy as np
 import torch
 from dataclasses import dataclass, asdict
@@ -282,8 +285,11 @@ class BaseTrain:
             if is_profile:
                 if is_cuda: sync()
                 t_end = time.perf_counter()
-                ram_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-                ram_mb = ram_kb /1024 if ram_kb > 0 else 0.0
+                if resource is not None:
+                    ram_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+                    ram_mb = ram_kb / 1024 if ram_kb > 0 else 0.0
+                else:
+                    ram_mb = 0.0
                 profile_data = ProfileMetrics(
                     fps= (self.config.rollout_steps * self.config.num_envs) / (t_end - t_start),
                     rollout_ms = (t_rollout - t_start) * 1000,
