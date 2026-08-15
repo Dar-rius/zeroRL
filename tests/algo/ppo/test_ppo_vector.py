@@ -6,7 +6,7 @@ import torch.nn as nn
 from torch.optim.lr_scheduler import LambdaLR
 
 from zerorl.agent import BaseAgent, eval_action
-from zerorl.algorithms.ppo.ppo import gae_compute, ppo
+from zerorl.algorithms.ppo.ppo import gae_compute, ppo_func
 from zerorl.buffer import Buffer
 from zerorl.config import AlgoConfig
 from zerorl.vector_env import VectorEnv
@@ -103,21 +103,19 @@ class TestPPOVectorizedIntegration:
         all_data = buf.get_all()
         last_value = torch.zeros(num_envs, 1, device=device)  # Mock last value (N, 1)
         
-        returns, advantages, _ = gae_compute(
+        gae_compute(
             all_data["reward"],      # (T, N)
             all_data["value"],       # (T, N, 1)
             last_value,              # (N, 1)
             all_data["done"],        # (T, N)
+            buf,
             cfg,
         )
-        
-        buf.data["return"][:buf.size] = returns
-        buf.data["advantage"][:buf.size] = advantages
 
         # 5. Run PPO Update (which will flatten (T, N) -> (T*N) internally)
         w_before = {k: v.clone() for k, v in agent.state_dict().items()}
         
-        result = ppo(
+        result = ppo_func(
             agent, optimizer, buf, cfg, scheduler,
             device=device,
         )

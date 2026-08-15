@@ -25,11 +25,12 @@ class TrainConfig:
         num_update: Computed as timestamp // rollout_steps.
     """
     model_name: str
-    model_save_path: str
     project_name: str
+    model_save_path: str = ".checkpoints"
     timestamp: int = 1_000_000
     rollout_steps: int = 2048
     num_envs: int = 1
+    normalize: bool = False
     profile: bool = False
 
     device: torch.device = field(init=False)

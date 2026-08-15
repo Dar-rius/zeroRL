@@ -85,6 +85,7 @@ class BaseTrain:
         assert_agent_contract(self.agent,
                         {"get_action": "Your agent should have the method `get_action`"})
         self.env = env
+        self.state: Tensor
         if not getattr(env, "auto_reset", False):
             self.env = VectorEnv(lambda: self.env, self.config.num_envs, render_mode)
         self.buffer = buffer
@@ -94,7 +95,7 @@ class BaseTrain:
 
         if optimizer is None:
             lr = getattr(self.algo_config, 'lr', 3e-4)
-            self.optimizer = optim.Adam(self.agent.parameters(), lr=lr)
+            self.optimizer = optim.Adam(self.agent.parameters(), lr=lr, eps=1e-5)
         else:
             self.optimizer = optimizer
 
@@ -114,7 +115,7 @@ class BaseTrain:
         self.episode_rewards: list[float] = []
 
 
-    def rollout_phase(self, state: np.ndarray | Tensor):
+    def rollout_phase(self):
         """Collect experience by running the agent in the environment.
 
         Stores each transition in the buffer and resets on episode end.
@@ -125,7 +126,7 @@ class BaseTrain:
         """
         dev = self.config.device
         env_device = getattr(self.env, "device", "cpu")
-        state_tensor = torch.as_tensor(state, dtype=torch.float32, device=dev)
+        state_tensor = self.state
         if state_tensor.dim() == 1: state_tensor = state_tensor.unsqueeze(0)
 
         num_envs = state_tensor.shape[0]
@@ -133,10 +134,11 @@ class BaseTrain:
             self.current_episode_reward = torch.zeros(num_envs, device=dev)
 
         for _ in range(self.config.rollout_steps):
-            self.normalizer.update(state_tensor)
-            state_normalized = self.normalizer.normalize(state_tensor)
+            if self.config.normalize:
+                self.normalizer.update(state_tensor)
+                state_tensor = self.normalizer.normalize(state_tensor)
             with torch.inference_mode():
-                outputs: dict[str, Tensor] = self.agent.get_action(state_normalized) #type: ignore[operator]
+                outputs: dict[str, Tensor] = self.agent.get_action(state_tensor) #type: ignore[operator]
                 outputs["value"] = outputs["value"].squeeze(-1)
                 if str(env_device).startswith("cuda"):
                     action_input: np.ndarray | Tensor = outputs["action"]
@@ -146,7 +148,8 @@ class BaseTrain:
             # Convention: truncate = terminated (episode naturally ended)
             #done = truncated (episode cut short by time limit)
             next_state, reward, done, truncate, _ = self.env.step(action_input)
-            done_tensor = torch.as_tensor(done, dtype=torch.float32, device=dev)
+            done_or_trunc = done | truncate
+            done_tensor = torch.as_tensor(done_or_trunc, dtype=torch.float32, device=dev)
             trunc_tensor = torch.as_tensor(truncate, dtype=torch.float32, device=dev)
             reward_tensor = torch.as_tensor(reward, dtype=torch.float32, device=dev)
             next_state = torch.as_tensor(next_state, dtype=torch.float32, device=dev)
@@ -158,7 +161,7 @@ class BaseTrain:
                 trunc_tensor = trunc_tensor.unsqueeze(0)
 
             self.buffer.insert(
-                state = state_normalized,
+                state = state_tensor,
                 reward = reward_tensor,
                 done = done_tensor,
                 **outputs
@@ -181,10 +184,12 @@ class BaseTrain:
                 state_tensor = state_tensor.unsqueeze(0)
 
         with torch.inference_mode():
-            self.normalizer.update(state_tensor)
-            state_normalized = self.normalizer.normalize(state_tensor)
-            next_output: dict[str, Tensor] = self.agent.get_action(state_normalized) #type: ignore[operator]
+            if self.config.normalize:
+                self.normalizer.update(state_tensor)
+                state_tensor = self.normalizer.normalize(state_tensor)
+            next_output: dict[str, Tensor] = self.agent.get_action(state_tensor) #type: ignore[operator]
             next_output["value"] = next_output["value"].squeeze(-1)
+        self.state = state_tensor
         return next_output
 
     
@@ -246,6 +251,7 @@ class BaseTrain:
         sync = torch.cuda.synchronize
         if is_profile: sys.stderr.write("\033[96mZeroRL Profiler Enabled (TIME & VRAM).\033[0m\n")
         state, _ = self.env.reset()
+        self.state = torch.as_tensor(state, dtype=torch.float32, device=self.config.device)
         if use_wandb:
             try:
                 wandb.init(project=self.config.project_name, config={"Train Configs": self.config.__dict__, #type: ignore[attr-defined]
@@ -259,7 +265,7 @@ class BaseTrain:
                     torch.cuda.reset_peak_memory_stats()
                 t_start = time.perf_counter()
 
-            last_output = self.rollout_phase(state)
+            last_output = self.rollout_phase()
 
             if is_profile:
                 if is_cuda: sync()
