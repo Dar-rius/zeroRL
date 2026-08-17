@@ -18,29 +18,6 @@ from zerorl.function import get_buffer_params_model, maybe_compile
 from zerorl.errors import assert_agent_contract
 
 
-@torch.compile(fullgraph=True, mode="max-autotune")
-def _gae_compute_compiled(rewards: Tensor, values: Tensor,
-                          last_value: Tensor, dones: Tensor,
-                          gamma: float, gae_lambda: float) -> tuple[Tensor, Tensor, Tensor]:
-    rewards = rewards.reshape(rewards.shape[0], -1)
-    values = values.reshape(values.shape[0], -1)
-    dones = dones.reshape(dones.shape[0], -1)
-    last_value = last_value.reshape(-1)
-    num_envs = rewards.shape[1]
-    gae = torch.zeros(num_envs, dtype=torch.float32, device=rewards.device)
-    # Mask: 0.0 at episode boundaries (no bootstrapping across episodes)
-    mask = 1.0 - dones
-    next_values = torch.cat((values[1:], last_value.unsqueeze(0)), 0)
-    total_size = rewards.shape[0]
-    delta = rewards + gamma * next_values * mask - values
-    advantages = torch.empty_like(delta)
-    for step in reversed(range(total_size)):
-        gae = delta[step] + gamma * gae_lambda * mask[step] * gae
-        advantages[step] = gae
-    returns = advantages + values
-    return (advantages, returns, delta)
-
-
 def gae_compute(rewards: Tensor,
             values: Tensor,
             last_value: Tensor,
@@ -61,9 +38,22 @@ def gae_compute(rewards: Tensor,
     Returns:
         Tuple of (return, advantage, delta), each shape (T,).
     """
-    advantages, returns, _ = _gae_compute_compiled(rewards, values,
-                                                   last_value, dones,
-                                                   algo_config.gamma, algo_config.gae_lambda)
+    rewards = rewards.reshape(rewards.shape[0], -1)
+    values = values.reshape(values.shape[0], -1)
+    dones = dones.reshape(dones.shape[0], -1)
+    last_value = last_value.reshape(-1)
+    num_envs = rewards.shape[1]
+    gae = torch.zeros(num_envs, dtype=torch.float32, device=rewards.device)
+    # Mask: 0.0 at episode boundaries (no bootstrapping across episodes)
+    mask = 1.0 - dones
+    next_values = torch.cat((values[1:], last_value.unsqueeze(0)), 0)
+    total_size = rewards.shape[0]
+    delta = rewards + algo_config.gamma * next_values * mask - values
+    advantages = torch.empty_like(delta)
+    for step in reversed(range(total_size)):
+        gae = delta[step] + algo_config.gamma * algo_config.gae_lambda * mask[step] * gae
+        advantages[step] = gae
+    returns = advantages + values
     buffer.data["advantage"][:buffer.size] = advantages
     buffer.data["return"][:buffer.size] = returns
 
@@ -120,7 +110,7 @@ def ppo_loss(
     clip_vf = clip_vf
     if clip_vf:
         value_pred_clipped = old_values + (new_values - old_values).clamp(-clip_eps, clip_eps)
-        value_loss  = 0.5 * torch.max((idx_return - old_values).pow(2), (value_pred_clipped - idx_return).pow(2)).mean() 
+        value_loss  = torch.max((idx_return - new_values).pow(2), (value_pred_clipped - idx_return).pow(2)).mean() 
     else:
         value_loss = 0.5 * nn.functional.mse_loss(new_values, idx_return)
 
@@ -223,7 +213,7 @@ def ppo_func(agent: BaseAgent,
                                 flat_data["value"][idx], adv_norm[idx], returns[idx])
                 torch.nn.utils.clip_grad_norm_(agent.parameters(), 0.5)
                 optimizer.step()
-                history.append({k: v.detach().clone() for k, v in global_losses.items()})
+                history.append({k: v.clone().detach() for k, v in global_losses.items()})
         return history
 
     # Compute losses and update weights
