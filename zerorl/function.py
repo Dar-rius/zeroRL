@@ -12,6 +12,7 @@ from torch import Tensor
 from torch.nn import Parameter
 from zerorl.agent import BaseAgent
 
+
 F = TypeVar("F", bound=Callable[..., Any])
 
 
@@ -22,10 +23,9 @@ def _cxx_compiler_available() -> bool:
     return shutil.which("cl") is not None
 
 
-def maybe_compile(fn: F | None = None, **kwargs: Any) -> F | Callable[[F], F]:
+def fast_compile(fn: F | None = None, **kwargs) -> F | Callable[[F], F]:
     """Like torch.compile; no-op when a C++ compiler is not on PATH."""
     use_compile = _cxx_compiler_available()
-
     def wrap(f: F) -> F:
         if not use_compile:
             return f

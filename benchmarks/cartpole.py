@@ -145,7 +145,7 @@ def benchmark_sb3():
     )
 
     # Warmup
-    model.learn(total_timesteps=ROLLOUT_STEPS * 2, reset_num_timesteps=False)
+    model.learn(total_timesteps=ROLLOUT_STEPS, reset_num_timesteps=False)
 
     wall_times = []
     timesteps = []
@@ -155,7 +155,7 @@ def benchmark_sb3():
     steps_done = 0
 
     while steps_done < TOTAL_STEPS:
-        model.learn(total_timesteps=ROLLOUT_STEPS, reset_num_timesteps=False)
+        model.learn(total_timesteps=steps_done + ROLLOUT_STEPS, reset_num_timesteps=False)
         sync_gpu()
         
         current_time = time.time() - start_time
@@ -275,7 +275,7 @@ def benchmark_cleanrl():
             actions_buf[step] = action
             logprobs_buf[step] = logprob
 
-            next_obs_np, reward, terminated, truncated, _ = env.step(action.cpu().numpy())
+            next_obs_np, reward, terminated, truncated, _ = env.step(action.item())
             current_ep_reward += reward
             done = terminated or truncated
             if done:
@@ -289,7 +289,7 @@ def benchmark_cleanrl():
 
         # GAE (Façon stricte CleanRL)
         with torch.no_grad():
-            next_value = agent.get_value(next_obs).reshape(1, -1)
+            next_value = agent.get_value(next_obs).flatten()
             advantages = torch.zeros_like(rewards_buf).to(DEVICE)
             lastgaelam = 0
             for t in reversed(range(ROLLOUT_STEPS)):
@@ -309,10 +309,9 @@ def benchmark_cleanrl():
         b_logprobs   = logprobs_buf.reshape(-1)
         b_advantages = advantages.reshape(-1)
         b_returns    = returns.reshape(-1)
-        b_values     = values_buf.reshape(-1)
 
         b_inds = np.arange(ROLLOUT_STEPS)
-        for epoch in range(N_EPOCHS):
+        for _ in range(N_EPOCHS):
             np.random.shuffle(b_inds)
             for start in range(0, ROLLOUT_STEPS, BATCH_SIZE):
                 end = start + BATCH_SIZE
@@ -418,7 +417,7 @@ def plot_results(zerorl_data, sb3_data, cleanrl_data):
     axes[1].legend(fontsize=11)
 
     plt.tight_layout()
-    filename = f'benchmark_acrobot.png'
+    filename = 'benchmark_acrobot.png'
     plt.savefig(filename, dpi=300, bbox_inches='tight')
     print(f"\nGraphique sauvegardé : {filename}")
 

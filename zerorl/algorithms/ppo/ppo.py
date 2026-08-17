@@ -14,7 +14,7 @@ from torch.optim.lr_scheduler import LambdaLR
 from zerorl.buffer import Buffer
 from zerorl.agent import BaseAgent, eval_action
 from zerorl.config import AlgoConfig
-from zerorl.function import get_buffer_params_model, maybe_compile
+from zerorl.function import get_buffer_params_model, fast_compile
 from zerorl.errors import assert_agent_contract
 
 
@@ -177,7 +177,7 @@ def ppo_func(agent: BaseAgent,
     dataset_size = flat_data["action"].size(0)
     final_metrics: dict[str, Tensor] = {}
 
-    @maybe_compile(mode="reduce-overhead")
+    @fast_compile(mode="reduce-overhead") #type: ignore
     def ppo_backward(agent: BaseAgent,
                     params: dict,
                     buffers: dict,
@@ -208,7 +208,7 @@ def ppo_func(agent: BaseAgent,
                 idx = shuffle_index[start:end]
                 optimizer.zero_grad(set_to_none=True)
                 torch.compiler.cudagraph_mark_step_begin()
-                global_losses = ppo_backward(agent, params, buffers, flat_data["state"][idx],
+                global_losses: dict[str, Tensor] = ppo_backward(agent, params, buffers, flat_data["state"][idx],
                                 flat_data["action"][idx], flat_data["log_prob"][idx],
                                 flat_data["value"][idx], adv_norm[idx], returns[idx])
                 torch.nn.utils.clip_grad_norm_(agent.parameters(), 0.5)
