@@ -85,7 +85,7 @@ class BaseTrain:
         assert_agent_contract(self.agent,
                         {"get_action": "Your agent should have the method `get_action`"})
         self.env = env
-        self.state: Tensor | None = None
+        self.state = Tensor()
         if not getattr(env, "auto_reset", False):
             self.env = VectorEnv(lambda: self.env, self.config.num_envs, render_mode)
         self.buffer = buffer
@@ -126,7 +126,7 @@ class BaseTrain:
         """
         dev = self.config.device
         env_device = getattr(self.env, "device", "cpu")
-        state_tensor = self.state
+        state_tensor: Tensor = self.state
         if state_tensor.dim() == 1: state_tensor = state_tensor.unsqueeze(0)
 
         num_envs = state_tensor.shape[0]

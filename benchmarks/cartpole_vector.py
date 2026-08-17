@@ -164,7 +164,7 @@ def benchmark_sb3():
 
     while steps_done < TOTAL_STEPS:
         total_target_timesteps += steps_per_rollout
-        model.learn(total_timesteps=steps_per_rollout, reset_num_timesteps=False)
+        model.learn(total_timesteps=steps_done + steps_per_rollout, reset_num_timesteps=False)
         sync_gpu()
         
         current_time = time.time() - start_time
@@ -299,7 +299,7 @@ def benchmark_cleanrl():
 
         # bootstrap value if not done
         with torch.no_grad():
-            next_value = agent.get_value(next_obs).reshape(1, -1)
+            next_value = agent.get_value(next_obs).flatten()
             advantages = torch.zeros_like(rewards).to(DEVICE)
             lastgaelam = 0
             for t in reversed(range(ROLLOUT_STEPS)):
