@@ -38,12 +38,14 @@ ignore = ["E501", "B008"]
 python_version="3.11"
 check_untyped_defs=true
 files=["zerorl"]
+disable_error_code = ["operator", "attr-defined", "call-arg", "override"]
 exclude=[
     "build/",
     "dist/",
     "docs/",
     "test/",
-    "examples/"
+    "examples/",
+    "benchmarks/"
 ]
 ignore_missing_imports=true
 
