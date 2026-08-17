@@ -417,7 +417,7 @@ def plot_results(zerorl_data, sb3_data, cleanrl_data):
     axes[1].legend(fontsize=11)
 
     plt.tight_layout()
-    filename = f'benchmark_acrobot.png'
+    filename = 'benchmark_acrobot.png'
     plt.savefig(filename, dpi=300, bbox_inches='tight')
     print(f"\nGraphique sauvegardé : {filename}")
 

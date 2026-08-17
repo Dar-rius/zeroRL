@@ -319,11 +319,9 @@ def benchmark_cleanrl():
         b_actions = actions.reshape((-1,) + envs.single_action_space.shape)
         b_advantages = advantages.reshape(-1)
         b_returns = returns.reshape(-1)
-        b_values = values.reshape(-1)
 
         # Optimizing the policy and value network
         b_inds = np.arange(batch_size)
-        clipfracs = []
         for epoch in range(N_EPOCHS):
             np.random.shuffle(b_inds)
             for start in range(0, batch_size, minibatch_size):
@@ -333,12 +331,6 @@ def benchmark_cleanrl():
                 _, newlogprob, entropy, newvalue = agent.get_action_and_value(b_obs[mb_inds], b_actions.long()[mb_inds])
                 logratio = newlogprob - b_logprobs[mb_inds]
                 ratio = logratio.exp()
-
-                with torch.no_grad():
-                    # calculate approx_kl http://joschu.net/blog/kl-approx.html
-                    old_approx_kl = (-logratio).mean()
-                    approx_kl = ((ratio - 1) - logratio).mean()
-                    clipfracs += [((ratio - 1.0).abs() > CLIP_RANGE).float().mean().item()]
 
                 mb_advantages = b_advantages[mb_inds]
                 mb_advantages = (mb_advantages - mb_advantages.mean()) / (mb_advantages.std() + 1e-8)
@@ -432,7 +424,7 @@ def plot_results(zerorl_data, sb3_data, cleanrl_data):
     axes[1].legend(fontsize=11)
 
     plt.tight_layout()
-    filename = f'benchmark_acrobot_vector.png'
+    filename = 'benchmark_acrobot_vector.png'
     plt.savefig(filename, dpi=300, bbox_inches='tight')
     print(f"\nGraphique sauvegardé : {filename}")
 
