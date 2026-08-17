@@ -136,9 +136,11 @@ class BaseTrain:
         for _ in range(self.config.rollout_steps):
             if self.config.normalize:
                 self.normalizer.update(state_tensor)
-                state_tensor = self.normalizer.normalize(state_tensor)
+                state_norm = self.normalizer.normalize(state_tensor)
+            else:
+                state_norm = state_tensor
             with torch.inference_mode():
-                outputs: dict[str, Tensor] = self.agent.get_action(state_tensor) #type: ignore[operator]
+                outputs: dict[str, Tensor] = self.agent.get_action(state_norm) #type: ignore[operator]
                 outputs["value"] = outputs["value"].squeeze(-1)
                 if str(env_device).startswith("cuda"):
                     action_input: np.ndarray | Tensor = outputs["action"]
@@ -161,7 +163,7 @@ class BaseTrain:
                 trunc_tensor = trunc_tensor.unsqueeze(0)
 
             self.buffer.insert(
-                state = state_tensor,
+                state = state_norm,
                 reward = reward_tensor,
                 done = done_tensor,
                 **outputs
@@ -186,8 +188,10 @@ class BaseTrain:
         with torch.inference_mode():
             if self.config.normalize:
                 self.normalizer.update(state_tensor)
-                state_tensor = self.normalizer.normalize(state_tensor)
-            next_output: dict[str, Tensor] = self.agent.get_action(state_tensor) #type: ignore[operator]
+                state_norm = self.normalizer.normalize(state_tensor)
+            else:
+                state_norm = state_tensor
+            next_output: dict[str, Tensor] = self.agent.get_action(state_norm) #type: ignore[operator]
             next_output["value"] = next_output["value"].squeeze(-1)
         self.state = state_tensor
         return next_output
@@ -219,7 +223,7 @@ class BaseTrain:
         for k, v in metrics.items():
             if isinstance(v, Tensor):
                 tensor_keys.append(f"train/{k}")
-                tensor_vals.append(v.detach())
+                tensor_vals.append(v)
             else:
                 clean_metrics[k] = float(v)
             
