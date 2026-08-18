@@ -27,7 +27,7 @@ from zerorl.buffer import Buffer
 from zerorl.config import TrainConfig, AlgoConfig
 from zerorl.processing import NormMeanStd
 from zerorl.errors import EmptyBufferError, assert_agent_contract
-from zerorl.vector_env import VectorEnv
+from zerorl.functions import vectorize_env
 
 
 #Profiler Metric
@@ -86,7 +86,7 @@ class BaseTrain:
         self.env = env
         self.state = Tensor()
         if not getattr(env, "auto_reset", False):
-            self.env = VectorEnv(lambda: self.env, self.config.num_envs, render_mode)
+            self.env = vectorize_env(self.env)
         self.buffer = buffer
         self.update_weights = update_weights
         self.algo_config = algo_config
