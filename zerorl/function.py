@@ -5,16 +5,16 @@ Provides get_buffer_params_model() for extracting model parameters.
 
 import shutil
 import sys
-from typing import Any, Callable, TypeVar
-
+import gymnasium as gym
 import torch
+from typing import Any, Callable, TypeVar
+from  gymnasium.vector import SyncVectorEnv
 from torch import Tensor
 from torch.nn import Parameter
 from zerorl.agent import BaseAgent
 
 
 F = TypeVar("F", bound=Callable[..., Any])
-
 
 def _cxx_compiler_available() -> bool:
     """True if torch inductor can find a C++ compiler."""
@@ -34,6 +34,25 @@ def fast_compile(fn: F | None = None, **kwargs) -> F | Callable[[F], F]:
     if fn is not None:
         return wrap(fn)
     return wrap
+
+
+#Vectorize Env
+def vetorize_env(env_spec: str | Callable, num_envs: int = 1, render_mode: str | None = None) -> SyncVectorEnv:
+    def make_env_fn(seed:int) -> Callable:
+        def _init():
+            if isinstance(env_spec, str):
+                env = gym.make(env_spec, render_mode = render_mode)
+            elif callable(env_spec):
+                env = env_spec()
+            else:
+                raise ValueError("env_spec must be a string (Gymnasium ID) or a callable (Env class)")
+
+            env.reset(seed=seed)
+            return env
+        return _init
+    
+    _env = gym.vector.SyncVectorEnv([make_env_fn(i) for i in range(num_envs)])
+    return _env
 
 
 def get_buffer_params_model(model: BaseAgent) -> tuple[dict[str, Parameter], dict[str, Tensor]]:

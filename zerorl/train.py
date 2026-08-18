@@ -17,7 +17,7 @@ import torch
 from dataclasses import dataclass, asdict
 import wandb
 from tqdm import tqdm
-from typing import Callable
+from typing import Callable, Any
 from torch import Tensor
 from torch import optim
 from torch.optim.lr_scheduler import LambdaLR
@@ -25,7 +25,6 @@ from torch.utils.tensorboard import SummaryWriter
 from zerorl.agent import BaseAgent
 from zerorl.buffer import Buffer
 from zerorl.config import TrainConfig, AlgoConfig
-from zerorl.env import BaseEnv
 from zerorl.processing import NormMeanStd
 from zerorl.errors import EmptyBufferError, assert_agent_contract
 from zerorl.vector_env import VectorEnv
@@ -53,7 +52,7 @@ class BaseTrain:
 
     def __init__(self,
                  agent: BaseAgent,
-                 env: BaseEnv,
+                 env: Any,
                  buffer: Buffer,
                  update_weights: Callable[[BaseAgent, Buffer, LambdaLR,
                                            optim.Optimizer, dict[str,Tensor],
