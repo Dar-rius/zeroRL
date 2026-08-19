@@ -26,7 +26,7 @@ class TrainConfig:
     """
     model_name: str
     project_name: str
-    model_save_path: str = ".checkpoints"
+    model_save_path: str = "checkpoints"
     timestamp: int = 1_000_000
     rollout_steps: int = 2048
     num_envs: int = 1
@@ -41,6 +41,8 @@ class TrainConfig:
         self.device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model_path = f".{self.model_save_path}/{self.model_name}.pt"
         self.num_update = self.timestamp // (self.rollout_steps * self.num_envs)
+        if self.num_update <= 0:
+            raise ValueError(f"num_update must be greater than 0, got {self.num_update}")
 
 
 @dataclass(init=False)
