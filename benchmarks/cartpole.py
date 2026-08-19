@@ -59,8 +59,7 @@ def benchmark_zerorl():
         config=config,
         algo_config=algo_config,
         env_id=ENV_ID,
-        hidden_layer=64,
-        schedule_func=lambda step: 1.0
+        hidden_layer=64
     )
 
     obs, _ = trainer.env.reset(seed=SEED)
@@ -431,15 +430,13 @@ def plot_results(zerorl_data, sb3_data, cleanrl_data):
 if __name__ == "__main__":
     print(f"Benchmark PPO — {ENV_ID} | Device: {DEVICE.upper()} | Seed: {SEED}\n")
     
-    
-    print("\n→ Running CleanRL...")
-    c_data = benchmark_cleanrl()
-    print(f"  Finished in {c_data['wall_times'][-1]:.1f}s | Best reward: {max(c_data['rewards']):.1f}")
-
     print("→ Running ZeroRL...")
     z_data = benchmark_zerorl()
     print(f"  Finished in {z_data['wall_times'][-1]:.1f}s | Best reward: {max(z_data['rewards']):.1f}")
-    
+
+    print("\n→ Running CleanRL...")
+    c_data = benchmark_cleanrl()
+    print(f"  Finished in {c_data['wall_times'][-1]:.1f}s | Best reward: {max(c_data['rewards']):.1f}")
     
     print("\n→ Running Stable-Baselines3...")
     s_data = benchmark_sb3()

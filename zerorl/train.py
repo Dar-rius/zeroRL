@@ -131,7 +131,7 @@ class BaseTrain:
         state_tensor: Tensor = self.state
         if state_tensor.dim() == 1: state_tensor = state_tensor.unsqueeze(0)
 
-        num_envs = state_tensor.shape[0]
+        num_envs = self.config.num_envs
         if self.current_episode_reward is None:
             self.current_episode_reward = torch.zeros(num_envs, device=dev)
 
@@ -164,16 +164,15 @@ class BaseTrain:
                 trunc_tensor = trunc_tensor.unsqueeze(0)
             
 
-            final_values = torch.zeros(self.num_envs, dtype=torch.float32, device=dev)
+            final_values = torch.zeros(num_envs, dtype=torch.float32, device=dev)
             if truncate.any():
                 final_obs_list = info.get("final_obs", [None] * num_envs)
                 for i in range(self.num_envs):
                     if trunc_tensor[i] > 0 and final_obs_list is not None:
-                        final_obs = torch.as_tensor(final_obs_list[i], dtype=torch.float32, device=dev)
+                        final_obs = torch.as_tensor(final_obs_list[i], dtype=torch.float32, device=dev).unsqueeze(0)
                         with torch.inference_mode():
                             _, final_val = self.agent.forward(final_obs)
                         final_values[i] = final_val.squeeze()
-
             self.buffer.insert(
                 state = state_norm,
                 reward = reward_tensor,
