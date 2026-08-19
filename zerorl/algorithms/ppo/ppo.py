@@ -50,7 +50,7 @@ def gae_compute(rewards: Tensor,
     gae = torch.zeros(num_envs, dtype=torch.float32, device=rewards.device)
     # Mask: 0.0 at episode boundaries (no bootstrapping across episodes)
     delta_mask = 1.0 - dones
-    gae_mask = 1.0 - (dones or truncated)
+    gae_mask = 1.0 - (dones + truncated).clamp_(0.0, 1.0)
     shifted_values = torch.cat((values[1:], last_value.unsqueeze(0)), 0)
     next_values = truncated * final_values + (1 - truncated) * shifted_values
     total_size = rewards.shape[0]
