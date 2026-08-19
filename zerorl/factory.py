@@ -18,8 +18,8 @@ def get_actor_critic_buffer(state_space: int, action_space: tuple, config: Train
     buffer = Buffer(step = config.rollout_steps,
                     num_envs = config.num_envs,
                     data = {"state": (state_space, ), "action": action_space,
-                            "reward": (), "done": (), "truncated": (),   "final_value": (),
-                            "entropy": (), "value": (), "return": (), "log_prob": (), "advantage": ()},
+                            "reward": (), "done": (), "truncated": (), "entropy": (),
+                            "value": (), "return": (), "log_prob": (), "advantage": ()},
                     device=config.device)
     return buffer
 

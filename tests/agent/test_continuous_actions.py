@@ -159,8 +159,6 @@ class TestPPOContinuousIntegration:
             all_data["value"],
             last_value,
             all_data["done"],
-            torch.zeros_like(all_data["done"]),   # truncated (not tracked here)
-            torch.zeros_like(all_data["value"]),  # final_value (not tracked here)
             raw_buf,
             cfg,
         )

@@ -10,7 +10,7 @@ warnings.filterwarnings("ignore")
 # ==========================================
 # BENCHMARK CONFIGURATION
 # ==========================================
-ENV_ID = "Acrobot-v1"
+ENV_ID = "LunarLander-v3"
 TOTAL_STEPS = 100_000
 ROLLOUT_STEPS = 2048
 BATCH_SIZE = 64
@@ -22,6 +22,7 @@ CLIP_RANGE = 0.2
 ENT_COEF = 0.01
 VF_COEF = 0.5
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+#DEVICE =  "cpu"
 SEED = 42
 
 def sync_gpu():
@@ -41,8 +42,9 @@ def benchmark_zerorl():
         model_save_path="/tmp/zerorl_bench",
         timestamp=TOTAL_STEPS,
         rollout_steps=ROLLOUT_STEPS,
-        num_envs=1
+        num_envs=1,
     )
+#    config.device = torch.device(DEVICE)
     
     algo_config = AlgoConfig(
         lr=LR,
@@ -145,7 +147,7 @@ def benchmark_sb3():
     )
 
     # Warmup
-    model.learn(total_timesteps=ROLLOUT_STEPS, reset_num_timesteps=False)
+    model.learn(total_timesteps=ROLLOUT_STEPS*2, reset_num_timesteps=False)
 
     wall_times = []
     timesteps = []
@@ -153,10 +155,9 @@ def benchmark_sb3():
     
     start_time = time.time()
     steps_done = 0
-    total_target = ROLLOUT_STEPS * 2
+    total_target = ROLLOUT_STEPS
 
     while steps_done < TOTAL_STEPS:
-        total_target += ROLLOUT_STEPS
         model.learn(total_timesteps=total_target, reset_num_timesteps=False)
         sync_gpu()
         
@@ -419,7 +420,7 @@ def plot_results(zerorl_data, sb3_data, cleanrl_data):
     axes[1].legend(fontsize=11)
 
     plt.tight_layout()
-    filename = 'benchmark_acrobot.png'
+    filename = 'benchmark_lunar_single.png'
     plt.savefig(filename, dpi=300, bbox_inches='tight')
     print(f"\nGraphique sauvegardé : {filename}")
 

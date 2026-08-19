@@ -23,7 +23,7 @@ class TestAlgoConfig:
         assert cfg.clip_eps == 0.2
         assert cfg.ent_coef == 0.01
         assert cfg.value_coef == 0.5
-        assert cfg.epochs == 10
+        assert cfg.epochs == 4
         assert cfg.batch_size == 64
         assert cfg.tau == 0.005
 

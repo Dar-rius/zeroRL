@@ -70,7 +70,7 @@ class AlgoConfig:
     clip_eps: float = 0.2
     ent_coef: float = 0.01
     value_coef: float = 0.5
-    epochs: int = 10
+    epochs: int = 4
 
     #For off-policy
     tau: float = 0.005

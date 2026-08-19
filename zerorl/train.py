@@ -131,9 +131,8 @@ class BaseTrain:
         state_tensor: Tensor = self.state
         if state_tensor.dim() == 1: state_tensor = state_tensor.unsqueeze(0)
 
-        num_envs = self.config.num_envs
         if self.current_episode_reward is None:
-            self.current_episode_reward = torch.zeros(num_envs, device=dev)
+            self.current_episode_reward = torch.zeros(self.num_envs, device=dev)
 
         for _ in range(self.config.rollout_steps):
             if self.config.normalize:
@@ -152,7 +151,8 @@ class BaseTrain:
             # Convention: truncate = terminated (episode naturally ended)
             #done = truncated (episode cut short by time limit)
             next_state, reward, done, truncate, info = self.env.step(action_input)
-            done_tensor = torch.as_tensor(done, dtype=torch.float32, device=dev)
+            done_trunc = done | truncate
+            done_tensor = torch.as_tensor(done_trunc, dtype=torch.float32, device=dev)
             trunc_tensor = torch.as_tensor(truncate, dtype=torch.float32, device=dev)
             reward_tensor = torch.as_tensor(reward, dtype=torch.float32, device=dev)
             next_state_tensor = torch.as_tensor(next_state, dtype=torch.float32, device=dev)
@@ -164,21 +164,11 @@ class BaseTrain:
                 trunc_tensor = trunc_tensor.unsqueeze(0)
             
 
-            final_values = torch.zeros(num_envs, dtype=torch.float32, device=dev)
-            if truncate.any():
-                final_obs_list = info.get("final_obs", [None] * num_envs)
-                for i in range(self.num_envs):
-                    if trunc_tensor[i] > 0 and final_obs_list is not None:
-                        final_obs = torch.as_tensor(final_obs_list[i], dtype=torch.float32, device=dev).unsqueeze(0)
-                        with torch.inference_mode():
-                            _, final_val = self.agent.forward(final_obs)
-                        final_values[i] = final_val.squeeze()
             self.buffer.insert(
                 state = state_norm,
                 reward = reward_tensor,
                 done = done_tensor,
                 truncated = trunc_tensor,
-                final_value = final_values,
                 **outputs
             )
             self.current_episode_reward += reward_tensor

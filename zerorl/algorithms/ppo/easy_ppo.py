@@ -47,7 +47,7 @@ def easy_train_ppo(config: TrainConfig,
     #update weights function
     def easy_update_weights(agent, buffer, scheduler, optimizer, last_output, algo_config):
         data = buffer.get_all()
-        gae_compute(data["reward"], data["value"], last_output["value"], data["done"], data["truncated"], data["final_value"], buffer, algo_config)
+        gae_compute(data["reward"], data["value"], last_output["value"], data["done"], buffer, algo_config)
         return ppo_func(agent, optimizer, buffer, algo_config, scheduler, device=agent.device)
 
     train = BaseTrain(
