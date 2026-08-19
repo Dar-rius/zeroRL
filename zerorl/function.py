@@ -14,6 +14,7 @@ from torch import Tensor
 from torch.nn import Parameter
 from zerorl.agent import BaseAgent
 from zerorl.helpers import BaseEnv
+from gymnasium.vector import AutoresetMode
 
 
 F = TypeVar("F", bound=Callable[..., Any])
@@ -53,7 +54,7 @@ def vetorize_env(env_spec: str | Callable | BaseEnv, num_envs: int = 1, render_m
             env.reset(seed=seed)
             return env
         return _init
-    return gym.vector.SyncVectorEnv([make_env_fn(i) for i in range(num_envs)])
+    return gym.vector.SyncVectorEnv([make_env_fn(i) for i in range(num_envs)],  autoreset_mode=AutoresetMode.SAME_STEP)
 
 
 def get_buffer_params_model(model: BaseAgent) -> tuple[dict[str, Parameter], dict[str, Tensor]]:

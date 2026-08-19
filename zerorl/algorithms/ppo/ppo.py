@@ -19,11 +19,13 @@ from zerorl.errors import assert_agent_contract
 
 
 def gae_compute(rewards: Tensor,
-            values: Tensor,
-            last_value: Tensor,
-            dones: Tensor,
-            buffer:Buffer,
-            algo_config: AlgoConfig):
+                values: Tensor,
+                last_value: Tensor,
+                dones: Tensor,
+                truncated: Tensor,
+                final_values: Tensor,
+                buffer:Buffer,
+                algo_config: AlgoConfig):
     """Compute Generalized Advantage Estimation.
 
     Works backwards through the trajectory, accumulating TD errors
@@ -42,11 +44,14 @@ def gae_compute(rewards: Tensor,
     values = values.reshape(values.shape[0], -1)
     dones = dones.reshape(dones.shape[0], -1)
     last_value = last_value.reshape(-1)
+    truncated = truncated.reshape(truncated.shape[0], -1)
+    final_values = final_values.reshape(final_values.shape[0], -1)
     num_envs = rewards.shape[1]
     gae = torch.zeros(num_envs, dtype=torch.float32, device=rewards.device)
     # Mask: 0.0 at episode boundaries (no bootstrapping across episodes)
     mask = 1.0 - dones
-    next_values = torch.cat((values[1:], last_value.unsqueeze(0)), 0)
+    shifted_values = torch.cat((values[1:], last_value.unsqueeze(0)), 0)
+    next_values = truncated * final_values + (1 - truncated) * shifted_values
     total_size = rewards.shape[0]
     delta = rewards + algo_config.gamma * next_values * mask - values
     advantages = torch.empty_like(delta)
