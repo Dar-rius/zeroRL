@@ -100,7 +100,8 @@ class BaseTrain:
         else:
             self.optimizer = optimizer
 
-        obs_shape = env.observation_space.shape
+        obs_ = getattr(env, "single_observation_space", env.observation_space)
+        obs_shape = obs_.shape
         if obs_shape is None:
             raise ValueError("NormMeanStd requires environment with a defined observation shape")
 
@@ -157,7 +158,7 @@ class BaseTrain:
             next_state_tensor = torch.as_tensor(next_state, dtype=torch.float32, device=dev)
 
             if reward_tensor.dim() == 0:
-                next_state = next_state.unsqueeze(0)
+                next_state_tensor = next_state_tensor.unsqueeze(0)
                 reward_tensor = reward_tensor.unsqueeze(0)
                 done_tensor = done_tensor.unsqueeze(0)
                 trunc_tensor = trunc_tensor.unsqueeze(0)

@@ -47,9 +47,9 @@ def vectorize_env(env_spec: str | Callable | BaseEnv, num_envs: int = 1, render_
         def _init():
             if isinstance(env_spec, str):
                 env = gym.make(env_spec, render_mode = render_mode)
-            elif callable(env_spec):
-                env = env_spec()
             elif isinstance(env_spec, type):
+                env = env_spec()
+            elif callable(env_spec):
                 env = env_spec()
             else:
                 env = copy.deepcopy(env_spec)
