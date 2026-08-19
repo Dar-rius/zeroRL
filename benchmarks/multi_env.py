@@ -9,8 +9,8 @@ warnings.filterwarnings("ignore")
 
 # ==========================================
 # BENCHMARK CONFIGURATION
-# ==============g===========================
-ENV_ID = "Acrobot-v1"
+# ==========================================
+ENV_ID = "LunarLander-v3"
 TOTAL_STEPS = 100_000
 ROLLOUT_STEPS = 2048
 NUM_ENVS = 4
@@ -23,6 +23,7 @@ CLIP_RANGE = 0.2
 ENT_COEF = 0.01
 VF_COEF = 0.5
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+#DEVICE = "cpu"
 SEED = 42
 
 def sync_gpu():
@@ -44,6 +45,7 @@ def benchmark_zerorl():
         rollout_steps=ROLLOUT_STEPS,
         num_envs=NUM_ENVS
     )
+#    config.device = torch.device(DEVICE)
     
     algo_config = AlgoConfig(
         lr=LR,
@@ -86,7 +88,6 @@ def benchmark_zerorl():
 
     while steps_done < TOTAL_STEPS:
         sync_gpu()
-        
         last_output = trainer.rollout_phase()
         trainer.update_weights(
             trainer.agent, trainer.buffer, trainer.scheduler,
@@ -149,7 +150,7 @@ def benchmark_sb3():
     )
 
     steps_per_rollout = ROLLOUT_STEPS * NUM_ENVS
-    total_target_timesteps = steps_per_rollout * 2
+    total_target_timesteps = steps_per_rollout
 
     # Warmup
     model.learn(total_timesteps=steps_per_rollout * 2, reset_num_timesteps=False)
@@ -162,7 +163,6 @@ def benchmark_sb3():
     steps_done = 0
 
     while steps_done < TOTAL_STEPS:
-        total_target_timesteps += steps_per_rollout
         model.learn(total_timesteps=total_target_timesteps, reset_num_timesteps=False)
         sync_gpu()
         
@@ -328,6 +328,7 @@ def benchmark_cleanrl():
                 mb_inds = b_inds[start:end]
 
                 _, newlogprob, entropy, newvalue = agent.get_action_and_value(b_obs[mb_inds], b_actions.long()[mb_inds])
+                newvalue = newvalue.view(-1)
                 logratio = newlogprob - b_logprobs[mb_inds]
                 ratio = logratio.exp()
 
@@ -423,7 +424,7 @@ def plot_results(zerorl_data, sb3_data, cleanrl_data):
     axes[1].legend(fontsize=11)
 
     plt.tight_layout()
-    filename = 'benchmark_acrobot_vector.png'
+    filename = 'benchmark_lunar_vector.png'
     plt.savefig(filename, dpi=300, bbox_inches='tight')
     print(f"\nGraphique sauvegardé : {filename}")
 
@@ -434,13 +435,13 @@ def plot_results(zerorl_data, sb3_data, cleanrl_data):
 if __name__ == "__main__":
     print(f"Benchmark PPO — {ENV_ID} | {NUM_ENVS} Env | Device: {DEVICE.upper()} | Seed: {SEED}\n")
 
-    print("→ Running CleanRL...")
-    c_data = benchmark_cleanrl()
-    print(f"  Finished in {c_data['wall_times'][-1]:.1f}s | Best reward: {max(c_data['rewards']):.1f}")
-
     print("→ Running ZeroRL...")
     z_data = benchmark_zerorl()
     print(f"  Finished in {z_data['wall_times'][-1]:.1f}s | Best reward: {max(z_data['rewards']):.1f}")
+
+    print("→ Running CleanRL...")
+    c_data = benchmark_cleanrl()
+    print(f"  Finished in {c_data['wall_times'][-1]:.1f}s | Best reward: {max(c_data['rewards']):.1f}")
 
     print("\n→ Running Stable-Baselines3...")
     s_data = benchmark_sb3()
