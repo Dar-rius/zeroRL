@@ -6,7 +6,7 @@ from zerorl.train import BaseTrain
 from zerorl.algorithms.ppo import ppo_func, gae_compute
 from zerorl.config import TrainConfig, AlgoConfig
 from zerorl.agent import BaseAgent
-from zerorl.env import BaseEnv
+from zerorl.helpers import BaseEnv
 
 def easy_train_ppo(config: TrainConfig,
                     algo_config: AlgoConfig,

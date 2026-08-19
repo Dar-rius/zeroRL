@@ -6,7 +6,7 @@ for preprocessing observations before feeding them to the agent.
 
 import torch
 from torch import Tensor
-from zerorl.function import fast_compile
+from zerorl.functions import fast_compile
 
 
 class NormMeanStd:

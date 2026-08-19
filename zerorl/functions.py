@@ -42,7 +42,7 @@ def fast_compile(fn: F | None = None, **kwargs) -> F | Callable[[F], F]:
 
 
 #Vectorize Env
-def vetorize_env(env_spec: str | Callable | BaseEnv, num_envs: int = 1, render_mode: str | None = None) -> SyncVectorEnv:
+def vectorize_env(env_spec: str | Callable | BaseEnv, num_envs: int = 1, render_mode: str | None = None) -> SyncVectorEnv:
     def make_env_fn(seed:int) -> Callable:
         def _init():
             if isinstance(env_spec, str):

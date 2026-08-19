@@ -1,15 +1,17 @@
 import numpy as np
 import torch
-from zerorl.vector_env import VectorEnv
+from typing import Callable
+from torch import Tensor
+from zerorl.functions import vectorize_env 
 from zerorl.agent import BaseAgent, eval_action
 from zerorl.buffer import Buffer 
 from zerorl.config import TrainConfig 
+from zerorl.helpers import BaseEnv
 from torch import nn
-from torch import Tensor
 
 
 #Auto create new BaseEnv
-def get_env(env_id: str, num_envs: int, render_mode: str | None): return VectorEnv(env_id, num_envs, render_mode)
+def get_env(env_id: str | Callable | BaseEnv, num_envs: int, render_mode: str | None): return vectorize_env(env_id, num_envs, render_mode)
 
 #Auto create Actor-Critic buffer
 def get_actor_critic_buffer(state_space: int, action_space: tuple, config: TrainConfig): 
