@@ -23,8 +23,12 @@ def easy_train_ppo(config: TrainConfig,
     else:
         env = get_env(env_id, config.num_envs, render_mode)
     
-    obs_dim = env.observation_space
-    act_dim = env.action_space
+    if hasattr(env, "single_observation_space"):
+        obs_dim = env.signle_observation_space
+        act_dim = env.single_action_space
+    else:
+        obs_dim = env.observation_space
+        act_dim = env.action_space
     is_discrete = isinstance(act_dim, spaces.Discrete)
     if is_discrete:
         act_n = act_dim.n #type: ignore

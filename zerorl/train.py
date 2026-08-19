@@ -14,6 +14,7 @@ except ImportError:
     resource = None #type: ignore[assignment]
 import numpy as np
 import torch
+import gymnasium as gym
 from dataclasses import dataclass, asdict
 import wandb
 from tqdm import tqdm
@@ -86,7 +87,7 @@ class BaseTrain:
                         {"get_action": "Your agent should have the method `get_action`"})
         self.env = env
         self.state = Tensor()
-        if not getattr(env, "auto_reset", False):
+        if not isinstance(env, gym.vector.VectorEnv) or not getattr(env, "auto_reset", False):
             self.env = vectorize_env(self.env, self.num_envs, render_mode)
         self.buffer = buffer
         self.update_weights = update_weights
@@ -164,7 +165,7 @@ class BaseTrain:
 
             final_values = torch.zeros(self.num_envs, dtype=torch.float32, device=dev)
             if truncate.any():
-                final_obs_list = info.get("final_obs", info.get("final_observation", [None] * num_envs))
+                final_obs_list = info.get("final_obs", [None] * num_envs)
                 for i in range(self.num_envs):
                     if trunc_tensor[i] > 0 and final_obs_list is not None:
                         final_obs = torch.as_tensor(final_obs_list[i], dtype=torch.float32, device=dev)
