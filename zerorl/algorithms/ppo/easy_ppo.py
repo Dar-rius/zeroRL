@@ -24,7 +24,7 @@ def easy_train_ppo(config: TrainConfig,
         env = get_env(env_id, config.num_envs, render_mode)
     
     if hasattr(env, "single_observation_space"):
-        obs_dim = env.signle_observation_space
+        obs_dim = env.single_observation_space
         act_dim = env.single_action_space
     else:
         obs_dim = env.observation_space

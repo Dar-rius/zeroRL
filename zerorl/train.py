@@ -87,7 +87,7 @@ class BaseTrain:
                         {"get_action": "Your agent should have the method `get_action`"})
         self.env = env
         self.state = Tensor()
-        if not isinstance(env, gym.vector.VectorEnv) or not getattr(env, "auto_reset", False):
+        if not isinstance(env, gym.vector.VectorEnv) and not getattr(env, "auto_reset", False):
             self.env = vectorize_env(self.env, self.num_envs, render_mode)
         self.buffer = buffer
         self.update_weights = update_weights
