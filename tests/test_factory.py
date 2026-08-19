@@ -3,7 +3,7 @@
 import pytest
 import torch
 from zerorl.factory import get_env, get_actor_critic_buffer, ActorCriticAgent
-from zerorl.vector_env import VectorEnv
+from gymnasium.vector import SyncVectorEnv
 from zerorl.config import TrainConfig
 
 
@@ -23,7 +23,7 @@ def tmp_config(tmp_path, device) -> TrainConfig:
 class TestGetEnv:
     def test_get_env_returns_vector_env(self) -> None:
         env = get_env("CartPole-v1", 2, None)
-        assert isinstance(env, VectorEnv)
+        assert isinstance(env, SyncVectorEnv)
         env.close()
 
     def test_get_env_num_envs_propagates(self) -> None:
@@ -48,7 +48,8 @@ class TestGetActorCriticBuffer:
     def test_buffer_has_all_required_keys(self, tmp_config) -> None:
         buf = get_actor_critic_buffer(4, (2,), tmp_config)
         expected_keys = {"state", "action", "reward", "done", "entropy",
-                         "value", "return", "log_prob", "advantage"}
+                         "value", "return", "log_prob", "advantage",
+                         "truncated", "final_value"}
         assert set(buf.data.keys()) == expected_keys
 
     def test_buffer_shapes(self, tmp_config) -> None:

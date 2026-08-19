@@ -8,7 +8,8 @@ from zerorl.algorithms.ppo.easy_ppo import easy_train_ppo
 from zerorl.train import BaseTrain
 from zerorl.agent import BaseAgent, eval_action
 from zerorl.config import TrainConfig, AlgoConfig
-from zerorl.env import BaseEnv
+from gymnasium.vector import SyncVectorEnv
+from zerorl.helpers import BaseEnv
 
 
 @pytest.fixture
@@ -80,7 +81,9 @@ class TestEasyTrainPpo:
         algo = AlgoConfig()
         env = CustomCartPole()
         train = easy_train_ppo(config=tmp_config, algo_config=algo, base_env=env)
-        assert train.env._env.envs[0] is env
+        # vectorize_env deep-copies the instance per slot (shared-instance fix)
+        assert isinstance(train.env.envs[0], CustomCartPole)
+        assert train.env.envs[0] is not env
         train.env.close()
 
     def test_default_env_from_id(self, tmp_config) -> None:
@@ -101,4 +104,19 @@ class TestEasyTrainPpo:
         train = easy_train_ppo(config=cfg, algo_config=algo, env_id="CartPole-v1")
         train.train(use_wandb=False, use_tb=False)
         assert isinstance(train.episode_rewards, list)
+        train.env.close()
+
+    def test_discrete_cartpole_agent_get_action_keys(self, tmp_config, device) -> None:
+        agent = CustomAgent(4, 2).to(device)
+        state = torch.randn(1, 4, device=device)
+        out = agent.get_action(state)
+        assert set(out.keys()) == {"action", "log_prob", "entropy", "value"}
+
+    def test_easy_ppo_no_double_wrap(self, tmp_config) -> None:
+        """easy_train_ppo wraps a plain BaseEnv exactly once via vectorize_env."""
+        env = CustomCartPole()
+        train = easy_train_ppo(config=tmp_config, algo_config=AlgoConfig(), base_env=env)
+        assert isinstance(train.env, SyncVectorEnv)
+        assert isinstance(train.env.envs[0], CustomCartPole)
+        assert train.env.envs[0] is not env
         train.env.close()

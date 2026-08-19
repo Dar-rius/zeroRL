@@ -9,7 +9,7 @@ from zerorl.agent import BaseAgent, eval_action
 from zerorl.algorithms.ppo.ppo import gae_compute, ppo_func
 from zerorl.buffer import Buffer
 from zerorl.config import AlgoConfig
-from zerorl.vector_env import VectorEnv
+from zerorl.functions import vectorize_env
 
 @pytest.fixture
 def device() -> torch.device:
@@ -48,7 +48,7 @@ class TestPPOVectorizedIntegration:
         T = 32  # Rollout steps
 
         # 1. Setup Vectorized Env and Agent
-        env = VectorEnv("CartPole-v1", num_envs=num_envs)
+        env = vectorize_env("CartPole-v1", num_envs=num_envs)
         agent = DiscreteTestAgent(obs_dim=obs_dim, act_dim=2).to(device)
         optimizer = torch.optim.Adam(agent.parameters(), lr=3e-4)
         cfg = AlgoConfig()
@@ -72,7 +72,7 @@ class TestPPOVectorizedIntegration:
         )
 
         # 3. Simulate Vectorized Rollout
-        state, _ = env.reset(seed=42)
+        state, _ = env.reset(seed=42)  # type: ignore[var-annotated]
         
         for _ in range(T):
             state_tensor = torch.as_tensor(state, dtype=torch.float32, device=device)
@@ -80,7 +80,7 @@ class TestPPOVectorizedIntegration:
                 out = agent.get_action(state_tensor)
                 
             # Step the real vectorized environment
-            next_state, reward, terminated, _, _ = env.step(out["action"].cpu().numpy())
+            next_state, reward, terminated, _, _ = env.step(out["action"].cpu().numpy())  # type: ignore[var-annotated]
             
             # Convert to tensors for the buffer
             reward_tensor = torch.as_tensor(reward, dtype=torch.float32, device=device)
@@ -108,6 +108,8 @@ class TestPPOVectorizedIntegration:
             all_data["value"],       # (T, N, 1)
             last_value,              # (N, 1)
             all_data["done"],        # (T, N)
+            torch.zeros_like(all_data["done"]),   # truncated (not tracked here)
+            torch.zeros_like(all_data["value"]),  # final_value (not tracked here)
             buf,
             cfg,
         )

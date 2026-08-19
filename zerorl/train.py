@@ -14,10 +14,11 @@ except ImportError:
     resource = None #type: ignore[assignment]
 import numpy as np
 import torch
+import gymnasium as gym
 from dataclasses import dataclass, asdict
 import wandb
 from tqdm import tqdm
-from typing import Callable
+from typing import Callable, Any
 from torch import Tensor
 from torch import optim
 from torch.optim.lr_scheduler import LambdaLR
@@ -25,10 +26,9 @@ from torch.utils.tensorboard import SummaryWriter
 from zerorl.agent import BaseAgent
 from zerorl.buffer import Buffer
 from zerorl.config import TrainConfig, AlgoConfig
-from zerorl.env import BaseEnv
 from zerorl.processing import NormMeanStd
 from zerorl.errors import EmptyBufferError, assert_agent_contract
-from zerorl.vector_env import VectorEnv
+from zerorl.functions import vectorize_env
 
 
 #Profiler Metric
@@ -53,7 +53,7 @@ class BaseTrain:
 
     def __init__(self,
                  agent: BaseAgent,
-                 env: BaseEnv,
+                 env: Any,
                  buffer: Buffer,
                  update_weights: Callable[[BaseAgent, Buffer, LambdaLR,
                                            optim.Optimizer, dict[str,Tensor],
@@ -81,13 +81,14 @@ class BaseTrain:
         super().__init__()
         torch.set_float32_matmul_precision('high')
         self.config = config
+        self.num_envs = self.config.num_envs
         self.agent = agent.to(self.config.device)
         assert_agent_contract(self.agent,
                         {"get_action": "Your agent should have the method `get_action`"})
         self.env = env
         self.state = Tensor()
-        if not getattr(env, "auto_reset", False):
-            self.env = VectorEnv(lambda: self.env, self.config.num_envs, render_mode)
+        if not isinstance(env, gym.vector.VectorEnv) and not getattr(env, "auto_reset", False):
+            self.env = vectorize_env(self.env, self.num_envs, render_mode)
         self.buffer = buffer
         self.update_weights = update_weights
         self.algo_config = algo_config
@@ -99,7 +100,8 @@ class BaseTrain:
         else:
             self.optimizer = optimizer
 
-        obs_shape = env.observation_space.shape
+        obs_ = getattr(env, "single_observation_space", env.observation_space)
+        obs_shape = obs_.shape
         if obs_shape is None:
             raise ValueError("NormMeanStd requires environment with a defined observation shape")
 
@@ -149,23 +151,35 @@ class BaseTrain:
 
             # Convention: truncate = terminated (episode naturally ended)
             #done = truncated (episode cut short by time limit)
-            next_state, reward, done, truncate, _ = self.env.step(action_input)
-            done_or_trunc = done | truncate
-            done_tensor = torch.as_tensor(done_or_trunc, dtype=torch.float32, device=dev)
+            next_state, reward, done, truncate, info = self.env.step(action_input)
+            done_tensor = torch.as_tensor(done, dtype=torch.float32, device=dev)
             trunc_tensor = torch.as_tensor(truncate, dtype=torch.float32, device=dev)
             reward_tensor = torch.as_tensor(reward, dtype=torch.float32, device=dev)
-            next_state = torch.as_tensor(next_state, dtype=torch.float32, device=dev)
+            next_state_tensor = torch.as_tensor(next_state, dtype=torch.float32, device=dev)
 
             if reward_tensor.dim() == 0:
-                next_state = next_state.unsqueeze(0)
+                next_state_tensor = next_state_tensor.unsqueeze(0)
                 reward_tensor = reward_tensor.unsqueeze(0)
                 done_tensor = done_tensor.unsqueeze(0)
                 trunc_tensor = trunc_tensor.unsqueeze(0)
+            
+
+            final_values = torch.zeros(self.num_envs, dtype=torch.float32, device=dev)
+            if truncate.any():
+                final_obs_list = info.get("final_obs", [None] * num_envs)
+                for i in range(self.num_envs):
+                    if trunc_tensor[i] > 0 and final_obs_list is not None:
+                        final_obs = torch.as_tensor(final_obs_list[i], dtype=torch.float32, device=dev)
+                        with torch.inference_mode():
+                            _, final_val = self.agent.forward(final_obs)
+                        final_values[i] = final_val.squeeze()
 
             self.buffer.insert(
                 state = state_norm,
                 reward = reward_tensor,
                 done = done_tensor,
+                truncated = trunc_tensor,
+                final_value = final_values,
                 **outputs
             )
             self.current_episode_reward += reward_tensor
@@ -176,12 +190,7 @@ class BaseTrain:
                 self.episode_rewards.extend(finished_rewards.tolist())
                 self.current_episode_reward[finished] = 0.0
 
-            if finished.any() and not self.env.auto_reset:
-                state, _ = self.env.reset()
-                state_tensor = torch.as_tensor(state, dtype=torch.float32, device=dev)
-            else:
-                state_tensor = next_state
-
+            state_tensor = next_state_tensor
             if state_tensor.dim() == 1:
                 state_tensor = state_tensor.unsqueeze(0)
 

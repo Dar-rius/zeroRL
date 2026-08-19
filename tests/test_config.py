@@ -116,3 +116,28 @@ class TestTrainConfig:
     def test_no_batch_size_field(self) -> None:
         cfg = TrainConfig(model_name="m", model_save_path="/tmp", project_name="test")
         assert not hasattr(cfg, "batch_size")
+
+    def test_model_path_default_checkpoints(self) -> None:
+        cfg = TrainConfig(model_name="ppo_agent", project_name="test")
+        assert cfg.model_path == ".checkpoints/ppo_agent.pt"
+
+    def test_num_update_value_error_when_zero(self) -> None:
+        with pytest.raises(ValueError, match="num_update must be greater than 0"):
+            TrainConfig(
+                model_name="m", model_save_path="/tmp", project_name="test",
+                timestamp=100, rollout_steps=2048, num_envs=1,
+            )
+
+    def test_num_update_value_error_when_negative(self) -> None:
+        with pytest.raises(ValueError, match="num_update must be greater than 0"):
+            TrainConfig(
+                model_name="m", model_save_path="/tmp", project_name="test",
+                timestamp=0, rollout_steps=2048, num_envs=1,
+            )
+
+    def test_num_update_includes_num_envs(self) -> None:
+        cfg = TrainConfig(
+            model_name="m", model_save_path="/tmp", project_name="test",
+            timestamp=10000, rollout_steps=100, num_envs=2,
+        )
+        assert cfg.num_update == 10000 // (100 * 2)

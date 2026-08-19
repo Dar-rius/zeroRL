@@ -14,16 +14,18 @@ from torch.optim.lr_scheduler import LambdaLR
 from zerorl.buffer import Buffer
 from zerorl.agent import BaseAgent, eval_action
 from zerorl.config import AlgoConfig
-from zerorl.function import get_buffer_params_model, fast_compile
+from zerorl.functions import get_buffer_params_model, fast_compile
 from zerorl.errors import assert_agent_contract
 
 
 def gae_compute(rewards: Tensor,
-            values: Tensor,
-            last_value: Tensor,
-            dones: Tensor,
-            buffer:Buffer,
-            algo_config: AlgoConfig):
+                values: Tensor,
+                last_value: Tensor,
+                dones: Tensor,
+                truncated: Tensor,
+                final_values: Tensor,
+                buffer:Buffer,
+                algo_config: AlgoConfig):
     """Compute Generalized Advantage Estimation.
 
     Works backwards through the trajectory, accumulating TD errors
@@ -42,16 +44,20 @@ def gae_compute(rewards: Tensor,
     values = values.reshape(values.shape[0], -1)
     dones = dones.reshape(dones.shape[0], -1)
     last_value = last_value.reshape(-1)
+    truncated = truncated.reshape(truncated.shape[0], -1)
+    final_values = final_values.reshape(final_values.shape[0], -1)
     num_envs = rewards.shape[1]
     gae = torch.zeros(num_envs, dtype=torch.float32, device=rewards.device)
     # Mask: 0.0 at episode boundaries (no bootstrapping across episodes)
-    mask = 1.0 - dones
-    next_values = torch.cat((values[1:], last_value.unsqueeze(0)), 0)
+    delta_mask = 1.0 - dones
+    gae_mask = 1.0 - (dones + truncated).clamp_(0.0, 1.0)
+    shifted_values = torch.cat((values[1:], last_value.unsqueeze(0)), 0)
+    next_values = truncated * final_values + (1 - truncated) * shifted_values
     total_size = rewards.shape[0]
-    delta = rewards + algo_config.gamma * next_values * mask - values
+    delta = rewards + algo_config.gamma * next_values * delta_mask - values
     advantages = torch.empty_like(delta)
     for step in reversed(range(total_size)):
-        gae = delta[step] + algo_config.gamma * algo_config.gae_lambda * mask[step] * gae
+        gae = delta[step] + algo_config.gamma * algo_config.gae_lambda * gae_mask[step] * gae
         advantages[step] = gae
     returns = advantages + values
     buffer.data["advantage"][:buffer.size] = advantages

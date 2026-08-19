@@ -59,7 +59,8 @@ def benchmark_zerorl():
         config=config,
         algo_config=algo_config,
         env_id=ENV_ID,
-        hidden_layer=64
+        hidden_layer=64,
+        schedule_func=lambda step: 1.0
     )
 
     obs, _ = trainer.env.reset(seed=SEED)
@@ -153,9 +154,11 @@ def benchmark_sb3():
     
     start_time = time.time()
     steps_done = 0
+    total_target = ROLLOUT_STEPS * 2
 
     while steps_done < TOTAL_STEPS:
-        model.learn(total_timesteps=steps_done + ROLLOUT_STEPS, reset_num_timesteps=False)
+        total_target += ROLLOUT_STEPS
+        model.learn(total_timesteps=total_target, reset_num_timesteps=False)
         sync_gpu()
         
         current_time = time.time() - start_time

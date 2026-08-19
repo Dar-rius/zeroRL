@@ -11,15 +11,6 @@ from abc import ABC, abstractmethod
 from typing import Any
 from gymnasium import spaces
 from torch import Tensor
-from gymnasium.envs.registration import register
-
-
-#decorator for register env in gym
-def register_env(env_id: str): 
-    def _decorator(cls):
-        register(id=env_id, entry_point=cls)
-        return cls
-    return _decorator
 
 
 class BaseEnv(gym.Env, ABC):
@@ -51,7 +42,6 @@ class BaseEnv(gym.Env, ABC):
         Returns:
             Tuple of (observation, info).
         """
-        pass
 
     @abstractmethod
     def step(self, action: np.ndarray | Tensor) -> tuple[np.ndarray | Tensor, float, bool, bool, dict[str, Any]]:
@@ -63,9 +53,7 @@ class BaseEnv(gym.Env, ABC):
         Returns:
             5-tuple of (observation, reward, terminated, truncated, info).
         """
-        pass
 
     @abstractmethod
     def close(self):
         """Release environment resources (render windows, connections, etc.)."""
-        pass

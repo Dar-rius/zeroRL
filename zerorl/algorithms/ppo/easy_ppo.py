@@ -6,7 +6,7 @@ from zerorl.train import BaseTrain
 from zerorl.algorithms.ppo import ppo_func, gae_compute
 from zerorl.config import TrainConfig, AlgoConfig
 from zerorl.agent import BaseAgent
-from zerorl.env import BaseEnv
+from zerorl.helpers import BaseEnv
 
 def easy_train_ppo(config: TrainConfig,
                     algo_config: AlgoConfig,
@@ -23,8 +23,12 @@ def easy_train_ppo(config: TrainConfig,
     else:
         env = get_env(env_id, config.num_envs, render_mode)
     
-    obs_dim = env.observation_space
-    act_dim = env.action_space
+    if hasattr(env, "single_observation_space"):
+        obs_dim = env.single_observation_space
+        act_dim = env.single_action_space
+    else:
+        obs_dim = env.observation_space
+        act_dim = env.action_space
     is_discrete = isinstance(act_dim, spaces.Discrete)
     if is_discrete:
         act_n = act_dim.n #type: ignore
@@ -43,7 +47,7 @@ def easy_train_ppo(config: TrainConfig,
     #update weights function
     def easy_update_weights(agent, buffer, scheduler, optimizer, last_output, algo_config):
         data = buffer.get_all()
-        gae_compute(data["reward"], data["value"], last_output["value"], data["done"], buffer, algo_config)
+        gae_compute(data["reward"], data["value"], last_output["value"], data["done"], data["truncated"], data["final_value"], buffer, algo_config)
         return ppo_func(agent, optimizer, buffer, algo_config, scheduler, device=agent.device)
 
     train = BaseTrain(
