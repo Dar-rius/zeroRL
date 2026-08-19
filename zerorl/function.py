@@ -22,8 +22,10 @@ F = TypeVar("F", bound=Callable[..., Any])
 def _cxx_compiler_available() -> bool:
     """True if torch inductor can find a C++ compiler."""
     if sys.platform != "win32":
-        return True
-    return shutil.which("cl") is not None
+        return shutil.which("cl") is not None
+    return (shutil.which("g++") is not None or
+            shutil.which("c++") is not None or
+            shutil.which("clang++") is not None)
 
 
 def fast_compile(fn: F | None = None, **kwargs) -> F | Callable[[F], F]:
