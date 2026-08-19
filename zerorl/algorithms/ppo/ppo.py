@@ -49,14 +49,15 @@ def gae_compute(rewards: Tensor,
     num_envs = rewards.shape[1]
     gae = torch.zeros(num_envs, dtype=torch.float32, device=rewards.device)
     # Mask: 0.0 at episode boundaries (no bootstrapping across episodes)
-    mask = 1.0 - dones
+    delta_mask = 1.0 - dones
+    gae_mask = 1.0 - (dones | truncated)
     shifted_values = torch.cat((values[1:], last_value.unsqueeze(0)), 0)
     next_values = truncated * final_values + (1 - truncated) * shifted_values
     total_size = rewards.shape[0]
-    delta = rewards + algo_config.gamma * next_values * mask - values
+    delta = rewards + algo_config.gamma * next_values * delta_mask - values
     advantages = torch.empty_like(delta)
     for step in reversed(range(total_size)):
-        gae = delta[step] + algo_config.gamma * algo_config.gae_lambda * mask[step] * gae
+        gae = delta[step] + algo_config.gamma * algo_config.gae_lambda * gae_mask[step] * gae
         advantages[step] = gae
     returns = advantages + values
     buffer.data["advantage"][:buffer.size] = advantages

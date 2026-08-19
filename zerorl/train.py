@@ -153,7 +153,7 @@ class BaseTrain:
             done_tensor = torch.as_tensor(done, dtype=torch.float32, device=dev)
             trunc_tensor = torch.as_tensor(truncate, dtype=torch.float32, device=dev)
             reward_tensor = torch.as_tensor(reward, dtype=torch.float32, device=dev)
-            next_state = torch.as_tensor(next_state, dtype=torch.float32, device=dev)
+            next_state_tensor = torch.as_tensor(next_state, dtype=torch.float32, device=dev)
 
             if reward_tensor.dim() == 0:
                 next_state = next_state.unsqueeze(0)
@@ -164,7 +164,7 @@ class BaseTrain:
 
             final_values = torch.zeros(self.num_envs, dtype=torch.float32, device=dev)
             if truncate.any():
-                final_obs_list = info.get("final_observation", [None] * self.num_envs)
+                final_obs_list = info.get("final_obs", info.get("final_observation", [None] * num_envs))
                 for i in range(self.num_envs):
                     if trunc_tensor[i] > 0 and final_obs_list is not None:
                         final_obs = torch.as_tensor(final_obs_list[i], dtype=torch.float32, device=dev)
@@ -188,12 +188,7 @@ class BaseTrain:
                 self.episode_rewards.extend(finished_rewards.tolist())
                 self.current_episode_reward[finished] = 0.0
 
-            if finished.any() and not self.env.auto_reset:
-                state, _ = self.env.reset()
-                state_tensor = torch.as_tensor(state, dtype=torch.float32, device=dev)
-            else:
-                state_tensor = next_state
-
+            state_tensor = next_state_tensor
             if state_tensor.dim() == 1:
                 state_tensor = state_tensor.unsqueeze(0)
 
