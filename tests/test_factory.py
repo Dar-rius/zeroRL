@@ -49,7 +49,7 @@ class TestGetActorCriticBuffer:
         buf = get_actor_critic_buffer(4, (2,), tmp_config)
         expected_keys = {"state", "action", "reward", "done", "entropy",
                          "value", "return", "log_prob", "advantage",
-                         "truncated", "final_value"}
+                         "truncated"}
         assert set(buf.data.keys()) == expected_keys
 
     def test_buffer_shapes(self, tmp_config) -> None:

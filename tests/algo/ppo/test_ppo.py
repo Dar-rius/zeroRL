@@ -43,8 +43,7 @@ class TestGaeCompute:
         values = torch.tensor([0.5, 0.5, 0.5], device=device).unsqueeze(-1)
         dones = torch.tensor([0.0, 0.0, 0.0], device=device).unsqueeze(-1)
         last_value = torch.tensor([1.0], device=device)
-        gae_compute(reward, values, last_value, dones,
-                    torch.zeros_like(dones), torch.zeros_like(values), buf, cfg)
+        gae_compute(reward, values, last_value, dones, buf, cfg)
         returns = buf.data["return"][:buf.slice]
         advantages = buf.data["advantage"][:buf.slice]
         torch.testing.assert_close(returns, advantages + values)
@@ -58,8 +57,7 @@ class TestGaeCompute:
         values = torch.tensor([0.5, 0.5, 0.5], device=device).unsqueeze(-1)
         dones = torch.tensor([0.0, 0.0, 0.0], device=device).unsqueeze(-1)
         last_value = torch.tensor([1.0], device=device)
-        gae_compute(reward, values, last_value, dones,
-                    torch.zeros_like(dones), torch.zeros_like(values), buf, cfg)
+        gae_compute(reward, values, last_value, dones, buf, cfg)
         torch.testing.assert_close(buf.data["return"][:3], buf.data["return"][:3])
         torch.testing.assert_close(buf.data["advantage"][:3], buf.data["advantage"][:3])
 
@@ -124,13 +122,11 @@ class TestGaeDoneMask:
         dones_mid = torch.tensor([0.0, 1.0, 0.0], device=device).unsqueeze(-1)
         buf_no = Buffer(step=3, data={"return":(), "advantage": ()}, device=device)
         buf_no.slice = 3
-        gae_compute(reward, values, last_value, dones_no,
-                    torch.zeros_like(dones_no), torch.zeros_like(values), buf_no, cfg)
+        gae_compute(reward, values, last_value, dones_no, buf_no, cfg)
         adv_no = buf_no.data["advantage"][:3]
         buf_done = Buffer(step=3, data={"return":(), "advantage": ()}, device=device)
         buf_done.slice = 3
-        gae_compute(reward, values, last_value, dones_mid,
-                    torch.zeros_like(dones_mid), torch.zeros_like(values), buf_done, cfg)
+        gae_compute(reward, values, last_value, dones_mid, buf_done, cfg)
         adv_done = buf_done.data["advantage"][:3]
         torch.testing.assert_close(adv_done[1], adv_done[1])
         assert adv_done[1].item() < adv_no[1].item()
@@ -145,12 +141,10 @@ class TestGaeDoneMask:
         dones_none = torch.tensor([0.0, 0.0, 0.0], device=device).unsqueeze(-1)
         buf_done = Buffer(step=3, data={"return":(), "advantage": ()}, device=device)
         buf_done.slice = 3
-        gae_compute(reward, values, big_last, dones_last,
-                    torch.zeros_like(dones_last), torch.zeros_like(values), buf_done, cfg)
+        gae_compute(reward, values, big_last, dones_last, buf_done, cfg)
         buf_none = Buffer(step=3, data={"return":(), "advantage": ()}, device=device)
         buf_none.slice = 3
-        gae_compute(reward, values, big_last, dones_none,
-                    torch.zeros_like(dones_none), torch.zeros_like(values), buf_none, cfg)
+        gae_compute(reward, values, big_last, dones_none, buf_none, cfg)
         delta_done = reward[-1] - values[-1]
         torch.testing.assert_close(buf_done.data["advantage"][2], delta_done)
         assert buf_none.data["advantage"][2].item() != buf_done.data["advantage"][2].item()
@@ -164,12 +158,10 @@ class TestGaeDoneMask:
         dones = torch.tensor([[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]], device=device)
         buf_both = Buffer(step=3, num_envs=2, data={"return":(), "advantage": ()}, device=device)
         buf_both.slice = 3
-        gae_compute(reward, values, last_value, dones,
-                    torch.zeros_like(dones), torch.zeros_like(values), buf_both, cfg)
+        gae_compute(reward, values, last_value, dones, buf_both, cfg)
         buf_0 = Buffer(step=3, data={"return":(), "advantage": ()}, device=device)
         buf_0.slice = 3
-        gae_compute(reward[:, 0:1], values[:, 0:1], last_value[0:1], dones[:, 0:1],
-                    torch.zeros_like(dones[:, 0:1]), torch.zeros_like(values[:, 0:1]), buf_0, cfg)
+        gae_compute(reward[:, 0:1], values[:, 0:1], last_value[0:1], dones[:, 0:1], buf_0, cfg)
         torch.testing.assert_close(buf_both.data["return"][:3, 0], buf_0.data["return"][:3].squeeze(-1))
         torch.testing.assert_close(buf_both.data["advantage"][:3, 0], buf_0.data["advantage"][:3].squeeze(-1))
 
@@ -308,56 +300,3 @@ class TestPpoEdgeCases:
         ppo_func(agent, optimizer, buf, cfg, scheduler, device=device)
         assert scheduler.step.call_count == 1
 
-
-class TestGaeTruncation:
-    @pytest.mark.gpu
-    def test_truncation_uses_final_value_not_next_value(self, device) -> None:
-        cfg = AlgoConfig()
-        reward = torch.tensor([1.0, 1.0, 1.0], device=device).unsqueeze(-1)
-        values = torch.tensor([0.0, 0.0, 0.0], device=device).unsqueeze(-1)
-        last_value = torch.tensor([999.0], device=device)
-        truncated = torch.tensor([0.0, 0.0, 1.0], device=device).unsqueeze(-1)
-        dones = torch.zeros_like(truncated)
-        final_values = torch.tensor([50.0], device=device)
-        buf = Buffer(step=3, data={"return": (), "advantage": ()}, device=device)
-        buf.slice = 3
-        gae_compute(reward, values, last_value, dones, truncated,
-                    final_values.unsqueeze(0).expand_as(values), buf, cfg)
-        adv = buf.data["advantage"][:3]
-        # Step 2 is truncated: delta = r + gamma * final_value - v
-        #   delta = 1.0 + 0.99 * 50.0 - 0.0 = 50.5
-        # gae_mask at step 2 = 0 (truncated → no GAE carry to step 1)
-        # So adv[2] = delta[2] = 50.5
-        torch.testing.assert_close(adv[2].squeeze(), torch.tensor(50.5, device=device))
-        # Step 1 is NOT truncated, NOT done: gae_mask = 1.0
-        # delta[1] = r + gamma * truncated * final + gamma * (1-trunc) * next_val - v
-        #          = 1.0 + 0.99 * (0 * 50 + 1 * 0) - 0 = 1.0
-        # gae[1] = delta[1] + gamma * lambda * gae_mask * gae[2] = 1.0 + 0.99*0.95*1.0*50.5 = 49.0225
-        torch.testing.assert_close(adv[1].squeeze(), torch.tensor(1.0 + 0.99 * 0.95 * 50.5, device=device))
-
-    @pytest.mark.gpu
-    def test_truncation_vs_done_different_advantages(self, device) -> None:
-        """Truncation and done both set gae_mask=0, but done also blocks
-        delta bootstrap via delta_mask while truncation uses final_values."""
-        cfg = AlgoConfig()
-        reward = torch.tensor([1.0, 1.0, 1.0], device=device).unsqueeze(-1)
-        values = torch.tensor([0.0, 0.0, 0.0], device=device).unsqueeze(-1)
-        last_value = torch.tensor([10.0], device=device)
-        final_values = torch.tensor([10.0], device=device).unsqueeze(0).expand_as(values)
-        # Scenario A: step 2 done
-        buf_done = Buffer(step=3, data={"return": (), "advantage": ()}, device=device)
-        buf_done.slice = 3
-        gae_compute(reward, values, last_value,
-                    torch.tensor([[0.0, 0.0, 1.0]], device=device).T,
-                    torch.zeros(3, 1, device=device),
-                    final_values, buf_done, cfg)
-        # Scenario B: step 2 truncated with same final_values
-        buf_trunc = Buffer(step=3, data={"return": (), "advantage": ()}, device=device)
-        buf_trunc.slice = 3
-        gae_compute(reward, values, last_value,
-                    torch.zeros(3, 1, device=device),
-                    torch.tensor([[0.0, 0.0, 1.0]], device=device).T,
-                    final_values, buf_trunc, cfg)
-        # Done: delta_mask blocks bootstrap → delta[2] = 1.0 - 0.0 = 1.0
-        # Truncation: delta uses final_value → delta[2] = 1.0 + 0.99*10.0 = 10.9
-        assert buf_trunc.data["advantage"][2].item() > buf_done.data["advantage"][2].item()

@@ -505,17 +505,17 @@ class TestBaseTrainVectorizedRollout:
         env.close()
 
     @pytest.mark.gpu
-    def test_rollout_truncation_records_truncated_and_final_value(self, tmp_path: Path, device: torch.device) -> None:
-        """Truncated steps must record truncated=1, done=0 and a bootstrap
-        final_value computed from info['final_obs'] (not folded into done)."""
+    def test_rollout_truncation_records_truncated_and_done(self, tmp_path: Path, device: torch.device) -> None:
+        """Truncated steps are folded into done (done | truncate) and recorded
+        with truncated=1. No separate final_value bootstrap in train.py."""
         num_envs, obs_dim, act_dim = 2, 4, 2
         rollout_steps = 5
         agent = MockAgent(obs_dim, act_dim)
-        env = _SeedPacedEnv(truncate=True)  # slot 0 truncates every 3 steps
+        env = _SeedPacedEnv(truncate=True)
         buf = Buffer(step=rollout_steps, num_envs=num_envs, data={
             "state": (obs_dim,), "reward": (), "done": (),
             "action": (), "log_prob": (), "entropy": (), "value": (),
-            "truncated": (), "final_value": (),
+            "truncated": (),
         }, device=device)
         cfg = _make_train_config(tmp_path, device)
         cfg.rollout_steps = rollout_steps
@@ -526,12 +526,8 @@ class TestBaseTrainVectorizedRollout:
         trainer.rollout_phase()
         data = buf.get_all()
         assert int(data["truncated"].sum().item()) == 1
-        # truncation is NOT termination: done stays 0 so GAE can bootstrap
-        assert int(data["done"].sum().item()) == 0
-        trunc_mask = data["truncated"] > 0
-        # final_value is filled exactly on truncated rows (bootstrap target)
-        assert (data["final_value"][trunc_mask] != 0).all()
-        assert (data["final_value"][~trunc_mask] == 0).all()
+        # done = done | truncate, so truncated step also marks done=1
+        assert int(data["done"].sum().item()) == 1
         env.close()
 
 
