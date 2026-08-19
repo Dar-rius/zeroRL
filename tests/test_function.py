@@ -1,10 +1,10 @@
-"""Unit tests for utility functions (zerorl.function)."""
+"""Unit tests for utility functions (zerorl.functions)."""
 
 import pytest
 import torch
 import torch.nn as nn
 from zerorl.agent import BaseAgent, eval_action
-from zerorl.function import get_buffer_params_model
+from zerorl.functions import get_buffer_params_model, fast_compile, _cxx_compiler_available
 
 @pytest.fixture
 def device() -> torch.device:
@@ -29,3 +29,24 @@ class TestGetBufferParamsModel:
         params, buffers = get_buffer_params_model(agent)
         assert "actor.weight" in params
         assert "running_mean" in buffers
+
+
+class TestCompilerCheck:
+    def test_cxx_compiler_available_returns_bool(self) -> None:
+        result = _cxx_compiler_available()
+        assert isinstance(result, bool)
+
+    def test_fast_compile_noop_when_no_compiler(self, monkeypatch) -> None:
+        monkeypatch.setattr("zerorl.functions._cxx_compiler_available", lambda: False)
+        @fast_compile
+        def identity(x):
+            return x
+        inp = torch.randn(4)
+        result = identity(inp)  # type: ignore[arg-type]
+        assert result is inp
+
+    def test_fast_compile_decorated_fn_can_be_called(self) -> None:
+        @fast_compile
+        def add(a, b):
+            return a + b
+        assert add(1, 2) == 3  # type: ignore[arg-type]

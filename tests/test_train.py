@@ -16,10 +16,11 @@ from zerorl.agent import BaseAgent, eval_action
 from zerorl.buffer import Buffer
 from zerorl.config import AlgoConfig, TrainConfig
 from zerorl.errors import EmptyBufferError
-from zerorl.env import BaseEnv
+from zerorl.helpers import BaseEnv
 from zerorl.train import BaseTrain, ProfileMetrics
 from torch.optim.lr_scheduler import LambdaLR
-from zerorl.vector_env import VectorEnv
+from zerorl.functions import vectorize_env
+from gymnasium.vector import SyncVectorEnv
 
 
 @pytest.fixture
@@ -100,7 +101,7 @@ class TestBaseTrainInit:
 
         trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, algo_cfg)
         assert trainer.agent is agent
-        assert isinstance(trainer.env, VectorEnv)
+        assert isinstance(trainer.env, SyncVectorEnv)
         assert trainer.buffer is buf
         assert trainer.config is cfg
         assert trainer.algo_config is algo_cfg
@@ -144,6 +145,8 @@ class TestBaseTrainRollout:
                 "log_prob": (),
                 "entropy": (),
                 "value": (),
+                "truncated": (),
+                "final_value": (),
             },
             device=device,
         )
@@ -219,6 +222,39 @@ class FakeVecEnv(BaseEnv):
     def close(self): pass
 
 
+class _SeedPacedEnv(BaseEnv):
+    """Single-slot env whose episode ends after a seed-dependent step count.
+
+    Construction-time seeding (vectorize_env resets slot i with seed=i) sets
+    the pace: even seed -> ends every 3 steps, odd seed -> effectively never.
+    With truncate=True the episode ends by truncation instead of termination,
+    so tests can exercise the final_obs/final_value bootstrap path.
+    """
+    def __init__(self, truncate: bool = False):
+        super().__init__()
+        self.observation_space = spaces.Box(low=0.0, high=200.0, shape=(4,), dtype=np.float32)
+        self.action_space = spaces.Discrete(2)
+        self.truncate = truncate
+        self.limit = 100
+        self.steps = 0
+
+    def reset(self, *, seed=None, options=None):
+        if seed is not None:
+            self.limit = 3 if seed % 2 == 0 else 100
+        self.steps = 0
+        return np.zeros(4, dtype=np.float32), {}
+
+    def step(self, action):
+        self.steps += 1
+        ended = self.steps >= self.limit
+        terminated = ended and not self.truncate
+        truncated = ended and self.truncate
+        obs = np.full(4, float(self.steps), dtype=np.float32)
+        return obs, 1.0, terminated, truncated, {}
+
+    def close(self): pass
+
+
 def _make_counting_update_weights(counter: list[int]):
     def _update(agent, buffer, scheduler, optimizer, last_output, algo_config):
         counter.append(len(counter))
@@ -236,6 +272,7 @@ class TestBaseTrainTrain:
         buf = Buffer(step=rollout_steps, num_envs=1, data={
             "state": (obs_dim,), "reward": (), "done": (),
             "action": (), "log_prob": (), "entropy": (), "value": (),
+            "truncated": (), "final_value": (),
         }, device=device)
         cfg = _make_train_config(tmp_path, device)
         cfg.rollout_steps = rollout_steps
@@ -259,6 +296,7 @@ class TestBaseTrainTrain:
         buf = Buffer(step=rollout_steps, num_envs=1, data={
             "state": (obs_dim,), "reward": (), "done": (),
             "action": (), "log_prob": (), "entropy": (), "value": (),
+            "truncated": (), "final_value": (),
         }, device=device)
         cfg = _make_train_config(tmp_path, device)
         cfg.rollout_steps = rollout_steps
@@ -281,6 +319,7 @@ class TestBaseTrainTrain:
         buf = Buffer(step=rollout_steps, num_envs=1, data={
             "state": (obs_dim,), "reward": (), "done": (),
             "action": (), "log_prob": (), "entropy": (), "value": (),
+            "truncated": (), "final_value": (),
         }, device=device)
         cfg = _make_train_config(tmp_path, device)
         cfg.rollout_steps = rollout_steps
@@ -304,6 +343,7 @@ class TestBaseTrainTrain:
         buf = Buffer(step=rollout_steps, num_envs=1, data={
             "state": (obs_dim,), "reward": (), "done": (),
             "action": (), "log_prob": (), "entropy": (), "value": (),
+            "truncated": (), "final_value": (),
         }, device=device)
         cfg = _make_train_config(tmp_path, device)
         cfg.rollout_steps = rollout_steps
@@ -391,6 +431,7 @@ class TestBaseTrainVectorizedRollout:
         buf = Buffer(step=rollout_steps, num_envs=num_envs, data={
             "state": (obs_dim,), "reward": (), "done": (),
             "action": (), "log_prob": (), "entropy": (), "value": (),
+            "truncated": (), "final_value": (),
         }, device=device)
         cfg = _make_train_config(tmp_path, device)
         cfg.rollout_steps = rollout_steps
@@ -417,6 +458,7 @@ class TestBaseTrainVectorizedRollout:
         buf = Buffer(step=rollout_steps, num_envs=num_envs, data={
             "state": (obs_dim,), "reward": (), "done": (),
             "action": (), "log_prob": (), "entropy": (), "value": (),
+            "truncated": (), "final_value": (),
         }, device=device)
         cfg = _make_train_config(tmp_path, device)
         cfg.rollout_steps = rollout_steps
@@ -431,27 +473,101 @@ class TestBaseTrainVectorizedRollout:
         env.close()
 
     @pytest.mark.gpu
-    @pytest.mark.xfail(reason="vectorized reset bug: train.py resets all envs when any finishes (train.py:141-145)")
-    def test_rollout_phase_partial_finish_preserves_survivors(self, tmp_path: Path, device: torch.device) -> None:
+    def test_rollout_same_step_autoreset_preserves_survivors(self, tmp_path: Path, device: torch.device) -> None:
+        """SAME_STEP autoreset: a finished slot resets in place and the
+        survivor keeps its episode running (no global reset, no fake
+        post-episode transition)."""
         num_envs, obs_dim, act_dim = 2, 4, 2
         rollout_steps = 5
         agent = MockAgent(obs_dim, act_dim)
-        env = FakeVecEnv(num_envs=num_envs, obs_dim=obs_dim, act_dim=act_dim,
-                         steps_until_done=(3, 100), auto_reset=False)
+        env = _SeedPacedEnv()  # slot 0 terminates every 3 steps, slot 1 never
         buf = Buffer(step=rollout_steps, num_envs=num_envs, data={
             "state": (obs_dim,), "reward": (), "done": (),
             "action": (), "log_prob": (), "entropy": (), "value": (),
+            "truncated": (), "final_value": (),
         }, device=device)
         cfg = _make_train_config(tmp_path, device)
         cfg.rollout_steps = rollout_steps
         cfg.num_envs = num_envs
         trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, AlgoConfig())
-        state, _ = env.reset(seed=42)
+        state, _ = trainer.env.reset()
         trainer.state = torch.as_tensor(state, dtype=torch.float32, device=device)
-        if trainer.state.dim() == 1:
-            trainer.state = trainer.state.unsqueeze(0)
         trainer.rollout_phase()
-        assert env.counters[1] == 5
+        data = buf.get_all()
+        # Slot 0 terminated exactly once (at its 3rd step) and reset inline:
+        assert int(data["done"].sum().item()) == 1
+        # Every recorded row is a real transition (reward 1.0): no fake
+        # r=0 post-episode row like NEXT_STEP autoreset produced.
+        assert float(data["reward"].sum().item()) == rollout_steps * num_envs
+        # Survivor slot never interrupted; finished slot resumed from 0:
+        assert trainer.env.envs[0].steps == 2
+        assert trainer.env.envs[1].steps == 5
+        env.close()
+
+    @pytest.mark.gpu
+    def test_rollout_truncation_records_truncated_and_final_value(self, tmp_path: Path, device: torch.device) -> None:
+        """Truncated steps must record truncated=1, done=0 and a bootstrap
+        final_value computed from info['final_obs'] (not folded into done)."""
+        num_envs, obs_dim, act_dim = 2, 4, 2
+        rollout_steps = 5
+        agent = MockAgent(obs_dim, act_dim)
+        env = _SeedPacedEnv(truncate=True)  # slot 0 truncates every 3 steps
+        buf = Buffer(step=rollout_steps, num_envs=num_envs, data={
+            "state": (obs_dim,), "reward": (), "done": (),
+            "action": (), "log_prob": (), "entropy": (), "value": (),
+            "truncated": (), "final_value": (),
+        }, device=device)
+        cfg = _make_train_config(tmp_path, device)
+        cfg.rollout_steps = rollout_steps
+        cfg.num_envs = num_envs
+        trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, AlgoConfig())
+        state, _ = trainer.env.reset()
+        trainer.state = torch.as_tensor(state, dtype=torch.float32, device=device)
+        trainer.rollout_phase()
+        data = buf.get_all()
+        assert int(data["truncated"].sum().item()) == 1
+        # truncation is NOT termination: done stays 0 so GAE can bootstrap
+        assert int(data["done"].sum().item()) == 0
+        trunc_mask = data["truncated"] > 0
+        # final_value is filled exactly on truncated rows (bootstrap target)
+        assert (data["final_value"][trunc_mask] != 0).all()
+        assert (data["final_value"][~trunc_mask] == 0).all()
+        env.close()
+
+
+class TestBaseTrainWrapContract:
+    """Lock the env-wrapping decision in BaseTrain.__init__."""
+
+    @pytest.mark.gpu
+    def test_vector_env_is_not_rewrapped(self, tmp_path: Path, device: torch.device) -> None:
+        agent = MockAgent()
+        env = vectorize_env("CartPole-v1", num_envs=2)
+        buf = Buffer(step=8, data={"state": (4,)}, device=device)
+        cfg = _make_train_config(tmp_path, device)
+        trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, AlgoConfig())
+        assert trainer.env is env
+        env.close()
+
+    @pytest.mark.gpu
+    def test_auto_reset_env_is_not_wrapped(self, tmp_path: Path, device: torch.device) -> None:
+        agent = MockAgent()
+        env = FakeVecEnv(num_envs=1, obs_dim=4, act_dim=2, auto_reset=True)
+        buf = Buffer(step=8, data={"state": (4,)}, device=device)
+        cfg = _make_train_config(tmp_path, device)
+        trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, AlgoConfig())
+        assert trainer.env is env
+        env.close()
+
+    @pytest.mark.gpu
+    def test_plain_env_is_wrapped_once_with_independent_copy(self, tmp_path: Path, device: torch.device) -> None:
+        agent = MockAgent()
+        env = FakeVecEnv(num_envs=1, obs_dim=4, act_dim=2, auto_reset=False)
+        buf = Buffer(step=8, data={"state": (4,)}, device=device)
+        cfg = _make_train_config(tmp_path, device)
+        trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, AlgoConfig())
+        assert isinstance(trainer.env, SyncVectorEnv)
+        # deep-copied: the wrapped sub-env is not the object we passed in
+        assert trainer.env.envs[0] is not env
         env.close()
 
 
@@ -579,6 +695,7 @@ class TestBaseTrainProfilerTrain:
         buf = Buffer(step=8, num_envs=1, data={
             "state": (4,), "reward": (), "done": (),
             "action": (), "log_prob": (), "entropy": (), "value": (),
+            "truncated": (), "final_value": (),
         }, device=device)
         cfg = _make_profile_config(tmp_path, device, profile=False,
                                    rollout_steps=8, num_envs=1, num_steps=3)
@@ -602,6 +719,7 @@ class TestBaseTrainProfilerTrain:
         buf = Buffer(step=8, num_envs=1, data={
             "state": (4,), "reward": (), "done": (),
             "action": (), "log_prob": (), "entropy": (), "value": (),
+            "truncated": (), "final_value": (),
         }, device=device)
         cfg = _make_profile_config(tmp_path, device, profile=True, num_steps=3)
         trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, AlgoConfig(),
@@ -621,6 +739,7 @@ class TestBaseTrainProfilerTrain:
         buf = Buffer(step=8, num_envs=1, data={
             "state": (4,), "reward": (), "done": (),
             "action": (), "log_prob": (), "entropy": (), "value": (),
+            "truncated": (), "final_value": (),
         }, device=torch.device("cpu"))
         cfg = _make_profile_config(tmp_path, torch.device("cpu"), profile=True, num_steps=3)
         trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, AlgoConfig(),
@@ -647,6 +766,7 @@ class TestBaseTrainProfilerTrain:
         buf = Buffer(step=8, num_envs=1, data={
             "state": (4,), "reward": (), "done": (),
             "action": (), "log_prob": (), "entropy": (), "value": (),
+            "truncated": (), "final_value": (),
         }, device=torch.device("cpu"))
         # Construct on CPU so agent.to(cpu) works; flip device to cuda after
         # so is_cuda=True exercises the cuda branch without real CUDA.
@@ -684,6 +804,7 @@ class TestBaseTrainProfilerTrain:
         buf = Buffer(step=8, num_envs=1, data={
             "state": (4,), "reward": (), "done": (),
             "action": (), "log_prob": (), "entropy": (), "value": (),
+            "truncated": (), "final_value": (),
         }, device=torch.device("cpu"))
         cfg = _make_profile_config(tmp_path, torch.device("cpu"), profile=True, num_steps=1)
         trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, AlgoConfig(),
@@ -714,6 +835,7 @@ class TestBaseTrainProfilerTrain:
         buf = Buffer(step=8, num_envs=2, data={
             "state": (4,), "reward": (), "done": (),
             "action": (), "log_prob": (), "entropy": (), "value": (),
+            "truncated": (), "final_value": (),
         }, device=device)
         cfg = _make_profile_config(tmp_path, device, profile=True,
                                    rollout_steps=8, num_envs=2, num_steps=1)
@@ -755,6 +877,7 @@ class TestBaseTrainProfilerTrain:
         buf = Buffer(step=8, num_envs=1, data={
             "state": (4,), "reward": (), "done": (),
             "action": (), "log_prob": (), "entropy": (), "value": (),
+            "truncated": (), "final_value": (),
         }, device=device)
         cfg = _make_profile_config(tmp_path, device, profile=True, num_steps=3)
         trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, AlgoConfig(),
@@ -786,6 +909,7 @@ class TestBaseTrainProfilerWandb:
         buf = Buffer(step=8, num_envs=1, data={
             "state": (4,), "reward": (), "done": (),
             "action": (), "log_prob": (), "entropy": (), "value": (),
+            "truncated": (), "final_value": (),
         }, device=device)
         cfg = _make_profile_config(tmp_path, device, profile=True, num_steps=1)
         trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, AlgoConfig(),
@@ -807,6 +931,7 @@ class TestBaseTrainProfilerWandb:
         buf = Buffer(step=8, num_envs=1, data={
             "state": (4,), "reward": (), "done": (),
             "action": (), "log_prob": (), "entropy": (), "value": (),
+            "truncated": (), "final_value": (),
         }, device=device)
         cfg = _make_profile_config(tmp_path, device, profile=True, num_steps=2)
         trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, AlgoConfig(),
@@ -829,6 +954,7 @@ class TestBaseTrainProfilerWandb:
         buf = Buffer(step=8, num_envs=1, data={
             "state": (4,), "reward": (), "done": (),
             "action": (), "log_prob": (), "entropy": (), "value": (),
+            "truncated": (), "final_value": (),
         }, device=device)
         cfg = _make_profile_config(tmp_path, device, profile=True, num_steps=1)
         trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, AlgoConfig(),
@@ -917,7 +1043,7 @@ class _ContinuousAgent(BaseAgent):
 
 class TestBaseTrainRealEnvIntegration:
     """End-to-end BaseTrain.train() with real Gymnasium envs — no action-shape
-    workaround in the wrapper. Locks in the train.py VectorEnv wrapping
+    workaround in the wrapper. Locks in the train.py vectorize_env wrapping
     contract: single envs get wrapped so SyncVectorEnv dispatches batched
     actions to the correct per-env shape.
     """
@@ -932,6 +1058,7 @@ class TestBaseTrainRealEnvIntegration:
         buf = Buffer(step=rollout_steps, num_envs=1, data={
             "state": (obs_dim,), "reward": (), "done": (),
             "action": (), "log_prob": (), "entropy": (), "value": (),
+            "truncated": (), "final_value": (),
         }, device=device)
         cfg = _make_train_config(tmp_path, device)
         cfg.rollout_steps = rollout_steps
@@ -954,7 +1081,7 @@ class TestBaseTrainRealEnvIntegration:
         buf = Buffer(step=rollout_steps, num_envs=1, data={
             "state": (obs_dim,), "reward": (), "done": (),
             "action": (act_dim,), "log_prob": (), "entropy": (),
-            "value": (),
+            "value": (), "truncated": (), "final_value": (),
         }, device=device)
         cfg = _make_train_config(tmp_path, device)
         cfg.rollout_steps = rollout_steps

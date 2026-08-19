@@ -60,13 +60,12 @@ def benchmark_zerorl():
         config=config,
         algo_config=algo_config,
         env_id=ENV_ID,
-        hidden_layer=64
+        hidden_layer=64,
+        schedule_func=lambda step: 1.0
     )
 
     obs, _ = trainer.env.reset(seed=SEED)
     trainer.state = torch.as_tensor(obs, dtype=torch.float32, device=DEVICE)
-    if trainer.state.dim() == 1:
-        trainer.state = trainer.state.unsqueeze(0)
 
     # Warmup
     for _ in range(2):
@@ -164,7 +163,7 @@ def benchmark_sb3():
 
     while steps_done < TOTAL_STEPS:
         total_target_timesteps += steps_per_rollout
-        model.learn(total_timesteps=steps_done + steps_per_rollout, reset_num_timesteps=False)
+        model.learn(total_timesteps=total_target_timesteps, reset_num_timesteps=False)
         sync_gpu()
         
         current_time = time.time() - start_time

@@ -11,7 +11,7 @@ from zerorl.agent import BaseAgent, eval_action
 from zerorl.algorithms.ppo.ppo import gae_compute, ppo_func
 from zerorl.buffer import Buffer
 from zerorl.config import AlgoConfig
-from zerorl.env import BaseEnv
+from zerorl.helpers import BaseEnv
 
 @pytest.fixture
 def device() -> torch.device:
@@ -159,6 +159,8 @@ class TestPPOContinuousIntegration:
             all_data["value"],
             last_value,
             all_data["done"],
+            torch.zeros_like(all_data["done"]),   # truncated (not tracked here)
+            torch.zeros_like(all_data["value"]),  # final_value (not tracked here)
             raw_buf,
             cfg,
         )
