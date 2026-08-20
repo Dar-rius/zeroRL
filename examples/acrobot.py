@@ -13,29 +13,26 @@ from zerorl.algorithms.ppo import gae_compute, ppo
 class Agent(BaseAgent):
     def __init__(self, input_layer, output_layer):
         super().__init__()
-        self.extract_layer = nn.Sequential(
-                nn.Linear(input_layer, 128),
-                nn.Tanh(),
-                nn.Linear(128, 64),
-                )
-
         self.actor = nn.Sequential(
+                nn.Linear(input_layer, 64),
+                nn.Tanh(),
                 nn.Linear(64, 64),
-                nn.ReLU(),
+                nn.Tanh(),
                 nn.Linear(64, output_layer)
                 )
         
         self.critic = nn.Sequential(
+                nn.Linear(input_layer, 64),
+                nn.Tanh(),
                 nn.Linear(64, 64),
-                nn.ReLU(),
+                nn.Tanh(),
                 nn.Linear(64,  1)
                 )
 
 
     def forward(self, state: torch.Tensor):
-        x = self.extract_layer(state)
-        logits = self.actor(x)
-        value = self.critic(x)
+        logits = self.actor(state)
+        value = self.critic(state)
         return logits, value
 
     @staticmethod

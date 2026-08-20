@@ -8,21 +8,16 @@ from zerorl.config import TrainConfig, AlgoConfig
 from zerorl.agent import BaseAgent
 from zerorl.helpers import BaseEnv
 
-def easy_train_ppo(config: TrainConfig,
+def easy_train_ppo(env_spec: str | Callable | BaseEnv, 
+                    config: TrainConfig,
                     algo_config: AlgoConfig,
-                    env_id: str = "",
                     hidden_layer: int = 64,
                     render_mode: str | None = None,
                     base_agent: BaseAgent | None = None,
-                    base_env: BaseEnv | None = None,
                     optimizer: optim.Optimizer | None = None,
                     schedule_func: Callable[[int], float] | None = None,
                    ):
-    if base_env is not None:
-        env = base_env
-    else:
-        env = get_env(env_id, config.num_envs, render_mode)
-    
+    env = get_env(env_spec, config.num_envs, render_mode)
     if hasattr(env, "single_observation_space"):
         obs_dim = env.single_observation_space
         act_dim = env.single_action_space
