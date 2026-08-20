@@ -58,7 +58,7 @@ class ActorCriticAgent(BaseAgent):
             elif module.out_features == 1:
                 nn.init.orthogonal_(module.weight, gain=1.0)
             else:
-                nn.init.orthogonal_(module.weight, gain=0.01)
+                nn.init.orthogonal_(module.weight, gain=1.0)
                 
             if module.bias is not None:
                 nn.init.constant_(module.bias, 0.0)
