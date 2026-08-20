@@ -317,6 +317,7 @@ class BaseTrain:
             self._log_metrics(metrics, step, use_wandb, use_tb)
             self.buffer.clear()
 
+        self.env.close()
         #Close Wandb or TensorBoard
         if use_wandb: wandb.finish() #type: ignore[attr-defined]
         if use_tb: self.tb_writer.close()
