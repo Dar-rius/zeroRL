@@ -8,7 +8,7 @@ config = TrainConfig(
     timestamp = 1_000_000
 )
 config.device = torch.device("cpu")
-algo_config = AlgoConfig()
+algo_config = AlgoConfig(ent_coef=0.0)
 
 trainer = easy_train_ppo("Pendulum-v1", config, algo_config)
 trainer.train(use_tb=True)

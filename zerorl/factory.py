@@ -72,7 +72,8 @@ class ActorCriticAgent(BaseAgent):
     def build_distribution(self, logits: torch.Tensor):
         if self.is_discrete:
             return torch.distributions.Categorical(logits=logits)
-        std = self.log_std.exp().expand_as(logits)
+        log_std_clamped = torch.clamp(self.log_std, min=-3.0, max=1.0)
+        std = log_std_clamped.exp().expand_as(logits)
         return torch.distributions.Normal(logits, std)
     
     def get_action(self, state: torch.Tensor, action: torch.Tensor | None = None):
