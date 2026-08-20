@@ -110,7 +110,7 @@ def ppo_loss(
     clip_vf = clip_vf
     if clip_vf:
         value_pred_clipped = old_values + (new_values - old_values).clamp(-clip_eps, clip_eps)
-        value_loss  = torch.max((idx_return - new_values).pow(2), (value_pred_clipped - idx_return).pow(2)).mean() 
+        value_loss = 0.5 * torch.max((idx_return - new_values).pow(2), (value_pred_clipped - idx_return).pow(2)).mean() 
     else:
         value_loss = 0.5 * nn.functional.mse_loss(new_values, idx_return)
 
