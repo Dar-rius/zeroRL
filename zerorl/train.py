@@ -87,9 +87,9 @@ class BaseTrain:
         assert_agent_contract(self.agent,
                         {"get_action": "Your agent should have the method `get_action`"})
         self.env = env
-        self.state = Tensor()
         if not isinstance(env, gym.vector.VectorEnv) and not getattr(env, "auto_reset", False):
             self.env = vectorize_env(self.env, self.num_envs, render_mode)
+        self.state = Tensor()
         self.buffer = buffer
         self.update_weights = update_weights
         self.algo_config = algo_config
@@ -131,7 +131,6 @@ class BaseTrain:
         dev = self.config.device
         state_tensor = self.state
         if state_tensor.dim() == 1: state_tensor = state_tensor.unsqueeze(0)
-
         if self.current_episode_reward is None:
             self.current_episode_reward = torch.zeros(self.num_envs, device=dev)
 
@@ -332,18 +331,19 @@ class BaseTrain:
             iterations: Number of iterations.
             gif_path: Path to save the GIF.
         """
+        env_spec = self.env.envs[0].spec.id
+        env = vectorize_env(env_spec, render_mode = "rgb_array")
         frames = []
         self.agent.eval()
-        for i in iterations:
+        for i in range(iterations):
             done_or_trunc = False
-            state, _ = self.env.reset()
+            state, _ = env.reset() #type: ignore
             while not done_or_trunc:
                 state_tensor = torch.as_tensor(state, dtype=torch.float32, device=self.config.device)
                 if state_tensor.dim() == 1: state_tensor = state_tensor.unsqueeze(0)
                 if self.config.normalize:
-                    if self.config.normalize:
-                        self.normalizer.update(state_tensor)
-                        state_norm = self.normalizer.normalize(state_tensor)
+                    self.normalizer.update(state_tensor)
+                    state_norm = self.normalizer.normalize(state_tensor)
                 else:
                     state_norm = state_tensor
 
@@ -354,11 +354,11 @@ class BaseTrain:
                     else:
                         action_input = outputs["action"].cpu().numpy()
 
-                next_state, _, terminated, truncated, _ = self.env.step(action_input)
+                next_state, _, terminated, truncated, _ = env.step(action_input) #type: ignore
 
                 #capture frames
-                frame = self.env.render()
-                frames.append(frame)
+                frame = env.render()
+                if frame is not None: frames.append(frame[0])
                 done_or_trunc = terminated or truncated
                 state = next_state
 
@@ -367,7 +367,7 @@ class BaseTrain:
                 gif_path = f"./{self.config.project_name}_{i}.gif"
             else:
                 gif_path = f"./{gif_path}_{i}.gif"
-            imageio.mimsave(gif_path, frames, duraton=25)
+            imageio.mimsave(gif_path, frames, fps=25)
             self.env.close()
 
 
