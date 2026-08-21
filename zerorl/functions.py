@@ -9,12 +9,12 @@ import sys
 import gymnasium as gym
 import torch
 from typing import Any, Callable, TypeVar
-from  gymnasium.vector import SyncVectorEnv
+from  gymnasium import Space
 from torch import Tensor
 from torch.nn import Parameter
 from zerorl.agent import BaseAgent
 from zerorl.helpers import BaseEnv
-from gymnasium.vector import AutoresetMode
+from gymnasium.vector import AutoresetMode, SyncVectorEnv
 
 
 F = TypeVar("F", bound=Callable[..., Any])
@@ -57,6 +57,16 @@ def vectorize_env(env_spec: str | Callable | BaseEnv, num_envs: int = 1, render_
             return env
         return _init
     return gym.vector.SyncVectorEnv([make_env_fn(i) for i in range(num_envs)], autoreset_mode=AutoresetMode.SAME_STEP)
+
+
+def get_obs_act(env: SyncVectorEnv) -> tuple[Space, Space]:
+    if hasattr(env, "single_observation_space"):
+        obs_dim = env.single_observation_space
+        act_dim = env.single_action_space
+    else:
+        obs_dim = env.observation_space
+        act_dim = env.action_space
+    return (obs_dim, act_dim)
 
 
 def get_buffer_params_model(model: BaseAgent) -> tuple[dict[str, Parameter], dict[str, Tensor]]:

@@ -293,7 +293,7 @@ class BaseTrain:
                 else:
                     ram_mb = 0.0
                 profile_data = ProfileMetrics(
-                    fps= (self.config.rollout_steps * self.config.num_envs) / (t_end - t_start),
+                    fps= (self.config.rollout_steps * self.num_envs) / (t_end - t_start),
                     rollout_ms = (t_rollout - t_start) * 1000,
                     update_ms = (t_end - t_rollout) * 1000,
                     vram_allocated_gb = torch.cuda.memory_allocated() / (1024 ** 3) if is_cuda else 0.0,

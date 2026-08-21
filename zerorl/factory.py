@@ -11,7 +11,7 @@ from torch import nn
 
 
 #Auto create new BaseEnv
-def get_env(env_id: str | Callable | BaseEnv, num_envs: int, render_mode: str | None): return vectorize_env(env_id, num_envs, render_mode)
+def get_env(env_id: str | Callable | BaseEnv, num_envs: int = 1, render_mode: str | None= None): return vectorize_env(env_id, num_envs, render_mode)
 
 #Auto create Actor-Critic buffer
 def get_actor_critic_buffer(state_space: int, action_space: tuple, config: TrainConfig): 
@@ -58,7 +58,7 @@ class ActorCriticAgent(BaseAgent):
             elif module.out_features == 1:
                 nn.init.orthogonal_(module.weight, gain=1.0)
             else:
-                nn.init.orthogonal_(module.weight, gain=1.0)
+                nn.init.orthogonal_(module.weight, gain=0.01)
                 
             if module.bias is not None:
                 nn.init.constant_(module.bias, 0.0)

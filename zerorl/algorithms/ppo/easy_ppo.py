@@ -7,6 +7,7 @@ from zerorl.algorithms.ppo import ppo_func, gae_compute
 from zerorl.config import TrainConfig, AlgoConfig
 from zerorl.agent import BaseAgent
 from zerorl.helpers import BaseEnv
+from zerorl.functions import get_obs_act
 
 def easy_train_ppo(env_spec: str | Callable | BaseEnv, 
                     config: TrainConfig,
@@ -18,13 +19,9 @@ def easy_train_ppo(env_spec: str | Callable | BaseEnv,
                     schedule_func: Callable[[int], float] | None = None,
                    ):
     env = get_env(env_spec, config.num_envs, render_mode)
-    if hasattr(env, "single_observation_space"):
-        obs_dim = env.single_observation_space
-        act_dim = env.single_action_space
-    else:
-        obs_dim = env.observation_space
-        act_dim = env.action_space
+    obs_dim, act_dim = get_obs_act (env)
     is_discrete = isinstance(act_dim, spaces.Discrete)
+
     if is_discrete:
         act_n = act_dim.n #type: ignore
         act_shape = ()
