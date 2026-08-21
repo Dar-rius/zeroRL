@@ -8,7 +8,7 @@ Most reinforcement learning libraries are black boxes. If you want to modify a s
 
 **ZeroRL** was built to solve this problem. It is an RL library designed to help researchers and labs prototype new environments and algorithms quickly. Its modular architecture makes it easy to customize the components you need without having to understand a massive codebase or fight against the library's abstractions.
 
-Built on PyTorch 2 + Gymnasium v1, ZeroRL is designed with scalability, flexibility, and research productivity in mind.
+Built on PyTorch 2, ZeroRL is designed with scalability, flexibility, and research productivity in mind.
 
 The goal is to make RL research faster, simpler, and more enjoyable.
 
@@ -41,7 +41,7 @@ trainer.test()
 This creates an `ActorCriticAgent`, vectorized environments, a rollout buffer, and runs PPO — all wired together automatically. Override any component:
 
 ```python
-# Custom agent
+# Custom environment (BaseAgent subclass)
 trainer = easy_train_ppo("Pendulum-v1", config, algo_config, base_agent=my_agent)
 
 # Custom environment (BaseEnv subclass)
@@ -87,8 +87,7 @@ class Agent(BaseAgent):
     def forward(self, state):
         return self.actor(state), self.critic(state)
 
-    @staticmethod
-    def build_distribution(logits):
+    def build_distribution(self, logits):
         return torch.distributions.Categorical(logits=logits)
 
     def get_action(self, state, action=None):
@@ -101,8 +100,7 @@ class Agent(BaseAgent):
 
 
 # 2. Set up environment and buffer
-config = TrainConfig(project_name="cartpole_example", model_name="agent", timestamp=1_000_000)
-config.device = torch.device("cpu")
+config = TrainConfig(project_name="cartpole_example", model_name="agent", timestamp=1_000_000, num_envs=2)
 algo_config = AlgoConfig()
 
 env = get_env("CartPole-v1", config.num_envs)
@@ -122,7 +120,7 @@ buffer = Buffer(
 )
 
 
-# 3. Define the update function
+# 3. Define the update weights function
 def update_weights(agent, buffer, scheduler, optimizer, last_output, algo_config):
     all_data = buffer.get_all()
     gae_compute(all_data["reward"], all_data["value"], last_output["value"],
@@ -132,7 +130,7 @@ def update_weights(agent, buffer, scheduler, optimizer, last_output, algo_config
 
 # 4. Train
 trainer = BaseTrain(agent, env, buffer, update_weights, config, algo_config)
-trainer.train(use_wandb=False, use_tb=True)
+trainer.train(use_wandb=True, model_save=True)
 ```
 
 ### Custom Environment
@@ -181,30 +179,63 @@ config = TrainConfig(model_name="gridworld", project_name="gridworld_exp", times
 algo_config = AlgoConfig()
 
 trainer = easy_train_ppo(GridWorld(), config, algo_config)
-trainer.train(use_tb=True)
+trainer.train()
 ```
 
 ## What's Included
 
 | Component | Description |
 | --- | --- |
-| `BaseAgent` | Plain `nn.Module` base class. Agents must define `get_action()` returning a dict with `action`, `log_prob`, `entropy`, `value`. |
-| `BaseEnv` | Abstract Gymnasium v1 environment. Implement `reset()`, `step()`, and `close()`. |
-| `BaseTrain` | Training loop: rollout collection, observation normalization, PPO updates, model saving, profiling. |
-| `Buffer` | Pre-allocated PyTorch tensor rollout buffer with bounds checking, size tracking, and dict-based field management. |
-| `AlgoConfig` | Mutable hyperparameters: `lr`, `gamma`, `gae_lambda`, `clip_eps`, `ent_coef`, `value_coef`, `batch_size`, `epochs`, `tau`. |
+| `BaseAgent` | Plain `nn.Module` base class. Agents must define `get_action()` returning a dict and `build_distributions()` returning a Distribution from torch. |
+| `BaseEnv` | Abstract Gymnasium environment. Implement `reset()`, `step()`, and `close()`. |
+| `BaseTrain` | Training orchestrator: rollout collection, observation normalization, updates weights, model saving ans profiling. |
+| `Buffer` | Inspired from TorchDict is a dictionary-like data container for tensors that lets you manipulate a collection of tensors. |
+| `AlgoConfig` | Mutable hyperparameters for RL algorithms: `lr`, `gamma`, `gae_lambda`, `clip_eps`, `ent_coef`, `value_coef`, `batch_size`, `epochs`, `tau`. |
 | `TrainConfig` | Training settings with auto-computed `model_path`, `num_update`, and `device`. |
 | `easy_train_ppo` | One-call setup: creates agent, env, buffer, and returns a ready-to-train `BaseTrain`. |
 | `ActorCriticAgent` | Built-in agent with orthogonal init, supports discrete and continuous action spaces. |
 | `vectorize_env` | Wraps env specs into `SyncVectorEnv` with `SAME_STEP` autoreset. |
 
-## PPO Algorithm Details
+## RL Algorithm included
 
-The PPO implementation consists of three standalone functions:
+| Algorithm | Included |
+| --- | --- |
+| `PPO` | ✅ |
+| `SAC` | ❌ |
+| `DQN` | ❌ |
+| `TD3` | ❌ |
+| `DDPM` | ❌ |
 
-- **`gae_compute()`** — Generalized Advantage Estimation. Writes `advantage` and `return` directly into the buffer. Uses `dones` mask to prevent bootstrapping across episode boundaries.
-- **`ppo_loss()`** — Clipped surrogate loss for policy updates, MSE value loss, and entropy bonus.
-- **`ppo_func()`** — Full update cycle: normalizes advantages/returns, runs `epochs` passes of minibatch SGD with gradient clipping, and steps the LR scheduler.
+All RL algorithm is a modular function where you can change some components:
+
+```python
+from torch import Tensor
+from zerorl.algorithms.ppo import ppo_func, gae_compute
+from zerorl.algorithms.agent import BaseAgent
+
+def custom_ppo_loss(agent: BaseAgent,
+                    params: dict,
+                    buffers: dict,
+                    states: Tensor,
+                    actions: Tensor,
+                    old_log_prob: Tensor,
+                    old_values: Tensor,
+                    advantages: Tensor,
+                    returns: Tensor,
+                    ent_coef: float,
+                    value_coef: float,
+                    clip_eps: float,
+                    clip_vf: float,
+                    ) -> dict[str, Tensor]:
+    #write your own PPO loss
+    ...
+
+def update_weights(agent, buffer, scheduler, optimizer, last_output, algo_config):
+    all_data = buffer.get_all()
+    gae_compute(all_data["reward"], all_data["value"], last_output["value"],
+                all_data["done"], buffer, algo_config)
+    return ppo_func(agent, optimizer, buffer, algo_config, scheduler, ppo_loss_func = custom_ppo_loss, device=agent.device)
+```
 
 ## Configuration
 
@@ -212,23 +243,29 @@ The PPO implementation consists of three standalone functions:
 from zerorl.config import AlgoConfig, TrainConfig
 
 algo = AlgoConfig(
-    lr=3e-4,          # Adam learning rate
-    gamma=0.99,       # Discount factor
-    gae_lambda=0.95,  # GAE lambda
-    clip_eps=0.2,     # PPO clipping range
-    ent_coef=0.01,    # Entropy bonus coefficient
-    value_coef=0.5,   # Value loss coefficient
-    batch_size=64,    # Minibatch size
-    epochs=4,         # PPO epochs per update
+    lr=3e-4,          
+    gamma=0.99,       
+    gae_lambda=0.95,  
+    clip_eps=0.2,     
+    ent_coef=0.01,    
+    value_coef=0.5,   
+    batch_size=64,    
+    epochs=10,       
+    tau: float = 0.005
 )
 
 train = TrainConfig(
-    model_name="my_agent",
-    project_name="my_experiment",   # Required — used for wandb/tensorboard
-    model_save_path=".checkpoints", # Default
-    timestamp=1_000_000,            # Total env timesteps
-    rollout_steps=2048,             # Steps per rollout
-    num_envs=1,                     # Parallel environments
+    model_name="my_agent",                               # Required, used for save model in specific path
+    project_name="my_experiment",                        # Required,  used for wandb/tensorboard
+    model_save_path=".checkpoints",                      # Default
+    timestamp=1_000_000,                                 # Total env timesteps
+    rollout_steps=2048,                                  # Steps per rollout
+    num_envs=1,                                          # Parallel environments
+    normalize=False,                                     # Normalize obs env
+    device=torch.device("cuda"),                         # Tensor device, check if the device has a GPU 
+    num_update=timestamp // (rollout_steps * num_envs),  # Number of weights update 
+    model_path=".checkpoints/my_agent.pt"                # Path for saving agent weights 
+
 )
 ```
 
