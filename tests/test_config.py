@@ -75,7 +75,7 @@ class TestTrainConfig:
 
     def test_model_path_computed(self) -> None:
         cfg = TrainConfig(model_name="ppo_agent", model_save_path="/tmp/models", project_name="test")
-        assert cfg.model_path == "./tmp/models/ppo_agent.pt"
+        assert cfg.model_path == "/tmp/models/ppo_agent.pt"
 
     def test_num_update_computed(self) -> None:
         cfg = TrainConfig(
@@ -107,7 +107,7 @@ class TestTrainConfig:
 
     def test_model_path_with_nested_dir(self) -> None:
         cfg = TrainConfig(model_name="agent", model_save_path="/a/b/c/d", project_name="test")
-        assert cfg.model_path == "./a/b/c/d/agent.pt"
+        assert cfg.model_path == "/a/b/c/d/agent.pt"
 
     def test_device_field_exists(self) -> None:
         cfg = TrainConfig(model_name="m", model_save_path="/tmp", project_name="test")
