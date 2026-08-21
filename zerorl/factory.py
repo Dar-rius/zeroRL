@@ -11,7 +11,7 @@ from torch import nn
 
 
 #Auto create new BaseEnv
-def get_env(env_id: str | Callable | BaseEnv, num_envs: int, render_mode: str | None): return vectorize_env(env_id, num_envs, render_mode)
+def get_env(env_id: str | Callable | BaseEnv, num_envs: int = 1, render_mode: str | None= None): return vectorize_env(env_id, num_envs, render_mode)
 
 #Auto create Actor-Critic buffer
 def get_actor_critic_buffer(state_space: int, action_space: tuple, config: TrainConfig): 
@@ -72,7 +72,8 @@ class ActorCriticAgent(BaseAgent):
     def build_distribution(self, logits: torch.Tensor):
         if self.is_discrete:
             return torch.distributions.Categorical(logits=logits)
-        std = self.log_std.exp().expand_as(logits)
+        log_std_clamped = torch.clamp(self.log_std, min=-3.0, max=1.0)
+        std = log_std_clamped.exp().expand_as(logits)
         return torch.distributions.Normal(logits, std)
     
     def get_action(self, state: torch.Tensor, action: torch.Tensor | None = None):

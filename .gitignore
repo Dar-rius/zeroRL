@@ -5,12 +5,14 @@ build/
 dist/
 wheels/
 *.egg-info
-
-# Virtual environments
 .venv
+
+#other
 .opencode
 uv.lock
 .checkpoints
 checkpoints
 wandb/
 tmp/
+*.png
+*.gif

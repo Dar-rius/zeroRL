@@ -65,31 +65,30 @@ class CustomAgent(BaseAgent):
 class TestEasyTrainPpo:
     def test_returns_basetrain(self, tmp_config) -> None:
         algo = AlgoConfig()
-        train = easy_train_ppo(config=tmp_config, algo_config=algo, env_id="CartPole-v1")
+        train = easy_train_ppo("CartPole-v1", config=tmp_config, algo_config=algo)
         assert isinstance(train, BaseTrain)
         train.env.close()
 
     def test_uses_custom_agent(self, tmp_config, device) -> None:
         algo = AlgoConfig()
         agent = CustomAgent(4, 2).to(device)
-        train = easy_train_ppo(config=tmp_config, algo_config=algo,
-                                env_id="CartPole-v1", base_agent=agent)
+        train = easy_train_ppo("CartPole-v1", config=tmp_config, algo_config=algo,
+                                base_agent=agent)
         assert train.agent is agent
         train.env.close()
 
     def test_uses_custom_env(self, tmp_config) -> None:
         algo = AlgoConfig()
         env = CustomCartPole()
-        train = easy_train_ppo(config=tmp_config, algo_config=algo, base_env=env)
-        # vectorize_env deep-copies the instance per slot (shared-instance fix)
+        train = easy_train_ppo(env, config=tmp_config, algo_config=algo)
         assert isinstance(train.env.envs[0], CustomCartPole)
         assert train.env.envs[0] is not env
         train.env.close()
 
     def test_default_env_from_id(self, tmp_config) -> None:
         algo = AlgoConfig()
-        train = easy_train_ppo(config=tmp_config, algo_config=algo, env_id="CartPole-v1")
-        assert train.env.observation_space.shape[0] == 1  # vectorized (num_envs=1)
+        train = easy_train_ppo("CartPole-v1", config=tmp_config, algo_config=algo)
+        assert train.env.observation_space.shape[0] == 1
         train.env.close()
 
     @pytest.mark.gpu
@@ -101,7 +100,7 @@ class TestEasyTrainPpo:
         cfg.num_envs = 1
         cfg.num_update = 2
         algo = AlgoConfig(epochs=2)
-        train = easy_train_ppo(config=cfg, algo_config=algo, env_id="CartPole-v1")
+        train = easy_train_ppo("CartPole-v1", config=cfg, algo_config=algo)
         train.train(use_wandb=False, use_tb=False)
         assert isinstance(train.episode_rewards, list)
         train.env.close()
@@ -113,9 +112,8 @@ class TestEasyTrainPpo:
         assert set(out.keys()) == {"action", "log_prob", "entropy", "value"}
 
     def test_easy_ppo_no_double_wrap(self, tmp_config) -> None:
-        """easy_train_ppo wraps a plain BaseEnv exactly once via vectorize_env."""
         env = CustomCartPole()
-        train = easy_train_ppo(config=tmp_config, algo_config=AlgoConfig(), base_env=env)
+        train = easy_train_ppo(env, config=tmp_config, algo_config=AlgoConfig())
         assert isinstance(train.env, SyncVectorEnv)
         assert isinstance(train.env.envs[0], CustomCartPole)
         assert train.env.envs[0] is not env

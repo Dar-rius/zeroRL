@@ -13,6 +13,7 @@ try:
 except ImportError: 
     resource = None #type: ignore[assignment]
 import numpy as np
+import imageio
 import torch
 import gymnasium as gym
 from dataclasses import dataclass, asdict
@@ -86,9 +87,9 @@ class BaseTrain:
         assert_agent_contract(self.agent,
                         {"get_action": "Your agent should have the method `get_action`"})
         self.env = env
-        self.state = Tensor()
         if not isinstance(env, gym.vector.VectorEnv) and not getattr(env, "auto_reset", False):
             self.env = vectorize_env(self.env, self.num_envs, render_mode)
+        self.state = Tensor()
         self.buffer = buffer
         self.update_weights = update_weights
         self.algo_config = algo_config
@@ -111,10 +112,11 @@ class BaseTrain:
 
         self.require_buffer_size = require_buffer_size
         self.normalizer = NormMeanStd(obs_shape, config.device)
-        tb_log_dir = os.path.join(self.config.model_save_path, "tensorboard", self.config.model_name)
+        tb_log_dir = os.path.join(self.config.model_save_path, "tensorboard")
         self.tb_writer = SummaryWriter(tb_log_dir)
         self.current_episode_reward: Tensor | None = None
         self.episode_rewards: list[float] = []
+        self.env_device = getattr(self.env, "device", "cpu")
 
 
     def rollout_phase(self):
@@ -127,10 +129,8 @@ class BaseTrain:
             state: Initial observation to start the rollout from.
         """
         dev = self.config.device
-        env_device = getattr(self.env, "device", "cpu")
-        state_tensor: Tensor = self.state
+        state_tensor = self.state
         if state_tensor.dim() == 1: state_tensor = state_tensor.unsqueeze(0)
-
         if self.current_episode_reward is None:
             self.current_episode_reward = torch.zeros(self.num_envs, device=dev)
 
@@ -143,7 +143,7 @@ class BaseTrain:
             with torch.inference_mode():
                 outputs: dict[str, Tensor] = self.agent.get_action(state_norm) #type: ignore[operator]
                 outputs["value"] = outputs["value"].squeeze(-1)
-                if str(env_device).startswith("cuda"):
+                if str(self.env_device).startswith("cuda"):
                     action_input: np.ndarray | Tensor = outputs["action"]
                 else:
                     action_input = outputs["action"].cpu().numpy()
@@ -293,7 +293,7 @@ class BaseTrain:
                 else:
                     ram_mb = 0.0
                 profile_data = ProfileMetrics(
-                    fps= (self.config.rollout_steps * self.config.num_envs) / (t_end - t_start),
+                    fps= (self.config.rollout_steps * self.num_envs) / (t_end - t_start),
                     rollout_ms = (t_rollout - t_start) * 1000,
                     update_ms = (t_end - t_rollout) * 1000,
                     vram_allocated_gb = torch.cuda.memory_allocated() / (1024 ** 3) if is_cuda else 0.0,
@@ -316,11 +316,59 @@ class BaseTrain:
             self._log_metrics(metrics, step, use_wandb, use_tb)
             self.buffer.clear()
 
+        self.env.close()
         #Close Wandb or TensorBoard
         if use_wandb: wandb.finish() #type: ignore[attr-defined]
         if use_tb: self.tb_writer.close()
         #Save model
         if save_model: self.save_model()
+
+
+    def test(self, iterations: int = 1, gif_path: str | None = None):
+        """Evaluate the agent and save a GIF of its behavior.
+        
+        Args:
+            iterations: Number of iterations.
+            gif_path: Path to save the GIF.
+        """
+        env_spec = self.env.envs[0].spec.id
+        env = vectorize_env(env_spec, render_mode = "rgb_array")
+        frames = []
+        self.agent.eval()
+        for i in range(iterations):
+            done_or_trunc = False
+            state, _ = env.reset() #type: ignore
+            while not done_or_trunc:
+                state_tensor = torch.as_tensor(state, dtype=torch.float32, device=self.config.device)
+                if state_tensor.dim() == 1: state_tensor = state_tensor.unsqueeze(0)
+                if self.config.normalize:
+                    self.normalizer.update(state_tensor)
+                    state_norm = self.normalizer.normalize(state_tensor)
+                else:
+                    state_norm = state_tensor
+
+                with torch.inference_mode():
+                    outputs: dict[str, Tensor] = self.agent.get_action(state_norm)
+                    if str(self.env_device).startswith("cuda"):
+                        action_input: np.ndarray | Tensor = outputs["action"]
+                    else:
+                        action_input = outputs["action"].cpu().numpy()
+
+                next_state, _, terminated, truncated, _ = env.step(action_input) #type: ignore
+
+                #capture frames
+                frame = env.render()
+                if frame is not None: frames.append(frame[0])
+                done_or_trunc = terminated or truncated
+                state = next_state
+
+            #save to gif
+            if gif_path is None:
+                gif_path = f"./{self.config.project_name}_{i}.gif"
+            else:
+                gif_path = f"./{gif_path}_{i}.gif"
+            imageio.mimsave(gif_path, frames, fps=25)
+            self.env.close()
 
 
     def save_model(self):
