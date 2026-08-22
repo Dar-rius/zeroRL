@@ -9,9 +9,10 @@ import os
 import sys
 import time
 try:
-    import resource
-except ImportError: 
-    resource = None #type: ignore[assignment]
+    import psutil
+    _PSUTIL_AVAILABLE = True
+except ImportError:
+    _PSUTIL_AVAILABLE = False
 import numpy as np
 import imageio
 import torch
@@ -24,7 +25,7 @@ from torch import Tensor
 from torch import optim
 from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.tensorboard import SummaryWriter
-from zerorl.agent import BaseAgent
+from zerorl.helpers.agent import BaseAgent
 from zerorl.buffer import Buffer
 from zerorl.config import TrainConfig, AlgoConfig
 from zerorl.processing import NormMeanStd
@@ -287,11 +288,12 @@ class BaseTrain:
             if is_profile:
                 if is_cuda: sync()
                 t_end = time.perf_counter()
-                if resource is not None:
-                    ram_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-                    ram_mb = ram_kb / 1024 if ram_kb > 0 else 0.0
+                if _PSUTIL_AVAILABLE:
+                    ram_kb = psutil.Process(os.getpid()).memory_info().rss
+                    ram_mb = ram_kb / (1024 ** 2) if ram_kb > 0 else 0.0
                 else:
                     ram_mb = 0.0
+
                 profile_data = ProfileMetrics(
                     fps= (self.config.rollout_steps * self.num_envs) / (t_end - t_start),
                     rollout_ms = (t_rollout - t_start) * 1000,

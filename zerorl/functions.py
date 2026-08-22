@@ -12,8 +12,8 @@ from typing import Any, Callable, TypeVar
 from  gymnasium import Space
 from torch import Tensor
 from torch.nn import Parameter
-from zerorl.agent import BaseAgent
-from zerorl.helpers import BaseEnv
+from zerorl.helpers.agent import BaseAgent
+from zerorl.helpers.env import BaseEnv
 from gymnasium.vector import AutoresetMode, SyncVectorEnv
 
 

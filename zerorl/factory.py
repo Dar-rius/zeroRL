@@ -3,10 +3,10 @@ import torch
 from typing import Callable
 from torch import Tensor
 from zerorl.functions import vectorize_env 
-from zerorl.agent import BaseAgent, eval_action
+from zerorl.helpers.agent import BaseAgent, eval_action
+from zerorl.helpers.env import BaseEnv
 from zerorl.buffer import Buffer 
 from zerorl.config import TrainConfig 
-from zerorl.helpers import BaseEnv
 from torch import nn
 
 
