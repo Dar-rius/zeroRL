@@ -1,6 +1,8 @@
 """Utility functions for RL training.
 
-Provides get_buffer_params_model() for extracting model parameters.
+Provides vectorize_env() for environment wrapping, fast_compile() for
+optional torch.compile, get_obs_act() for space extraction, and
+get_buffer_params_model() for extracting model parameters.
 """
 
 import shutil
@@ -12,8 +14,8 @@ from typing import Any, Callable, TypeVar
 from  gymnasium import Space
 from torch import Tensor
 from torch.nn import Parameter
-from zerorl.agent import BaseAgent
-from zerorl.helpers import BaseEnv
+from zerorl.helpers.agent import BaseAgent
+from zerorl.helpers.env import BaseEnv
 from gymnasium.vector import AutoresetMode, SyncVectorEnv
 
 
@@ -28,7 +30,7 @@ def _cxx_compiler_available() -> bool:
             shutil.which("clang++") is not None)
 
 
-def fast_compile(fn: F | None = None, **kwargs) -> F | Callable[[F], F]:
+def fast_compile(fn: F | None = None, **kwargs) -> F | Callable:
     """Like torch.compile; no-op when a C++ compiler is not on PATH."""
     use_compile = _cxx_compiler_available()
     def wrap(f: F) -> F:
@@ -41,8 +43,17 @@ def fast_compile(fn: F | None = None, **kwargs) -> F | Callable[[F], F]:
     return wrap
 
 
-#Vectorize Env
 def vectorize_env(env_spec: str | Callable | BaseEnv, num_envs: int = 1, render_mode: str | None = None) -> SyncVectorEnv:
+    """Wrap an env spec into a SyncVectorEnv with SAME_STEP autoreset.
+
+    Args:
+        env_spec: Gymnasium env ID string, BaseEnv class/instance, or callable.
+        num_envs: Number of parallel environments.
+        render_mode: Render mode for the environment.
+
+    Returns:
+        SyncVectorEnv wrapping num_envs independent copies.
+    """
     def make_env_fn(seed:int) -> Callable:
         def _init():
             if isinstance(env_spec, str):
@@ -60,6 +71,14 @@ def vectorize_env(env_spec: str | Callable | BaseEnv, num_envs: int = 1, render_
 
 
 def get_obs_act(env: SyncVectorEnv) -> tuple[Space, Space]:
+    """Extract observation and action spaces from a vectorized environment.
+
+    Args:
+        env: A SyncVectorEnv or compatible vectorized environment.
+
+    Returns:
+        Tuple of (observation_space, action_space).
+    """
     if hasattr(env, "single_observation_space"):
         obs_dim = env.single_observation_space
         act_dim = env.single_action_space

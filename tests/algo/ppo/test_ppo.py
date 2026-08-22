@@ -4,7 +4,7 @@ import pytest
 import torch
 import torch.nn as nn
 from torch.optim.lr_scheduler import LambdaLR
-from zerorl.agent import BaseAgent, eval_action
+from zerorl.helpers.agent import BaseAgent, eval_action
 from zerorl.algorithms.ppo.ppo import gae_compute, ppo_loss, ppo_func
 from zerorl.buffer import Buffer
 from zerorl.config import AlgoConfig

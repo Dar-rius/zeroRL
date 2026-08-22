@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 import gymnasium as gym
 from gymnasium.vector import SyncVectorEnv, AutoresetMode
-from zerorl.helpers import BaseEnv
+from zerorl.helpers.env import BaseEnv
 from zerorl.functions import vectorize_env
 
 

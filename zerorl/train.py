@@ -1,17 +1,19 @@
 """Training loop for RL agents.
 
 Provides BaseTrain, which orchestrates the rollout-update cycle:
-collect experience, copute GAE, run the update_weights callable,
+collect experience, compute GAE, run the update_weights callable,
 and repeat.
 """
 
 import os
 import sys
 import time
+import warnings
 try:
-    import resource
-except ImportError: 
-    resource = None #type: ignore[assignment]
+    import psutil
+    _PSUTIL_AVAILABLE = True
+except ImportError:
+    _PSUTIL_AVAILABLE = False
 import numpy as np
 import imageio
 import torch
@@ -24,7 +26,7 @@ from torch import Tensor
 from torch import optim
 from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.tensorboard import SummaryWriter
-from zerorl.agent import BaseAgent
+from zerorl.helpers.agent import BaseAgent
 from zerorl.buffer import Buffer
 from zerorl.config import TrainConfig, AlgoConfig
 from zerorl.processing import NormMeanStd
@@ -32,7 +34,9 @@ from zerorl.errors import EmptyBufferError, assert_agent_contract
 from zerorl.functions import vectorize_env
 
 
-#Profiler Metric
+"""Profiling metrics captured during a training step."""
+
+
 @dataclass
 class ProfileMetrics:
     fps: float
@@ -73,7 +77,7 @@ class BaseTrain:
             buffer: Pre-allocated buffer for rollout data.
             update_weights: Callable that computes the weight update from
                 collected rollout data. Signature:
-                (agent, buffer, optimizer, last_output, algo_config) -> dict[str, Tensor].
+                (agent, buffer, scheduler, optimizer, last_output, algo_config) -> dict[str, Tensor].
             config: Training configuration (device, paths, hyperparams).
             algo_config: Algorithm hyperparameters (passed to update_weights).
             optimizer: Optional optimizer. If None, creates Adam with algo_config.lr.
@@ -125,8 +129,7 @@ class BaseTrain:
         Stores each transition in the buffer and resets on episode end.
         After the rollout, computes the bootstrap value for GAE.
 
-        Args:
-            state: Initial observation to start the rollout from.
+        Uses self.state internally as the starting observation.
         """
         dev = self.config.device
         state_tensor = self.state
@@ -198,7 +201,7 @@ class BaseTrain:
     #Profiler display
     def _log_profile_metrics(self, step: int, metrics: ProfileMetrics):
         sys.stderr.write(
-                f"\033[94m[Profile] Step {step} | FPS: {metrics.fps:.0f} | "
+                f"\n\033[94m[Profile] Step {step} | FPS: {metrics.fps:.0f} | "
                 f"Rollout: {metrics.rollout_ms:.1f}ms | Update: {metrics.update_ms:1f}ms |"
                 f"VRAM: {metrics.vram_allocated_gb:.2f}GB (Peak: {metrics.vram_peak_gb:.2f}GB) | "
                 f"RAM: {metrics.ram_mb:.0f}MB\033[0m\n"
@@ -257,7 +260,7 @@ class BaseTrain:
         if use_wandb:
             try:
                 wandb.init(project=self.config.project_name, config={"Train Configs": self.config.__dict__, #type: ignore[attr-defined]
-                         "Hyper Paramaters": self.algo_config.__dict__ if self.algo_config else {}}) 
+                         "Hyper Parameters": self.algo_config.__dict__ if self.algo_config else {}}) 
             except ImportError:
                 raise ImportError("`wandb` is not installed. Install it with: pip install wandb")
         for step in tqdm(range(self.config.num_update)):
@@ -287,11 +290,13 @@ class BaseTrain:
             if is_profile:
                 if is_cuda: sync()
                 t_end = time.perf_counter()
-                if resource is not None:
-                    ram_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-                    ram_mb = ram_kb / 1024 if ram_kb > 0 else 0.0
+                if _PSUTIL_AVAILABLE:
+                    ram_kb = psutil.Process(os.getpid()).memory_info().rss
+                    ram_mb = ram_kb / (1024 ** 2) if ram_kb > 0 else 0.0
                 else:
+                    warnings.warn("Profiles are running but they are unable to capture the state of ram, install psutil")
                     ram_mb = 0.0
+
                 profile_data = ProfileMetrics(
                     fps= (self.config.rollout_steps * self.num_envs) / (t_end - t_start),
                     rollout_ms = (t_rollout - t_start) * 1000,
@@ -333,7 +338,7 @@ class BaseTrain:
         """
         env_spec = self.env.envs[0].spec.id
         env = vectorize_env(env_spec, render_mode = "rgb_array")
-        frames = []
+        frames: Any = []
         self.agent.eval()
         for i in range(iterations):
             done_or_trunc = False
@@ -372,6 +377,6 @@ class BaseTrain:
 
 
     def save_model(self):
-        """Save agent weights to the path inconfig.model_path."""
+        """Save agent weights to the path in config.model_path."""
         os.makedirs(os.path.dirname(self.config.model_path), exist_ok=True)
         torch.save(self.agent.state_dict(), self.config.model_path)

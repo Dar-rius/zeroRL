@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 import torch.nn as nn
-from zerorl.agent import BaseAgent, eval_action
+from zerorl.helpers.agent import BaseAgent, eval_action
 from zerorl.train import BaseTrain
 from zerorl.buffer import Buffer
 from zerorl.config import TrainConfig, AlgoConfig
@@ -62,16 +62,16 @@ class Agent(BaseAgent):
 
 
 # 3. Configure and train
-config = TrainConfig(project_name="acrobot_example", model_name="agent_1", timestamp=2_000_000, num_envs=4)
+config = TrainConfig(project_name="acrobot_example", model_name="agent_1", timestamp=2_000_000, num_envs=4, profile=True)
 config.device = torch.device("cpu")
 algo_config = AlgoConfig(ent_coef=0.0)
 env = get_env("BipedalWalker-v3", config.num_envs)
 
 obs_dim, act_dim = get_obs_act(env)
-agent = Agent(obs_dim.shape[-1], act_dim.shape[0])
+agent = Agent(obs_dim.shape[-1], act_dim.shape[0]) #type: ignore
 buffer = Buffer(step=config.rollout_steps,
                 num_envs = config.num_envs,
-                data={"state": (obs_dim.shape[-1], ), "action": (act_dim.shape[0], ),
+                data={"state": (obs_dim.shape[-1], ), "action": (act_dim.shape[0], ), #type: ignore
                       "reward": (), "done": (), "entropy": (), "value": (),
                       "return": (), "log_prob": (), "advantage": (), "truncated": ()},
                 device=config.device)

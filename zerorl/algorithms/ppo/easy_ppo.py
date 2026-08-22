@@ -1,3 +1,9 @@
+"""One-call PPO quickstart.
+
+Provides easy_train_ppo() which wires together agent, environment, buffer,
+and PPO update into a ready-to-train BaseTrain instance.
+"""
+
 from typing import Callable
 from gymnasium import spaces
 from torch import optim
@@ -5,8 +11,8 @@ from zerorl.factory import get_env, get_actor_critic_buffer, ActorCriticAgent
 from zerorl.train import BaseTrain
 from zerorl.algorithms.ppo import ppo_func, gae_compute
 from zerorl.config import TrainConfig, AlgoConfig
-from zerorl.agent import BaseAgent
-from zerorl.helpers import BaseEnv
+from zerorl.helpers.agent import BaseAgent
+from zerorl.helpers.env import BaseEnv
 from zerorl.functions import get_obs_act
 
 def easy_train_ppo(env_spec: str | Callable | BaseEnv, 
@@ -18,6 +24,23 @@ def easy_train_ppo(env_spec: str | Callable | BaseEnv,
                     optimizer: optim.Optimizer | None = None,
                     schedule_func: Callable[[int], float] | None = None,
                    ):
+    """Create and return a BaseTrain instance with PPO wiring.
+
+    Automatically builds the environment, agent, buffer, and update function.
+
+    Args:
+        env_spec: Gymnasium env ID string, BaseEnv subclass/instance, or callable.
+        config: Training configuration (device, paths, timesteps).
+        algo_config: Algorithm hyperparameters (lr, gamma, clip_eps, etc.).
+        hidden_layer: Hidden layer size for the default ActorCriticAgent.
+        render_mode: Render mode for the environment.
+        base_agent: Custom agent (overrides the default ActorCriticAgent).
+        optimizer: Custom optimizer (overrides default Adam).
+        schedule_func: Custom LR schedule function (overrides default linear decay).
+
+    Returns:
+        BaseTrain instance ready for .train() or .test().
+    """
     env = get_env(env_spec, config.num_envs, render_mode)
     obs_dim, act_dim = get_obs_act (env)
     is_discrete = isinstance(act_dim, spaces.Discrete)

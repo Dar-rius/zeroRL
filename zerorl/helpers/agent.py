@@ -10,8 +10,16 @@ from torch import Tensor
 from torch.distributions import Distribution
 
 
-# Compute log probability and entropy from a distribution
 def eval_action(dist: Distribution, action: Tensor) -> tuple[Tensor, Tensor]:
+    """Compute log probability and entropy for a given action.
+
+    Args:
+        dist: The probability distribution from build_distribution().
+        action: The action taken.
+
+    Returns:
+        Tuple of (log_prob, dist_entropy), each reduced to 1-D if needed.
+    """
     log_prob = dist.log_prob(action)
     dist_entropy = dist.entropy()
     if log_prob.dim() > 1:
@@ -33,7 +41,7 @@ class BaseAgent(nn.Module):
 
     @property
     def device(self) -> torch.device:
-        """Return the device where it run."""
+        """Return the device where the model runs."""
         try:
             return next(self.parameters()).device
         except StopIteration:

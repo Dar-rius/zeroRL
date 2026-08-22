@@ -1,11 +1,11 @@
 """Custom exceptions for the zerorl project."""
 
-from zerorl.agent import BaseAgent
+from zerorl.helpers.agent import BaseAgent
 
 
 def assert_agent_contract(agent: BaseAgent, attr_search: dict[str, str]):
     """
-        Check if attributes exists in Agent
+        Check if attributes exist in Agent
         agent: Agent
         attr_search: Key -> Attribute Name
                      Value -> Message Error
@@ -32,16 +32,16 @@ class EmptyBufferError(Exception):
 
     def __str__(self) -> str:
         """Return a detailed error message with context and suggestion."""
-        suggestion = "Call Rollout before update weights"
+        suggestion = "Call rollout_phase() before update_weights()"
         details = f"[Crash Workflow] {self.message}\n"
         details += f"the current buffer size: {self.current_size}\n"
-        details += f" the minimal size required is: {self.require_buffer_size}\n"
+        details += f" the minimum size required is: {self.require_buffer_size}\n"
         details += f"{suggestion}"
         return details
 
 
 class KeyBufferError(Exception):
-    """Raised when the argument name don't exist in data buffer.
+    """Raised when the argument name does not exist in the data buffer.
 
     Attributes:
         arg_name: the argument name.
@@ -54,6 +54,6 @@ class KeyBufferError(Exception):
 
     def __str__(self) -> str:
         details = f"Key '{self.arg_name}' (returned by agent.get_action) does not exist in the Buffer.\n"
-        details += f"Please ensure your Buffer is initialized with the key '{self.arg_name}\n"
+        details += f"Please ensure your Buffer is initialized with the key '{self.arg_name}'\n"
         details += f"Current valid keys are: {list(self.data_buffer.keys())}"
         return details

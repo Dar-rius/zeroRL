@@ -12,8 +12,8 @@ class Buffer:
     """Pre-allocated rollout buffer for collecting RL trajectory data.
 
     Stores trajectory data in pre-allocated PyTorch tensors with a slice
-    pointer for O(1) insertion. Callers insert GAE-computed returns and
-    advantages directly, then use get_all() to retrieve everything as
+    pointer for O(1) insertion. gae_compute() writes advantage and return
+    directly into the buffer, then use get_all() to retrieve everything as
     PyTorch tensors for the PPO update step.
 
     Example:
