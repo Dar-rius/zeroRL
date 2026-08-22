@@ -26,7 +26,7 @@ dependencies = [
 
 [project.optional-dependencies]
 mujoco = ["mujoco>=3.2.0"]
-box2d = ["swig>=4.4.1", "box2d==2.3.10"]
+box2d = ["swig", "gymnasium[box2d]"]
 viz = ["wandb>=0.28.1", "tensorboard>=2.21.0"]
 pygame = ["pygame==2.6.1", "pygame-ce==2.5.8"]
 profiling = ["psutil"]
