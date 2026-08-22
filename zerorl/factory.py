@@ -1,3 +1,8 @@
+"""Factory helpers for creating environments, buffers, and agents.
+
+Provides convenience functions that wire together common RL components.
+"""
+
 import numpy as np
 import torch
 from typing import Callable
@@ -10,11 +15,31 @@ from zerorl.config import TrainConfig
 from torch import nn
 
 
-#Auto create new BaseEnv
-def get_env(env_id: str | Callable | BaseEnv, num_envs: int = 1, render_mode: str | None= None): return vectorize_env(env_id, num_envs, render_mode)
+def get_env(env_id: str | Callable | BaseEnv, num_envs: int = 1, render_mode: str | None= None):
+    """Create a vectorized environment from a spec, class, or instance.
 
-#Auto create Actor-Critic buffer
-def get_actor_critic_buffer(state_space: int, action_space: tuple, config: TrainConfig): 
+    Args:
+        env_id: Gymnasium env ID string, BaseEnv class/instance, or callable.
+        num_envs: Number of parallel environments.
+        render_mode: Render mode for the environment.
+
+    Returns:
+        SyncVectorEnv with SAME_STEP autoreset.
+    """
+    return vectorize_env(env_id, num_envs, render_mode)
+
+def get_actor_critic_buffer(state_space: int, action_space: tuple, config: TrainConfig):
+    """Create a Buffer with standard PPO field names.
+
+    Args:
+        state_space: Observation dimension.
+        action_space: Action shape tuple, e.g. () for discrete or (n,) for continuous.
+        config: Training config providing rollout_steps, num_envs, and device.
+
+    Returns:
+        Buffer pre-allocated with keys: state, action, reward, done, truncated,
+        entropy, value, return, log_prob, advantage.
+    """ 
     buffer = Buffer(step = config.rollout_steps,
                     num_envs = config.num_envs,
                     data = {"state": (state_space, ), "action": action_space,
@@ -23,8 +48,18 @@ def get_actor_critic_buffer(state_space: int, action_space: tuple, config: Train
                     device=config.device)
     return buffer
 
-#Auto create new Actor-Critic BaseAgent
 class ActorCriticAgent(BaseAgent):
+    """Built-in actor-critic agent with orthogonal initialization.
+
+    Supports both discrete (Categorical) and continuous (Normal) action spaces.
+    Uses a shared 2-layer Tanh MLP feature extractor.
+
+    Args:
+        input_dim: Observation dimension.
+        output_dim: Action dimension (n for discrete, dim for continuous).
+        is_discrete: Whether the action space is discrete.
+        hidden_dim: Hidden layer size (default 64).
+    """
     def __init__(self, input_dim: int, output_dim: int, is_discrete: bool, hidden_dim: int = 64):
         super().__init__()
 
@@ -52,6 +87,7 @@ class ActorCriticAgent(BaseAgent):
 
 
     def _orthogonal_init(self, module: nn.Module):
+        """Apply orthogonal weight initialization with gain based on layer role."""
         if isinstance(module, nn.Linear):
             if module.out_features == self.hidden_dim:
                 nn.init.orthogonal_(module.weight, gain=np.sqrt(2))
@@ -64,12 +100,14 @@ class ActorCriticAgent(BaseAgent):
                 nn.init.constant_(module.bias, 0.0)
 
     def forward(self, state: Tensor):
+        """Forward pass returning (logits, value)."""
         x = self.extract_layer(state)
         logits = self.actor(x)
         value = self.critic(x)
         return (logits, value)
 
     def build_distribution(self, logits: torch.Tensor):
+        """Build a torch distribution from logits (Categorical or Normal)."""
         if self.is_discrete:
             return torch.distributions.Categorical(logits=logits)
         log_std_clamped = torch.clamp(self.log_std, min=-3.0, max=1.0)
@@ -77,6 +115,7 @@ class ActorCriticAgent(BaseAgent):
         return torch.distributions.Normal(logits, std)
     
     def get_action(self, state: torch.Tensor, action: torch.Tensor | None = None):
+        """Sample or evaluate an action, returning action, log_prob, entropy, value."""
         logits, value = self.forward(state)
         dist = self.build_distribution(logits)
         if action is None: action = dist.sample()

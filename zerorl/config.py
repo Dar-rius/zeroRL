@@ -22,7 +22,7 @@ class TrainConfig:
         model_path: Computed as "{model_save_path}/{model_name}.pt".
         timestamp: Total environment timesteps for training.
         rollout_steps: Steps collected before each PPO update.
-        num_update: Computed as timestamp // rollout_steps.
+        num_update: Computed as timestamp // (rollout_steps * num_envs).
     """
     model_name: str
     project_name: str
@@ -65,14 +65,14 @@ class AlgoConfig:
     gamma: float = 0.99
     batch_size: int = 64
 
-    #For on-policy
+    # For on-policy
     gae_lambda: float = 0.95
     clip_eps: float = 0.2
     ent_coef: float = 0.01
     value_coef: float = 0.5
     epochs: int = 10
 
-    #For off-policy
+    # For off-policy
     tau: float = 0.005
 
     def __init__(self, **kwargs):

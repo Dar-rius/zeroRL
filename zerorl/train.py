@@ -1,7 +1,7 @@
 """Training loop for RL agents.
 
 Provides BaseTrain, which orchestrates the rollout-update cycle:
-collect experience, copute GAE, run the update_weights callable,
+collect experience, compute GAE, run the update_weights callable,
 and repeat.
 """
 
@@ -34,7 +34,9 @@ from zerorl.errors import EmptyBufferError, assert_agent_contract
 from zerorl.functions import vectorize_env
 
 
-#Profiler Metric
+"""Profiling metrics captured during a training step."""
+
+
 @dataclass
 class ProfileMetrics:
     fps: float
@@ -75,7 +77,7 @@ class BaseTrain:
             buffer: Pre-allocated buffer for rollout data.
             update_weights: Callable that computes the weight update from
                 collected rollout data. Signature:
-                (agent, buffer, optimizer, last_output, algo_config) -> dict[str, Tensor].
+                (agent, buffer, scheduler, optimizer, last_output, algo_config) -> dict[str, Tensor].
             config: Training configuration (device, paths, hyperparams).
             algo_config: Algorithm hyperparameters (passed to update_weights).
             optimizer: Optional optimizer. If None, creates Adam with algo_config.lr.
@@ -127,8 +129,7 @@ class BaseTrain:
         Stores each transition in the buffer and resets on episode end.
         After the rollout, computes the bootstrap value for GAE.
 
-        Args:
-            state: Initial observation to start the rollout from.
+        Uses self.state internally as the starting observation.
         """
         dev = self.config.device
         state_tensor = self.state
@@ -259,7 +260,7 @@ class BaseTrain:
         if use_wandb:
             try:
                 wandb.init(project=self.config.project_name, config={"Train Configs": self.config.__dict__, #type: ignore[attr-defined]
-                         "Hyper Paramaters": self.algo_config.__dict__ if self.algo_config else {}}) 
+                         "Hyper Parameters": self.algo_config.__dict__ if self.algo_config else {}}) 
             except ImportError:
                 raise ImportError("`wandb` is not installed. Install it with: pip install wandb")
         for step in tqdm(range(self.config.num_update)):
@@ -376,6 +377,6 @@ class BaseTrain:
 
 
     def save_model(self):
-        """Save agent weights to the path inconfig.model_path."""
+        """Save agent weights to the path in config.model_path."""
         os.makedirs(os.path.dirname(self.config.model_path), exist_ok=True)
         torch.save(self.agent.state_dict(), self.config.model_path)

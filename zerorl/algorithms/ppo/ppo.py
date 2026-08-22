@@ -1,6 +1,6 @@
 """Proximal Policy Optimization (PPO) standalone functions.
 
-Provides gae_compute(), ppo_loss(), and ppo() for computing GAE
+Provides gae_compute(), ppo_loss(), and ppo_func() for computing GAE
 advantages and running the clipped surrogate loss optimization.
 Reference: Schulman et al., "Proximal Policy Optimization Algorithms" (2017)
 """
@@ -27,16 +27,16 @@ def gae_compute(rewards: Tensor,
     """Compute Generalized Advantage Estimation.
 
     Works backwards through the trajectory, accumulating TD errors
-    with exponentially decaying weights.
+    with exponentially decaying weights. Writes "advantage" and "return"
+    directly into buffer.data.
 
     Args:
-        rewards: Rewards for each timestep, shape (T,).
-        values: Value estimates for each timestep, shape (T,).
-        last_value: Bootstrap value for the state after the last step.
-        dones: Episode termination flags, shape (T,). 1.0 = done.
-
-    Returns:
-        Tuple of (return, advantage, delta), each shape (T,).
+        rewards: Rewards for each timestep, shape (T, num_envs).
+        values: Value estimates for each timestep, shape (T, num_envs).
+        last_value: Bootstrap value for the state after the last step, shape (num_envs,).
+        dones: Episode termination flags, shape (T, num_envs). 1.0 = done.
+        buffer: Buffer to write "advantage" and "return" into.
+        algo_config: Algorithm configuration (gamma, gae_lambda).
     """
     rewards = rewards.reshape(rewards.shape[0], -1)
     values = values.reshape(values.shape[0], -1)
@@ -82,9 +82,13 @@ def ppo_loss(
         states: Batch of observations.
         actions: Batch of actions taken.
         old_log_prob: Log probabilities from the old policy.
+        old_values: Value estimates from the old policy.
         advantages: GAE advantage estimates.
         returns: GAE return estimates.
-        algo_config: Algorithm configuration. 
+        ent_coef: Entropy bonus coefficient.
+        value_coef: Value loss coefficient.
+        clip_eps: PPO clipping range.
+        clip_vf: Whether to clip value predictions.
 
     Returns:
         Dict with keys "loss", "policy_loss", "value_loss", "entropy_loss".
@@ -138,18 +142,16 @@ def ppo_func(agent: BaseAgent,
         ) ->  dict[str, Tensor]:
     """Run a full PPO update on collected rollout data.
 
-    Normalizes advantages and returns, runs minibatch SGD epochs with
-    clipped surrogate loss and gradient clipping, then steps the scheduler.
+    Steps the scheduler first, then normalizes advantages and runs
+    minibatch SGD epochs with clipped surrogate loss and gradient clipping.
 
     Args:
         agent: The policy network.
         optimizer: Optimizer for the agent parameters.
         buffer: Buffer containing rollout data with keys "state", "action",
             "log_prob", "advantage", "return".
-        algo_config: Algorithm  Configuration.
+        algo_config: Algorithm configuration (batch_size, epochs, clip_eps, etc.).
         scheduler: Learning rate scheduler (stepped once per call).
-        batch_size: Minibatch size.
-        epochs: Number of passes over the data.
         device: Torch device for computations.
 
     Returns:
@@ -195,10 +197,10 @@ def ppo_func(agent: BaseAgent,
         return global_losses
 
     def update() -> list[dict[str, Tensor]]:
-        """Run a PPO update on collected rollout data.
+        """Run multiple epochs of minibatch SGD on rollout data.
 
-        Normalizes advantages and returns, then runs multiple epochs of
-        minibatch SGD with the clipped surrogate loss.
+        Shuffles data each epoch, splits into minibatches, and updates weights
+        with gradient clipping.
         """
         history = []
         for _ in range(algo_config.epochs):
