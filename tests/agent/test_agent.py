@@ -3,7 +3,7 @@
 import pytest
 import torch
 import torch.nn as nn
-from zerorl.agent import BaseAgent, eval_action
+from zerorl.helpers.agent import BaseAgent, eval_action
 
 @pytest.fixture
 def device() -> torch.device:

@@ -8,7 +8,7 @@ assert_agent_contract (runtime check for required agent methods).
 import pytest
 import torch
 import torch.nn as nn
-from zerorl.agent import BaseAgent
+from zerorl.helpers.agent import BaseAgent
 from zerorl.errors import EmptyBufferError, KeyBufferError, assert_agent_contract
 
 

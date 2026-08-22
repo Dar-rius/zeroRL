@@ -12,11 +12,11 @@ from contextlib import ExitStack
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 from gymnasium import spaces
-from zerorl.agent import BaseAgent, eval_action
+from zerorl.helpers.agent import BaseAgent, eval_action
 from zerorl.buffer import Buffer
 from zerorl.config import AlgoConfig, TrainConfig
 from zerorl.errors import EmptyBufferError
-from zerorl.helpers import BaseEnv
+from zerorl.helpers.env import BaseEnv
 from zerorl.train import BaseTrain, ProfileMetrics
 from torch.optim.lr_scheduler import LambdaLR
 from zerorl.functions import vectorize_env
@@ -188,7 +188,7 @@ class FakeVecEnv(BaseEnv):
         self.counters = [0] * num_envs
         self.reset_calls = 0
         self.observation_space = spaces.Box(low=0.0, high=1.0, shape=(obs_dim,), dtype=np.float32)
-        self.action_space = spaces.Discrete(act_dim)
+        self.action_space: spaces.Space = spaces.Discrete(act_dim)
 
     @property
     def device(self): return torch.device("cpu")
@@ -233,7 +233,7 @@ class _SeedPacedEnv(BaseEnv):
     def __init__(self, truncate: bool = False):
         super().__init__()
         self.observation_space = spaces.Box(low=0.0, high=200.0, shape=(4,), dtype=np.float32)
-        self.action_space = spaces.Discrete(2)
+        self.action_space: spaces.Space = spaces.Discrete(2)
         self.truncate = truncate
         self.limit = 100
         self.steps = 0

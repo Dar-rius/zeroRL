@@ -6,10 +6,10 @@ import torch.nn as nn
 import gymnasium as gym
 from zerorl.algorithms.ppo.easy_ppo import easy_train_ppo
 from zerorl.train import BaseTrain
-from zerorl.agent import BaseAgent, eval_action
+from zerorl.helpers.agent import BaseAgent, eval_action
 from zerorl.config import TrainConfig, AlgoConfig
 from gymnasium.vector import SyncVectorEnv
-from zerorl.helpers import BaseEnv
+from zerorl.helpers.env import BaseEnv
 
 
 @pytest.fixture

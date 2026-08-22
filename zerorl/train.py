@@ -293,7 +293,7 @@ class BaseTrain:
                     ram_kb = psutil.Process(os.getpid()).memory_info().rss
                     ram_mb = ram_kb / (1024 ** 2) if ram_kb > 0 else 0.0
                 else:
-                    warnings.warn("Profiles is executate but they can't capture the ram state, install psutil")
+                    warnings.warn("Profiles are running but they are unable to capture the state of ram, install psutil")
                     ram_mb = 0.0
 
                 profile_data = ProfileMetrics(

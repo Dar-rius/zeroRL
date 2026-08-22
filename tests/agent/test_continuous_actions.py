@@ -7,11 +7,11 @@ import gymnasium as gym
 from gymnasium import spaces
 from torch.optim.lr_scheduler import LambdaLR
 
-from zerorl.agent import BaseAgent, eval_action
+from zerorl.helpers.agent import BaseAgent, eval_action
 from zerorl.algorithms.ppo.ppo import gae_compute, ppo_func
 from zerorl.buffer import Buffer
 from zerorl.config import AlgoConfig
-from zerorl.helpers import BaseEnv
+from zerorl.helpers.env import BaseEnv
 
 @pytest.fixture
 def device() -> torch.device:

@@ -3,7 +3,7 @@
 import pytest
 import torch
 import torch.nn as nn
-from zerorl.agent import BaseAgent, eval_action
+from zerorl.helpers.agent import BaseAgent, eval_action
 from zerorl.functions import get_buffer_params_model, fast_compile, _cxx_compiler_available
 
 @pytest.fixture

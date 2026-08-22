@@ -2,7 +2,7 @@
 
 import numpy as np
 import gymnasium as gym
-from zerorl.helpers import BaseEnv
+from zerorl.helpers.env import BaseEnv
 
 
 class GymTestEnv(BaseEnv):
