@@ -1,6 +1,6 @@
 """Custom exceptions for the zerorl project."""
 
-from zerorl.agent import BaseAgent
+from zerorl.helpers.agent import BaseAgent
 
 
 def assert_agent_contract(agent: BaseAgent, attr_search: dict[str, str]):

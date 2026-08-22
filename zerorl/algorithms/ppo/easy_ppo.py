@@ -5,8 +5,8 @@ from zerorl.factory import get_env, get_actor_critic_buffer, ActorCriticAgent
 from zerorl.train import BaseTrain
 from zerorl.algorithms.ppo import ppo_func, gae_compute
 from zerorl.config import TrainConfig, AlgoConfig
-from zerorl.agent import BaseAgent
-from zerorl.helpers import BaseEnv
+from zerorl.helpers.agent import BaseAgent
+from zerorl.helpers.env import BaseEnv
 from zerorl.functions import get_obs_act
 
 def easy_train_ppo(env_spec: str | Callable | BaseEnv, 

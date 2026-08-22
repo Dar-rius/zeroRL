@@ -199,7 +199,7 @@ class BaseTrain:
     #Profiler display
     def _log_profile_metrics(self, step: int, metrics: ProfileMetrics):
         sys.stderr.write(
-                f"\033[94m[Profile] Step {step} | FPS: {metrics.fps:.0f} | "
+                f"\n\033[94m[Profile] Step {step} | FPS: {metrics.fps:.0f} | "
                 f"Rollout: {metrics.rollout_ms:.1f}ms | Update: {metrics.update_ms:1f}ms |"
                 f"VRAM: {metrics.vram_allocated_gb:.2f}GB (Peak: {metrics.vram_peak_gb:.2f}GB) | "
                 f"RAM: {metrics.ram_mb:.0f}MB\033[0m\n"
