@@ -1,7 +1,7 @@
 [project]
 name = "zeroRl"
 version = "0.1.0"
-description = "A type-safe, algorithm-agnostic Reinforcement Learning framework"
+description = "A transparent, GPU-first reinforcement learning library. No black boxes, no boilerplate , compilable torch"
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [
@@ -20,14 +20,15 @@ dependencies = [
     "torch>=2.0.0",
     "numpy>=1.24.0",
     "gymnasium>=1.3.0",
-    "tensorboard>=2.21.0",
     "tqdm>=4.70.0",
-    "wandb>=0.28.1",
     "imageio>=2.31.0"
 ]
 
 [project.optional-dependencies]
 mujoco = ["mujoco>=3.2.0"]
+box2d = ["swig>=4.4.1", "box2d==2.3.10"]
+viz = ["wandb>=0.28.1", "tensorboard>=2.21.0"]
+pygame = ["pygame==2.6.1", "pygame-ce==2.5.8"]
 
 [tool.ruff]
 target-version="py311"
@@ -71,4 +72,7 @@ build-backend = "hatchling.build"
 dev = [
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
+    "mypy>=2.3.1",
+    "ruff>=0.16.4",
+
 ]

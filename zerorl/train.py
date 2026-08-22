@@ -333,7 +333,7 @@ class BaseTrain:
         """
         env_spec = self.env.envs[0].spec.id
         env = vectorize_env(env_spec, render_mode = "rgb_array")
-        frames = []
+        frames: Any = []
         self.agent.eval()
         for i in range(iterations):
             done_or_trunc = False
