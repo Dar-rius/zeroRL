@@ -8,6 +8,7 @@ and repeat.
 import os
 import sys
 import time
+import warnings
 try:
     import psutil
     _PSUTIL_AVAILABLE = True
@@ -292,6 +293,7 @@ class BaseTrain:
                     ram_kb = psutil.Process(os.getpid()).memory_info().rss
                     ram_mb = ram_kb / (1024 ** 2) if ram_kb > 0 else 0.0
                 else:
+                    warnings.warn("Profiles is executate but they can't capture the ram state, install psutil")
                     ram_mb = 0.0
 
                 profile_data = ProfileMetrics(
