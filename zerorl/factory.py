@@ -32,7 +32,7 @@ def get_actor_critic_buffer(state_space: tuple, action_space: tuple, config: Tra
     """Create a Buffer with standard PPO field names.
 
     Args:
-        state_space: Observation dimension.
+        state_space: Observation shape tuple, e.g. (4,) for a 4-dim vector.
         action_space: Action shape tuple, e.g. () for discrete or (n,) for continuous.
         config: Training config providing rollout_steps, num_envs, and device.
 

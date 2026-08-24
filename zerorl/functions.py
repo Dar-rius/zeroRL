@@ -78,7 +78,11 @@ def get_obs_act(env: SyncVectorEnv) -> Any:
         env: A SyncVectorEnv or compatible vectorized environment.
 
     Returns:
-        Tuple of (observation_space, action_space).
+        5-tuple of (obs_shape, act_shape, obs_n, act_n, is_discrete).
+        obs_shape/act_shape are raw shape tuples from the spaces.
+        obs_n is the observation dim (or the Image space for image obs).
+        act_n is the action dim (int for discrete, product-of-shapes for continuous).
+        is_discrete is a bool.
     """
     if hasattr(env, "single_observation_space"):
         obs_dim = env.single_observation_space

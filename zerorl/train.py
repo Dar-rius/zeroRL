@@ -81,6 +81,9 @@ class BaseTrain:
             config: Training configuration (device, paths, hyperparams).
             algo_config: Algorithm hyperparameters (passed to update_weights).
             optimizer: Optional optimizer. If None, creates Adam with algo_config.lr.
+            schedule_func: Custom LR schedule function (overrides default linear decay).
+                Takes current_step and returns a learning rate multiplier.
+            render_mode: Render mode for the environment.
             require_buffer_size: Minimum buffer size before an update is allowed.
         """
         super().__init__()
@@ -151,8 +154,8 @@ class BaseTrain:
                 else:
                     action_input = outputs["action"].cpu().numpy()
 
-            # Convention: truncate = terminated (episode naturally ended)
-            #done = truncated (episode cut short by time limit)
+            # Gymnasium v1 step() returns: obs, reward, terminated, truncated, info
+            # terminated = episode naturally ended; truncated = cut short by time limit
             next_state, reward, done, truncate, info = self.env.step(action_input)
             done_trunc = done | truncate
             done_tensor = torch.as_tensor(done_trunc, dtype=torch.float32, device=dev)
@@ -247,6 +250,7 @@ class BaseTrain:
         Repeats rollout -> update_weights -> log -> clear for num_update steps.
 
         Args:
+            save_model: Whether to save the agent weights after training.
             use_wandb: Whether to log to Weights & Biases.
             use_tb: Whether to log to TensorBoard.
         """

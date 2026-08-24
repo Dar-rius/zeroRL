@@ -17,9 +17,9 @@ class Buffer:
     PyTorch tensors for the PPO update step.
 
     Example:
-        buf = Buffer(step=2048, data={"state": (4,), "actions": ()})
+        buf = Buffer(step=2048, data={"state": (4,), "action": ()})
         for _ in range(2048):
-            buf.insert(state=..., actions=..., reward=..., ...)
+            buf.insert(state=..., action=..., reward=..., ...)
         tensors = buf.get_all()
         buf.clear()
     """
@@ -54,7 +54,8 @@ class Buffer:
             **kwargs: Keyword arguments matching the keys in self.data.
 
         Raises:
-            ValueError: If the buffer is full or a key doesn't exist.
+            ValueError: If the buffer is full.
+            KeyBufferError: If a key doesn't exist in the buffer.
         """
         if self.slice >= self.step:
             raise ValueError(f"Buffer is full (size={self.step}). Cannot insert more data.")
