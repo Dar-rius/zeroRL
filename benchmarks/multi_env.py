@@ -59,9 +59,9 @@ def benchmark_zerorl():
     )
     
     trainer = easy_train_ppo(
+        env=ENV_ID,
         config=config,
         algo_config=algo_config,
-        env_id=ENV_ID,
         hidden_layer=64,
         schedule_func=lambda step: 1.0
     )

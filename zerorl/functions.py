@@ -11,7 +11,7 @@ import sys
 import gymnasium as gym
 import torch
 from typing import Any, Callable, TypeVar
-from  gymnasium import Space
+from gymnasium import spaces
 from torch import Tensor
 from torch.nn import Parameter
 from zerorl.helpers.agent import BaseAgent
@@ -70,7 +70,7 @@ def vectorize_env(env_spec: str | Callable | BaseEnv, num_envs: int = 1, render_
     return gym.vector.SyncVectorEnv([make_env_fn(i) for i in range(num_envs)], autoreset_mode=AutoresetMode.SAME_STEP)
 
 
-def get_obs_act(env: SyncVectorEnv) -> tuple[Space, Space]:
+def get_obs_act(env: SyncVectorEnv) -> tuple[tuple[int, ...] | None, tuple, int, int]:
     """Extract observation and action spaces from a vectorized environment.
 
     Args:
@@ -85,7 +85,21 @@ def get_obs_act(env: SyncVectorEnv) -> tuple[Space, Space]:
     else:
         obs_dim = env.observation_space
         act_dim = env.action_space
-    return (obs_dim, act_dim)
+
+    is_discrete = isinstance(act_dim, spaces.Discrete)
+
+    if is_discrete:
+        act_n = act_dim.n #type: ignore
+    else:
+        act_n = act_dim.shape[-1] #type: ignore
+
+    if len(obs_dim.shape) == 3: #type: ignore
+        obs_n = obs_dim.shape
+    else:
+        obs_n = obs_dim.shape[-1] #type: ignore
+
+    act_shape = act_dim.shape
+    return (obs_dim.shape, act_shape, obs_n, act_n) #type: ignore
 
 
 def get_buffer_params_model(model: BaseAgent) -> tuple[dict[str, Parameter], dict[str, Tensor]]:

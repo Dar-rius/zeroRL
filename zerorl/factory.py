@@ -28,7 +28,7 @@ def get_env(env_id: str | Callable | BaseEnv, num_envs: int = 1, render_mode: st
     """
     return vectorize_env(env_id, num_envs, render_mode)
 
-def get_actor_critic_buffer(state_space: int, action_space: tuple, config: TrainConfig):
+def get_actor_critic_buffer(state_space: tuple, action_space: tuple, config: TrainConfig):
     """Create a Buffer with standard PPO field names.
 
     Args:
@@ -42,7 +42,7 @@ def get_actor_critic_buffer(state_space: int, action_space: tuple, config: Train
     """ 
     buffer = Buffer(step = config.rollout_steps,
                     num_envs = config.num_envs,
-                    data = {"state": (state_space, ), "action": action_space,
+                    data = {"state": state_space, "action": action_space,
                             "reward": (), "done": (), "truncated": (), "entropy": (),
                             "value": (), "return": (), "log_prob": (), "advantage": ()},
                     device=config.device)
