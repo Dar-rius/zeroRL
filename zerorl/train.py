@@ -66,9 +66,7 @@ class BaseTrain:
                  agent: BaseAgent,
                  env: Any,
                  buffer: Buffer,
-                 update_weights: Callable[[BaseAgent, Buffer, LambdaLR,
-                                           optim.Optimizer, dict[str,Tensor],
-                                           AlgoConfig | None], dict[str, Tensor]],
+                 update_weights: Callable,
                  config: TrainConfig,
                  algo_config: AlgoConfig | None = None,
                  optimizer: optim.Optimizer | None = None,
@@ -297,12 +295,12 @@ class BaseTrain:
                 raise EmptyBufferError(self.buffer.size, self.require_buffer_size)
             
             losses = self.update_weights(
-                    self.agent,
-                    self.buffer,
-                    self.scheduler,
-                    self.optimizer,
-                    last_output,
-                    self.algo_config)
+                            agent = self.agent,
+                            buffer = self.buffer,
+                            scheduler = self.scheduler,
+                            optimizer = self.optimizer,
+                            last_output = last_output,
+                            algo_config = self.algo_config)
                
             if is_profile:
                 if is_cuda: sync()
