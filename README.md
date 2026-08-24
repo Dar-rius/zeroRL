@@ -20,7 +20,7 @@ Requires **Python 3.11+**.
 pip install zerorl
 ```
 
-The package depends on `torch`, `numpy`, `gymnasium`, `tensorboard`, `wandb`, `tqdm`, and `imageio`. Make sure PyTorch is installed with the appropriate CUDA version for your system if you plan to train on GPU.
+The package depends on `torch`, `numpy`, `gymnasium`, `tqdm`, and `imageio`. Make sure PyTorch is installed with the appropriate CUDA version for your system if you plan to train on GPU.
 
 ## Quick Start
 
@@ -60,7 +60,7 @@ For full control over agent, environment, and the training loop:
 import torch
 import torch.nn as nn
 import numpy as np
-from zerorl.agent import BaseAgent, eval_action
+from zerorl.helpers.agent import BaseAgent
 from zerorl.train import BaseTrain
 from zerorl.buffer import Buffer
 from zerorl.config import TrainConfig, AlgoConfig
@@ -104,19 +104,17 @@ config = TrainConfig(project_name="cartpole_example", model_name="agent", timest
 algo_config = AlgoConfig()
 
 env = get_env("CartPole-v1", config.num_envs)
-obs_dim, act_dim = get_obs_act(env)
+obs_shape, act_shape, obs_n, act_n, _ = get_obs_act(env)
 
-agent = Agent(obs_dim.shape[-1], act_dim.n)
+agent = Agent(obs_n], act_.n)
 buffer = Buffer(
-    step=config.rollout_steps,
-    num_envs=config.num_envs,
     data={
-        "state": (obs_dim.shape[-1],), "action": (),
+        "state": obs_shape, "action": act_shape,
         "reward": (), "done": (), "truncated": (),
         "entropy": (), "value": (), "return": (),
-        "log_prob": (), "advantage": (),
+        "log_prob": (), "advantage": (), "truncated": ()
     },
-    device=config.device,
+    config=config,
 )
 
 
@@ -140,7 +138,7 @@ Implement `BaseEnv` to use your own environment with `easy_train_ppo` or `BaseTr
 ```python
 import numpy as np
 from gymnasium import spaces
-from zerorl.helpers import BaseEnv
+from zerorl.helpers.env import BaseEnv
 
 
 class GridWorld(BaseEnv):
@@ -182,36 +180,14 @@ trainer = easy_train_ppo(GridWorld(), config, algo_config)
 trainer.train()
 ```
 
-## What's Included
+### Modular function
 
-| Component | Description |
-| --- | --- |
-| `BaseAgent` | Plain `nn.Module` base class. Agents must define `get_action()` returning a dict and `build_distributions()` returning a Distribution from torch. |
-| `BaseEnv` | Abstract Gymnasium environment. Implement `reset()`, `step()`, and `close()`. |
-| `BaseTrain` | Training orchestrator: rollout collection, observation normalization, updates weights, model saving ans profiling. |
-| `Buffer` | Inspired from TorchDict is a dictionary-like data container for tensors that lets you manipulate a collection of tensors. |
-| `AlgoConfig` | Mutable hyperparameters for RL algorithms: `lr`, `gamma`, `gae_lambda`, `clip_eps`, `ent_coef`, `value_coef`, `batch_size`, `epochs`, `tau`. |
-| `TrainConfig` | Training settings with auto-computed `model_path`, `num_update`, and `device`. |
-| `easy_train_ppo` | One-call setup: creates agent, env, buffer, and returns a ready-to-train `BaseTrain`. |
-| `ActorCriticAgent` | Built-in agent with orthogonal init, supports discrete and continuous action spaces. |
-| `vectorize_env` | Wraps env specs into `SyncVectorEnv` with `SAME_STEP` autoreset. |
-
-## RL Algorithm included
-
-| Algorithm | Included |
-| --- | --- |
-| `PPO` | ✅ |
-| `SAC` | ❌ |
-| `DQN` | ❌ |
-| `TD3` | ❌ |
-| `DDPM` | ❌ |
-
-All RL algorithm is a modular function where you can change some components:
+All RL algorithm are modular function where you can change some components:
 
 ```python
 from torch import Tensor
 from zerorl.algorithms.ppo import ppo_func, gae_compute
-from zerorl.algorithms.agent import BaseAgent
+from zerorl.algorithms.helpers.agent import BaseAgent
 
 def custom_ppo_loss(agent: BaseAgent,
                     params: dict,
@@ -237,6 +213,69 @@ def update_weights(agent, buffer, scheduler, optimizer, last_output, algo_config
     return ppo_func(agent, optimizer, buffer, algo_config, scheduler, ppo_loss_func = custom_ppo_loss, device=agent.device)
 ```
 
+### Implemented your own algorithm
+
+```python
+import torch
+from zerorl import BaseTrain
+
+# 1. Define your pure PyTorch update function
+def reinforce_update(agent, buffer, optimizer, algo_config, scheduler=None, last_output=None):
+    data = buffer.get_all()
+    rewards = data["reward"].squeeze()
+    dones = data["done"].squeeze()
+    returns = []
+    R = 0.0
+    for r, d in zip(reversed(rewards.tolist()), reversed(dones.tolist())):
+        if d: R = 0.0
+        R = r + algo_config.gamma * R
+        returns.insert(0, R)
+    
+    returns = torch.tensor(returns, device=agent.device)
+    logits, _ = agent(data["state"])
+    dist = agent.build_distribution(logits)
+    log_probs = dist.log_prob(data["action"]).sum(dim=-1)
+    loss = -(log_probs * returns).mean()
+    optimizer.zero_grad()
+    loss.backward()
+    torch.nn.utils.clip_grad_norm_(agent.parameters(), 0.5) # Max grad norm
+    optimizer.step()
+    return {"loss": loss}
+
+# 2. Plug it in. BaseTrain handles rollouts.
+trainer = BaseTrain(
+    agent=agent, 
+    env=env, 
+    buffer=buffer, 
+    update_weights=reinforce_update, 
+    config=config, 
+    algo_config=algo_config
+)
+trainer.train()
+```
+
+## What's Included
+
+| Component | Description |
+| --- | --- |
+| `BaseAgent` | Plain `nn.Module` base class. Agents must define `get_action()` returning a dict and `build_distributions()` returning a Distribution from torch. |
+| `BaseEnv` | Abstract Gymnasium environment. Implement `reset()`, `step()`, and `close()`. |
+| `BaseTrain` | Training orchestrator: rollout collection, observation normalization, updates weights, model saving ans profiling. |
+| `Buffer` | Inspired from TorchDict is a dictionary-like data container for tensors that lets you manipulate a collection of tensors. |
+| `AlgoConfig` | Mutable hyperparameters for RL algorithms: `lr`, `gamma`, `gae_lambda`, `clip_eps`, `ent_coef`, `value_coef`, `batch_size`, `epochs`, `tau`. |
+| `TrainConfig` | Training settings with auto-computed `model_path`, `num_update`, and `device`. |
+| `easy_train_ppo` | One-call setup: creates agent, env, buffer, and returns a ready-to-train `BaseTrain`. |
+| `ActorCriticAgent` | Built-in agent with orthogonal init, supports discrete and continuous action spaces. |
+| `vectorize_env` | Wraps env specs into `SyncVectorEnv` with `SAME_STEP` autoreset. |
+
+| Algorithm | Included |
+| --- | --- |
+| `PPO` | ✅ |
+| `SAC` | ❌ |
+| `DQN` | ❌ |
+| `TD3` | ❌ |
+| `DDPM` | ❌ |
+
 ## Configuration
 
 ```python
@@ -258,27 +297,17 @@ train = TrainConfig(
     model_name="my_agent",                               # Required, used for save model in specific path
     project_name="my_experiment",                        # Required,  used for wandb/tensorboard
     model_save_path=".checkpoints",                      # Default
-    timestamp=1_000_000,                                 # Total env timesteps
+    timestamp=1_000_000,                                 # Total timesteps
     rollout_steps=2048,                                  # Steps per rollout
     num_envs=1,                                          # Parallel environments
-    normalize=False,                                     # Normalize obs env
+    normalize=False,                                     # Normalize observations of environment
+    profile=False,                                       # Profile steps of training
     device=torch.device("cuda"),                         # Tensor device, check if the device has a GPU 
     num_update=timestamp // (rollout_steps * num_envs),  # Number of weights update 
     model_path=".checkpoints/my_agent.pt"                # Path for saving agent weights 
 
 )
 ```
-
-## Requirements
-
-- Python >= 3.11
-- PyTorch >= 2.0
-- NumPy >= 1.24
-- Gymnasium >= 1.3
-- TensorBoard >= 2.21
-- Weights & Biases >= 0.28
-- tqdm >= 4.70.0
-- imageio >= 2.31.0
 
 ## License
 
