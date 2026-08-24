@@ -421,6 +421,52 @@ class TestBaseTrainLogMetrics:
         env.close()
 
 
+class TestBaseTrainOptionalDeps:
+    """Tests for graceful handling when wandb/tensorboard are not installed."""
+
+    @pytest.mark.gpu
+    def test_train_wandb_none_raises_import_error(self, tmp_path: Path, device: torch.device) -> None:
+        agent = MockAgent()
+        env = FakeVecEnv(num_envs=1, obs_dim=4, act_dim=2, steps_until_done=(100,), auto_reset=True)
+        buf = Buffer(step=8, num_envs=1, data={
+            "state": (4,), "reward": (), "done": (),
+            "action": (), "log_prob": (), "entropy": (), "value": (),
+            "truncated": (), "final_value": (),
+        }, device=device)
+        cfg = _make_train_config(tmp_path, device)
+        cfg.rollout_steps = 8
+        cfg.timestamp = 8
+        cfg.num_envs = 1
+        cfg.num_update = 1
+        trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, AlgoConfig(),
+                            require_buffer_size=4)
+        with patch("zerorl.train.wandb", None):
+            with pytest.raises(ImportError, match="wandb"):
+                trainer.train(use_wandb=True, use_tb=False)
+        env.close()
+
+    @pytest.mark.gpu
+    def test_train_tb_writer_none_raises_import_error(self, tmp_path: Path, device: torch.device) -> None:
+        agent = MockAgent()
+        env = FakeVecEnv(num_envs=1, obs_dim=4, act_dim=2, steps_until_done=(100,), auto_reset=True)
+        buf = Buffer(step=8, num_envs=1, data={
+            "state": (4,), "reward": (), "done": (),
+            "action": (), "log_prob": (), "entropy": (), "value": (),
+            "truncated": (), "final_value": (),
+        }, device=device)
+        cfg = _make_train_config(tmp_path, device)
+        cfg.rollout_steps = 8
+        cfg.timestamp = 8
+        cfg.num_envs = 1
+        cfg.num_update = 1
+        trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, AlgoConfig(),
+                            require_buffer_size=4)
+        trainer.tb_writer = None
+        with pytest.raises(ImportError, match="tensorboard"):
+            trainer.train(use_wandb=False, use_tb=True)
+        env.close()
+
+
 class TestBaseTrainVectorizedRollout:
     @pytest.mark.gpu
     def test_rollout_phase_vectorized(self, tmp_path: Path, device: torch.device) -> None:

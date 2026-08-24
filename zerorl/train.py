@@ -19,13 +19,19 @@ import imageio
 import torch
 import gymnasium as gym
 from dataclasses import dataclass, asdict
-import wandb
+try:
+    import wandb
+except ImportError:
+    wandb = None  # type: ignore[assignment]
 from tqdm import tqdm
 from typing import Callable, Any
 from torch import Tensor
 from torch import optim
 from torch.optim.lr_scheduler import LambdaLR
-from torch.utils.tensorboard import SummaryWriter
+try:
+    from torch.utils.tensorboard import SummaryWriter
+except ImportError:
+    SummaryWriter = None  # type: ignore[misc,assignment]
 from zerorl.helpers.agent import BaseAgent
 from zerorl.buffer import Buffer
 from zerorl.config import TrainConfig, AlgoConfig
@@ -120,10 +126,14 @@ class BaseTrain:
         self.require_buffer_size = require_buffer_size
         self.normalizer = NormMeanStd(obs_shape, config.device)
         tb_log_dir = os.path.join(self.config.model_save_path, "tensorboard")
-        self.tb_writer = SummaryWriter(tb_log_dir)
         self.current_episode_reward: Tensor | None = None
         self.episode_rewards: list[float] = []
         self.env_device = getattr(self.env, "device", "cpu")
+        if SummaryWriter is not None:
+            tb_log_dir = os.path.join(self.config.model_save_path, "tensorboard")
+            self.tb_writer = SummaryWriter(tb_log_dir)
+        else:
+            self.tb_writer = None #type: ignore[assignment]
 
 
     def rollout_phase(self):
@@ -236,12 +246,16 @@ class BaseTrain:
             for k, v in zip(tensor_keys, cpu_vals):
                 clean_metrics[k] = float(v)
 
-        if use_wandb: wandb.log(clean_metrics, step=step) #type: ignore[attr-defined]
+        if use_wandb:
+            if wandb is None:
+                raise ImportError("`wandb` is not installed. Install it with: pip install wandb")
+            wandb.log(clean_metrics, step=step) #type: ignore[attr-defined]
 
         if use_tb:
+            if self.tb_writer is None:
+                raise ImportError("`tensorboard` is not installed. Install it with: pip install tensorboard")
             for key, value in clean_metrics.items():
                 self.tb_writer.add_scalar(key, value, step)
-
 
 
     def train(self, *, save_model: bool = False, use_wandb: bool = False, use_tb: bool = False):
@@ -262,11 +276,10 @@ class BaseTrain:
         state, _ = self.env.reset()
         self.state = torch.as_tensor(state, dtype=torch.float32, device=self.config.device)
         if use_wandb:
-            try:
-                wandb.init(project=self.config.project_name, config={"Train Configs": self.config.__dict__, #type: ignore[attr-defined]
-                         "Hyper Parameters": self.algo_config.__dict__ if self.algo_config else {}}) 
-            except ImportError:
+            if wandb is None:
                 raise ImportError("`wandb` is not installed. Install it with: pip install wandb")
+            wandb.init(project=self.config.project_name, config={"Train Configs": self.config.__dict__, #type: ignore[attr-defined]
+                     "Hyper Parameters": self.algo_config.__dict__ if self.algo_config else {}}) 
         for step in tqdm(range(self.config.num_update)):
             if is_profile:
                 if is_cuda :
@@ -327,8 +340,8 @@ class BaseTrain:
 
         self.env.close()
         #Close Wandb or TensorBoard
-        if use_wandb: wandb.finish() #type: ignore[attr-defined]
-        if use_tb: self.tb_writer.close()
+        if use_wandb and wandb is not None: wandb.finish() #type: ignore[attr-defined]
+        if use_tb and self.tb_writer is not None: self.tb_writer.close()
         #Save model
         if save_model: self.save_model()
 
