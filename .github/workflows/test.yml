@@ -51,7 +51,7 @@ jobs:
         
       - name: Sync dependencies
         # uv va installer les paquets directement dans le système du Jetson
-        run: uv sync --all-extras --dev
+        run: uv sync --dev
 
       - name: Run GPU Tests
         run: uv run pytest tests/ -m "gpu"
