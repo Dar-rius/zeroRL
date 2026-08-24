@@ -40,12 +40,10 @@ def get_actor_critic_buffer(state_space: tuple, action_space: tuple, config: Tra
         Buffer pre-allocated with keys: state, action, reward, done, truncated,
         entropy, value, return, log_prob, advantage.
     """ 
-    buffer = Buffer(step = config.rollout_steps,
-                    num_envs = config.num_envs,
-                    data = {"state": state_space, "action": action_space,
+    buffer = Buffer(data = {"state": state_space, "action": action_space,
                             "reward": (), "done": (), "truncated": (), "entropy": (),
                             "value": (), "return": (), "log_prob": (), "advantage": ()},
-                    device=config.device)
+                    config=config)
     return buffer
 
 class ActorCriticAgent(BaseAgent):

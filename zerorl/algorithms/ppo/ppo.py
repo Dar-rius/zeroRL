@@ -220,8 +220,8 @@ def ppo_func(agent: BaseAgent,
         return history
 
     # Compute losses and update weights
-    scheduler.step()
     history = update()
+    scheduler.step()
     # Return average losses over all actual updates ([:index_loss] excludes
     # any unused pre-allocated entries)
     if history:
