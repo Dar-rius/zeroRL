@@ -66,8 +66,6 @@ def benchmark_zerorl():
 
     obs, _ = trainer.env.reset(seed=SEED)
     trainer.state = torch.as_tensor(obs, dtype=torch.float32, device=DEVICE)
-    print(trainer.env.action_space)
-    print(trainer.buffer.data["action"].shape)
 
     # Warmup
     for _ in range(2):

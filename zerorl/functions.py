@@ -98,7 +98,7 @@ def get_obs_act(env: SyncVectorEnv) -> Any:
         obs_n = obs_dim
     else:
         obs_n = obs_dim.shape[-1] #type: ignore
-    return (obs_dim.shape, act_dim.shape, obs_n, act_n)
+    return (obs_dim.shape, act_dim.shape, obs_n, act_n, is_discrete)
 
 
 def get_buffer_params_model(model: BaseAgent) -> tuple[dict[str, Parameter], dict[str, Tensor]]:

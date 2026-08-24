@@ -5,7 +5,6 @@ and PPO update into a ready-to-train BaseTrain instance.
 """
 
 from typing import Callable
-from gymnasium import spaces
 from torch import optim
 from zerorl.factory import get_env, get_actor_critic_buffer, ActorCriticAgent
 from zerorl.train import BaseTrain
@@ -42,8 +41,7 @@ def easy_train_ppo(env_spec: str | Callable | BaseEnv,
         BaseTrain instance ready for .train() or .test().
     """
     env = get_env(env_spec, config.num_envs, render_mode)
-    is_discrete = isinstance(env.action_space, spaces.Discrete)
-    obs_dim, act_dim, n_obs, n_act = get_obs_act(env)
+    obs_dim, act_dim, n_obs, n_act, is_discrete = get_obs_act(env)
     
     if base_agent is not None:
         agent = base_agent
