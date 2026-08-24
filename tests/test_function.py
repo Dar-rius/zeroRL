@@ -4,7 +4,7 @@ import pytest
 import torch
 import torch.nn as nn
 from zerorl.helpers.agent import BaseAgent, eval_action
-from zerorl.functions import get_buffer_params_model, fast_compile, _cxx_compiler_available
+from zerorl.functions import get_buffer_params_model, fast_compile, _cxx_compiler_available, get_obs_act, vectorize_env
 
 @pytest.fixture
 def device() -> torch.device:
@@ -50,3 +50,54 @@ class TestCompilerCheck:
         def add(a, b):
             return a + b
         assert add(1, 2) == 3  # type: ignore[arg-type]
+
+
+class TestGetObsAct:
+    def test_discrete_env_returns_five_tuple(self) -> None:
+        env = vectorize_env("CartPole-v1", 1)
+        result = get_obs_act(env)
+        assert len(result) == 5
+        env.close()
+
+    def test_discrete_env_is_discrete_true(self) -> None:
+        env = vectorize_env("CartPole-v1", 1)
+        obs_shape, act_shape, obs_n, act_n, is_discrete = get_obs_act(env)
+        assert is_discrete is True
+        env.close()
+
+    def test_discrete_env_action_count(self) -> None:
+        env = vectorize_env("CartPole-v1", 1)
+        _, _, _, act_n, _ = get_obs_act(env)
+        assert act_n == 2
+        env.close()
+
+    def test_discrete_env_action_shape_is_empty(self) -> None:
+        env = vectorize_env("CartPole-v1", 1)
+        _, act_shape, _, _, _ = get_obs_act(env)
+        assert act_shape == ()
+        env.close()
+
+    def test_discrete_env_obs_dim(self) -> None:
+        env = vectorize_env("CartPole-v1", 1)
+        obs_shape, _, obs_n, _, _ = get_obs_act(env)
+        assert obs_shape == (4,)
+        assert obs_n == 4
+        env.close()
+
+    def test_continuous_env_is_discrete_false(self) -> None:
+        env = vectorize_env("Pendulum-v1", 1)
+        _, _, _, _, is_discrete = get_obs_act(env)
+        assert is_discrete is False
+        env.close()
+
+    def test_continuous_env_action_count(self) -> None:
+        env = vectorize_env("Pendulum-v1", 1)
+        _, _, _, act_n, _ = get_obs_act(env)
+        assert act_n == 1
+        env.close()
+
+    def test_continuous_env_action_shape(self) -> None:
+        env = vectorize_env("Pendulum-v1", 1)
+        _, act_shape, _, _, _ = get_obs_act(env)
+        assert act_shape == (1,)
+        env.close()
