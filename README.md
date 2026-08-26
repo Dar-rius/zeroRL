@@ -1,6 +1,6 @@
-[![PyPI version](https://img.shields.io/pypi/v/zerorl.svg)](https://pypi.org/project/zerorl/)
-[![Python](https://img.shields.io/pypi/pyversions/zerorl.svg)](https://pypi.org/project/zerorl/)
-[![License](https://img.shields.io/pypi/l/zerorl.svg)](https://pypi.org/project/zerorl/)
+[![PyPI version](https://img.shields.io/pypi/v/zerorl)](https://pypi.org/project/zerorl/)
+[![Python](https://img.shields.io/pypi/pyversions/zerorl)](https://pypi.org/project/zerorl/)
+[![License](https://img.shields.io/pypi/l/zerorl)](https://pypi.org/project/zerorl/)
 
 <div align="center">
   <h1> zeroRL </h1>
