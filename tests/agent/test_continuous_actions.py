@@ -10,12 +10,19 @@ from torch.optim.lr_scheduler import LambdaLR
 from zerorl.helpers.agent import BaseAgent, eval_action
 from zerorl.algorithms.ppo.ppo import gae_compute, ppo_func
 from zerorl.buffer import Buffer
-from zerorl.config import AlgoConfig
+from zerorl.config import AlgoConfig, TrainConfig
 from zerorl.helpers.env import BaseEnv
 
 @pytest.fixture
 def device() -> torch.device:
     return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+def _make_config(step: int, num_envs: int = 1, device: torch.device = torch.device("cpu")) -> TrainConfig:
+    cfg = TrainConfig(model_name="test", model_save_path="/tmp", project_name="test")
+    cfg.rollout_steps = step
+    cfg.num_envs = num_envs
+    cfg.device = device
+    return cfg
 
 
 # =============================================================================
@@ -108,7 +115,6 @@ class TestPPOContinuousIntegration:
         # 2. Setup Buffer
         n_steps = 128
         raw_buf = Buffer(
-            step=n_steps,
             data={
                 "state": (obs_dim,),
                 "action": (act_dim,),
@@ -119,7 +125,7 @@ class TestPPOContinuousIntegration:
                 "advantage": (),
                 "return": (),
             },
-            device=device,
+            config=_make_config(n_steps, device=device),
         )
 
         # 3. Collect Rollout (Interact with real env)

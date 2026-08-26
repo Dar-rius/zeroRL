@@ -1,7 +1,8 @@
 """Proximal Policy Optimization (PPO) standalone functions.
 
 Provides gae_compute(), ppo_loss(), and ppo_func() for computing GAE
-advantages and running the clipped surrogate loss optimization.
+advantages, computing the clipped surrogate loss, and running the PPO
+optimization step.
 Reference: Schulman et al., "Proximal Policy Optimization Algorithms" (2017)
 """
 
@@ -149,7 +150,7 @@ def ppo_func(agent: BaseAgent,
         agent: The policy network.
         optimizer: Optimizer for the agent parameters.
         buffer: Buffer containing rollout data with keys "state", "action",
-            "log_prob", "advantage", "return".
+            "log_prob", "value", "advantage", "return".
         algo_config: Algorithm configuration (batch_size, epochs, clip_eps, etc.).
         scheduler: Learning rate scheduler (stepped once per call).
         device: Torch device for computations.
@@ -219,8 +220,8 @@ def ppo_func(agent: BaseAgent,
         return history
 
     # Compute losses and update weights
-    scheduler.step()
     history = update()
+    scheduler.step()
     # Return average losses over all actual updates ([:index_loss] excludes
     # any unused pre-allocated entries)
     if history:

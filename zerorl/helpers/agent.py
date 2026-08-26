@@ -1,7 +1,7 @@
-"""Abstract base agent interface for reinforcement learning.
+"""Base agent interface for reinforcement learning.
 
-Provides BaseAgent, an ABC + nn.Module hybrid that enforces a consistent
-policy/value interface for all RL agent implementations.
+Provides BaseAgent, an nn.Module base class with runtime contract
+enforcement for all RL agent implementations.
 """
 
 import torch
@@ -29,11 +29,11 @@ def eval_action(dist: Distribution, action: Tensor) -> tuple[Tensor, Tensor]:
 
 
 class BaseAgent(nn.Module):
-    """Abstract base class for all RL agents.
+    """Base class for all RL agents.
 
-    Subclasses must implement forward() and build_distribution(). The
-    get_action() template method composes those two to sample actions,
-    compute log probabilities, and return critic values.
+    Subclasses must implement get_action() (enforced by BaseTrain.__init__),
+    forward() (enforced by ppo_func), and build_distribution() (enforced by
+    ppo_func). Enforcement is at runtime via assert_agent_contract().
     """
 
     def __init__(self):

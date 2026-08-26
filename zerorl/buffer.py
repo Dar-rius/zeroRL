@@ -6,6 +6,7 @@ tensors and converts them for the PPO update step.
 
 import torch
 from zerorl.errors import KeyBufferError
+from zerorl.config import TrainConfig
 
 
 class Buffer:
@@ -17,18 +18,16 @@ class Buffer:
     PyTorch tensors for the PPO update step.
 
     Example:
-        buf = Buffer(step=2048, data={"state": (4,), "actions": ()})
+        buf = Buffer(step=2048, data={"state": (4,), "action": ()})
         for _ in range(2048):
-            buf.insert(state=..., actions=..., reward=..., ...)
+            buf.insert(state=..., action=..., reward=..., ...)
         tensors = buf.get_all()
         buf.clear()
     """
 
     def __init__(self,
-                 step: int,
                  data: dict[str, tuple],
-                 num_envs: int = 1,
-                 device: torch.device = torch.device("cpu")):
+                 config: TrainConfig):
         """Initialize pre-allocated arrays.
 
         Args:
@@ -36,11 +35,11 @@ class Buffer:
             data: Dict mapping field names to shape tuples (e.g. {"state": (4,), "action": ()}).
             device: Torch device to allocate tensors on.
         """
-        self.step = step
-        self.num_envs = num_envs
+        self.step = config.rollout_steps
+        self.num_envs = config.num_envs
         self.slice: int = 0
         self.data = {
-                name: torch.zeros((self.step, self.num_envs, *shape), dtype = torch.float32, device = device)
+                name: torch.zeros((self.step, self.num_envs, *shape), dtype = torch.float32, device = config.device)
                 for name, shape in data.items()
                 }
 
@@ -54,7 +53,8 @@ class Buffer:
             **kwargs: Keyword arguments matching the keys in self.data.
 
         Raises:
-            ValueError: If the buffer is full or a key doesn't exist.
+            ValueError: If the buffer is full.
+            KeyBufferError: If a key doesn't exist in the buffer.
         """
         if self.slice >= self.step:
             raise ValueError(f"Buffer is full (size={self.step}). Cannot insert more data.")

@@ -118,3 +118,19 @@ class TestEasyTrainPpo:
         assert isinstance(train.env.envs[0], CustomCartPole)
         assert train.env.envs[0] is not env
         train.env.close()
+
+    def test_discrete_cartpole_uses_categorical(self, tmp_config, device) -> None:
+        train = easy_train_ppo("CartPole-v1", config=tmp_config, algo_config=AlgoConfig())
+        state = torch.randn(1, 4, device=device)
+        logits, _ = train.agent.forward(state)
+        dist = train.agent.build_distribution(logits)
+        assert isinstance(dist, torch.distributions.Categorical)
+        train.env.close()
+
+    def test_continuous_pendulum_uses_normal(self, tmp_config, device) -> None:
+        train = easy_train_ppo("Pendulum-v1", config=tmp_config, algo_config=AlgoConfig())
+        state = torch.randn(1, 3, device=device)
+        logits, _ = train.agent.forward(state)
+        dist = train.agent.build_distribution(logits)
+        assert isinstance(dist, torch.distributions.Normal)
+        train.env.close()

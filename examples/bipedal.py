@@ -67,14 +67,12 @@ config.device = torch.device("cpu")
 algo_config = AlgoConfig(ent_coef=0.0)
 env = get_env("BipedalWalker-v3", config.num_envs)
 
-obs_dim, act_dim = get_obs_act(env)
-agent = Agent(obs_dim.shape[-1], act_dim.shape[0]) #type: ignore
-buffer = Buffer(step=config.rollout_steps,
-                num_envs = config.num_envs,
-                data={"state": (obs_dim.shape[-1], ), "action": (act_dim.shape[0], ), #type: ignore
+obs_dim, act_dim, obs_n, act_n, _ = get_obs_act(env)
+agent = Agent(obs_n, act_n) #type: ignore
+buffer = Buffer(data={"state": obs_dim, "action": act_dim, #type: ignore
                       "reward": (), "done": (), "entropy": (), "value": (),
                       "return": (), "log_prob": (), "advantage": (), "truncated": ()},
-                device=config.device)
+                config=config)
 
 def update_weights(agent, buffer, scheduler, optimizer, last_output, algo_config):
     """Compute GAE advantages then run PPO update."""

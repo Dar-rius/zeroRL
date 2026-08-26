@@ -10,8 +10,9 @@ import copy
 import sys
 import gymnasium as gym
 import torch
+import numpy as np
 from typing import Any, Callable, TypeVar
-from  gymnasium import Space
+from gymnasium import spaces
 from torch import Tensor
 from torch.nn import Parameter
 from zerorl.helpers.agent import BaseAgent
@@ -70,14 +71,18 @@ def vectorize_env(env_spec: str | Callable | BaseEnv, num_envs: int = 1, render_
     return gym.vector.SyncVectorEnv([make_env_fn(i) for i in range(num_envs)], autoreset_mode=AutoresetMode.SAME_STEP)
 
 
-def get_obs_act(env: SyncVectorEnv) -> tuple[Space, Space]:
+def get_obs_act(env: SyncVectorEnv) -> Any:
     """Extract observation and action spaces from a vectorized environment.
 
     Args:
         env: A SyncVectorEnv or compatible vectorized environment.
 
     Returns:
-        Tuple of (observation_space, action_space).
+        5-tuple of (obs_shape, act_shape, obs_n, act_n, is_discrete).
+        obs_shape/act_shape are raw shape tuples from the spaces.
+        obs_n is the observation dim (or the Image space for image obs).
+        act_n is the action dim (int for discrete, product-of-shapes for continuous).
+        is_discrete is a bool.
     """
     if hasattr(env, "single_observation_space"):
         obs_dim = env.single_observation_space
@@ -85,7 +90,19 @@ def get_obs_act(env: SyncVectorEnv) -> tuple[Space, Space]:
     else:
         obs_dim = env.observation_space
         act_dim = env.action_space
-    return (obs_dim, act_dim)
+
+    is_discrete = isinstance(act_dim, spaces.Discrete)
+
+    if is_discrete:
+        act_n = act_dim.n #type: ignore
+    else:
+        act_n = int(np.prod(act_dim.shape)) #type: ignore
+
+    if len(obs_dim.shape) == 3: #type: ignore
+        obs_n = obs_dim
+    else:
+        obs_n = obs_dim.shape[-1] #type: ignore
+    return (obs_dim.shape, act_dim.shape, obs_n, act_n, is_discrete)
 
 
 def get_buffer_params_model(model: BaseAgent) -> tuple[dict[str, Parameter], dict[str, Tensor]]:

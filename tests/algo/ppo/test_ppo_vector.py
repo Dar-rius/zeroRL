@@ -8,12 +8,19 @@ from torch.optim.lr_scheduler import LambdaLR
 from zerorl.helpers.agent import BaseAgent, eval_action
 from zerorl.algorithms.ppo.ppo import gae_compute, ppo_func
 from zerorl.buffer import Buffer
-from zerorl.config import AlgoConfig
+from zerorl.config import AlgoConfig, TrainConfig
 from zerorl.functions import vectorize_env
 
 @pytest.fixture
 def device() -> torch.device:
     return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+def _make_config(step: int, num_envs: int = 1, device: torch.device = torch.device("cpu")) -> TrainConfig:
+    cfg = TrainConfig(model_name="test", model_save_path="/tmp", project_name="test")
+    cfg.rollout_steps = step
+    cfg.num_envs = num_envs
+    cfg.device = device
+    return cfg
 
 
 class DiscreteTestAgent(BaseAgent):
@@ -56,8 +63,6 @@ class TestPPOVectorizedIntegration:
 
         # 2. Setup Buffer with num_envs to match vectorized outputs
         buf = Buffer(
-            step=T,
-            num_envs=num_envs, 
             data={
                 "state": (obs_dim, ),
                 "action": (),
@@ -68,7 +73,7 @@ class TestPPOVectorizedIntegration:
                 "advantage": (),
                 "return": (),
             },
-            device=device,
+            config=_make_config(T, num_envs=num_envs, device=device),
         )
 
         # 3. Simulate Vectorized Rollout

@@ -22,8 +22,8 @@ GAE_LAMBDA = 0.95
 CLIP_RANGE = 0.2
 ENT_COEF = 0.01
 VF_COEF = 0.5
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-#DEVICE = "cpu"
+#DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+DEVICE = "cpu"
 SEED = 42
 
 def sync_gpu():
@@ -45,7 +45,7 @@ def benchmark_zerorl():
         rollout_steps=ROLLOUT_STEPS,
         num_envs=NUM_ENVS
     )
-#    config.device = torch.device(DEVICE)
+    config.device = torch.device(DEVICE)
     
     algo_config = AlgoConfig(
         lr=LR,
@@ -59,9 +59,9 @@ def benchmark_zerorl():
     )
     
     trainer = easy_train_ppo(
+        env_spec=ENV_ID,
         config=config,
         algo_config=algo_config,
-        env_id=ENV_ID,
         hidden_layer=64,
         schedule_func=lambda step: 1.0
     )

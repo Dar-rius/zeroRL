@@ -5,7 +5,6 @@ and PPO update into a ready-to-train BaseTrain instance.
 """
 
 from typing import Callable
-from gymnasium import spaces
 from torch import optim
 from zerorl.factory import get_env, get_actor_critic_buffer, ActorCriticAgent
 from zerorl.train import BaseTrain
@@ -42,22 +41,14 @@ def easy_train_ppo(env_spec: str | Callable | BaseEnv,
         BaseTrain instance ready for .train() or .test().
     """
     env = get_env(env_spec, config.num_envs, render_mode)
-    obs_dim, act_dim = get_obs_act (env)
-    is_discrete = isinstance(act_dim, spaces.Discrete)
-
-    if is_discrete:
-        act_n = act_dim.n #type: ignore
-        act_shape = ()
-    else:
-        act_n = act_dim.shape[0] #type: ignore
-        act_shape = (act_n, ) #type: ignore
+    obs_dim, act_dim, n_obs, n_act, is_discrete = get_obs_act(env)
     
     if base_agent is not None:
         agent = base_agent
     else:
-        agent = ActorCriticAgent(obs_dim.shape[-1], act_n, is_discrete, hidden_layer) #type: ignore
+        agent = ActorCriticAgent(n_obs, n_act, is_discrete, hidden_layer) #type: ignore
 
-    buffer = get_actor_critic_buffer(obs_dim.shape[-1], act_shape, config) #type: ignore
+    buffer = get_actor_critic_buffer(obs_dim, act_dim, config) #type: ignore
 
     #update weights function
     def easy_update_weights(agent, buffer, scheduler, optimizer, last_output, algo_config):

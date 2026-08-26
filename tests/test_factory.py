@@ -46,14 +46,14 @@ class TestGetEnv:
 
 class TestGetActorCriticBuffer:
     def test_buffer_has_all_required_keys(self, tmp_config) -> None:
-        buf = get_actor_critic_buffer(4, (2,), tmp_config)
+        buf = get_actor_critic_buffer((4,), (2,), tmp_config)
         expected_keys = {"state", "action", "reward", "done", "entropy",
                          "value", "return", "log_prob", "advantage",
                          "truncated"}
         assert set(buf.data.keys()) == expected_keys
 
     def test_buffer_shapes(self, tmp_config) -> None:
-        buf = get_actor_critic_buffer(4, (2,), tmp_config)
+        buf = get_actor_critic_buffer((4,), (2,), tmp_config)
         assert buf.data["state"].shape == (8, 1, 4)
         assert buf.data["action"].shape == (8, 1, 2)
         assert buf.data["reward"].shape == (8, 1)

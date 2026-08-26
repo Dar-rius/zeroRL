@@ -1,6 +1,6 @@
 """Proximal Policy Optimization algorithm.
 
-Re-exports gae_compute and ppo_func from the ppo module.
+Re-exports gae_compute, ppo_func, and easy_train_ppo.
 """
 
 from .ppo import gae_compute, ppo_func

@@ -26,7 +26,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
 
       - name: Set up Python ${{ matrix.python-version }}
         run: uv python install ${{ matrix.python-version }}
@@ -47,11 +47,11 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Setup UV and Python
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
         
       - name: Sync dependencies
         # uv va installer les paquets directement dans le système du Jetson
-        run: uv sync --all-extras --dev
+        run: uv sync --dev
 
       - name: Run GPU Tests
         run: uv run pytest tests/ -m "gpu"

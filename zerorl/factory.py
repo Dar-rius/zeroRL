@@ -28,11 +28,11 @@ def get_env(env_id: str | Callable | BaseEnv, num_envs: int = 1, render_mode: st
     """
     return vectorize_env(env_id, num_envs, render_mode)
 
-def get_actor_critic_buffer(state_space: int, action_space: tuple, config: TrainConfig):
+def get_actor_critic_buffer(state_space: tuple, action_space: tuple, config: TrainConfig):
     """Create a Buffer with standard PPO field names.
 
     Args:
-        state_space: Observation dimension.
+        state_space: Observation shape tuple, e.g. (4,) for a 4-dim vector.
         action_space: Action shape tuple, e.g. () for discrete or (n,) for continuous.
         config: Training config providing rollout_steps, num_envs, and device.
 
@@ -40,12 +40,10 @@ def get_actor_critic_buffer(state_space: int, action_space: tuple, config: Train
         Buffer pre-allocated with keys: state, action, reward, done, truncated,
         entropy, value, return, log_prob, advantage.
     """ 
-    buffer = Buffer(step = config.rollout_steps,
-                    num_envs = config.num_envs,
-                    data = {"state": (state_space, ), "action": action_space,
+    buffer = Buffer(data = {"state": state_space, "action": action_space,
                             "reward": (), "done": (), "truncated": (), "entropy": (),
                             "value": (), "return": (), "log_prob": (), "advantage": ()},
-                    device=config.device)
+                    config=config)
     return buffer
 
 class ActorCriticAgent(BaseAgent):
