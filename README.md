@@ -4,14 +4,20 @@
 
 # zeroRL
 
-Most reinforcement learning libraries are black boxes. If you want to modify a specific function, you often run into unexpected errors. If you want to implement and test a new RL algorithm, you usually have to spend hours reading documentation and digging through the codebase just to understand how everything works.
+Reinforcement learning is a demanding field that requires significant time and focus to train agents properly. Existing solutions such as SB3, RLlib, and Tianshou reduce this friction by providing ready to use implementations. However, some experiments and deeper modifications can be difficult to implement and may require understanding their abstractions and navigating a more complex codebase.
 
-**ZeroRL** was built to solve this problem. It is an RL library designed to help researchers and labs prototype new environments and algorithms quickly. Its modular architecture makes it easy to customize the components you need without having to understand a massive codebase or fight against the library's abstractions.
+zeroRL takes a different approach: a simple, explicit, and modular architecture designed to facilitate experimentation in reinforcement learning.
 
-Built on PyTorch 2, ZeroRL is designed with scalability, flexibility, and research productivity in mind.
+The framework allows users to:
 
-The goal is to make RL research faster, simpler, and more enjoyable.
+- Easily implement algorithms that are not included in the framework;
+- Easily integrate new environments;
+- Run experiments without modifying the training pipeline;
+- Replace or modify components of algorithm implementations;
+- Maintain full control over the training pipeline.
 
+zeroRL is designed to make reinforcement learning experimentation easier without imposing heavy abstractions.
+  
 ## Installation
 
 Requires **Python 3.11+**.
