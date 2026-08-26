@@ -286,6 +286,8 @@ trainer.train()
 | `TD3` | ❌ |
 | `DDPM` | ❌ |
 
+The algorithms not yet included will be added soon, along with their derivatives.
+
 ## Configuration
 
 ```python
