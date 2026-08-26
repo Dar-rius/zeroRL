@@ -2,13 +2,15 @@
 [![Python](https://img.shields.io/pypi/pyversions/zerorl.svg)](https://pypi.org/project/zerorl/)
 [![License](https://img.shields.io/pypi/l/zerorl.svg)](https://pypi.org/project/zerorl/)
 
-# zeroRL
+<div align="center">
+  <h1> zeroRL </h1>
+</div>
 
 Reinforcement learning is a demanding field that requires significant time and focus to train agents properly. Existing solutions such as SB3, RLlib, and Tianshou reduce this friction by providing ready to use implementations. However, some experiments and deeper modifications can be difficult to implement and may require understanding their abstractions and navigating a more complex codebase.
 
 zeroRL takes a different approach: a simple, explicit, and modular architecture designed to facilitate experimentation in reinforcement learning.
 
-The framework allows users to:
+The framework allows you to:
 
 - Easily implement algorithms that are not included in the framework;
 - Easily integrate new environments;
@@ -20,13 +22,15 @@ zeroRL is designed to make reinforcement learning experimentation easier without
   
 ## Installation
 
-Requires **Python 3.11+**.
+Before installing zeroRL, ensure Python `3.11+` is available.
+
+Install zeroRL with uv or pip: 
 
 ```bash
-pip install zerorl
+uv pip install zerorl
 ```
 
-The package depends on `torch`, `numpy`, `gymnasium`, `tqdm`, and `imageio`. Make sure PyTorch is installed with the appropriate CUDA version for your system if you plan to train on GPU.
+The package depends on `torch`, `numpy`, `gymnasium`, `tqdm`, and `imageio`. 
 
 ## Quick Start
 
@@ -48,7 +52,7 @@ This creates an `ActorCriticAgent`, vectorized environments, a rollout buffer, a
 
 ```python
 # Custom environment (BaseAgent subclass)
-trainer = easy_train_ppo("Pendulum-v1", config, algo_config, base_agent=my_agent)
+trainer = easy_train_ppo("Pendulum-v1", config, algo_config, agent=my_agent)
 
 # Custom environment (BaseEnv subclass)
 trainer = easy_train_ppo(my_env, config, algo_config)
@@ -112,7 +116,7 @@ algo_config = AlgoConfig()
 env = get_env("CartPole-v1", config.num_envs)
 obs_shape, act_shape, obs_n, act_n, _ = get_obs_act(env)
 
-agent = Agent(obs_n], act_.n)
+agent = Agent(obs_n, act_.n)
 buffer = Buffer(
     data={
         "state": obs_shape, "action": act_shape,
