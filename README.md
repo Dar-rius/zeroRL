@@ -227,7 +227,7 @@ def update_weights(agent, buffer, scheduler, optimizer, last_output, algo_config
 
 ### Implemented your own algorithm
 
-You can implemented you algorithm using the update_weights function:
+You can implemented your algorithm using the update_weights function:
 
 ```python
 import torch
