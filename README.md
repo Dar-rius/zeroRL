@@ -19,6 +19,8 @@ The framework allows you to:
 - Maintain full control over the training pipeline.
 
 zeroRL is designed to make reinforcement learning experimentation easier without imposing heavy abstractions.
+
+The framework development follow this [roadmap](https://github.com/Dar-rius/zeroRL/issues/43).
   
 ## Installation
 
@@ -225,12 +227,15 @@ def update_weights(agent, buffer, scheduler, optimizer, last_output, algo_config
 
 ### Implemented your own algorithm
 
+You can implemented you algorithm using the update_weights function:
+
 ```python
 import torch
 from zerorl import BaseTrain
 
 # 1. Define your pure PyTorch update function
-def reinforce_update(agent, buffer, optimizer, algo_config, scheduler=None, last_output=None):
+def update_weights(agent, buffer, optimizer, algo_config, scheduler=None, last_output=None):
+    #Reinforce algorithm implementation
     data = buffer.get_all()
     rewards = data["reward"].squeeze()
     dones = data["done"].squeeze()
@@ -284,7 +289,7 @@ trainer.train()
 | `SAC` | ❌ |
 | `DQN` | ❌ |
 | `TD3` | ❌ |
-| `DDPM` | ❌ |
+| `DDPG` | ❌ |
 
 The algorithms not yet included will be added soon, along with their derivatives.
 
@@ -320,6 +325,8 @@ train = TrainConfig(
 
 )
 ```
+
+For any questions and features requests, please create an [issue](https://github.com/Dar-rius/zeroRL/issues/new)
 
 ## License
 
