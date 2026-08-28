@@ -15,8 +15,8 @@ The core principle: **If you can write it in PyTorch, you can use it in zeroRL.*
 The framework allows you to:
 
 - Implement custom algorithms that are not included in the framework;
-- Integrate new environments with zero wrapper overhead
-- Replace or modify any component in minutes
+- Integrate new environments without unnecessary wrappers
+- Replace or modify individual components without rewriting the training pipeline
 - Maintain full control and visibility over the training pipeline
 - Debug and understand what's happening at every step
 
@@ -30,6 +30,10 @@ Install zeroRL with uv or pip:
 
 ```bash
 uv pip install zerorl
+
+or 
+
+pip install zerorl
 ```
 
 The package depends on `torch`, `numpy`, `gymnasium`, `tqdm`, and `imageio`. 
@@ -119,7 +123,6 @@ algo_config = AlgoConfig()
 env = get_env("CartPole-v1", config.num_envs)
 obs_shape, act_shape, obs_n, act_n, _ = get_obs_act(env)
 
-# Fixed typo: act_.n -> act_n
 agent = Agent(obs_n, act_n)
 buffer = Buffer(
     data={
@@ -285,8 +288,8 @@ zeroRL provides a minimal set of composable components, each designed to be tran
 
 | Algorithm | Status |
 | --- | --- |
-| **PPO** | ✅ Implemented & Stable |
-| **SAC, DQN, TD3, DDPG** | 🚧 Planned / Contributions Welcome |
+| **PPO** | ✅ Implemented & Tested |
+| **SAC, DQN, PPO Recurrent, DDPG** | 🚧 Planned / Contributions Welcome |
 
 *These algorithms are the next priorities on our roadmap. If you are familiar with any of these implementations, we would be thrilled to welcome your PRs to integrate them!*
 
@@ -325,9 +328,10 @@ train = TrainConfig(
 
 ## Contributing
 
-ZeroRL is actively developed with a focus on modularity and research-grade flexibility. Contributions are welcome in the following areas:
+zeroRL is actively developed with a focus on modularity and research-grade flexibility, you take a look at our [roadmap](https://github.com/Dar-rius/zeroRL/issues/43). 
+Contributions are welcome in the following areas:
 
-To propose a feature, report a bug, or discuss an idea, please [open an issue](link-to-issues). Pull Requests are encouraged.
+To propose a feature, report a bug, or discuss an idea, please [open an issue](https://github.com/Dar-rius/zeroRL/issues). Pull Requests are encouraged.
 
 ## License
 
