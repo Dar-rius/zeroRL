@@ -312,17 +312,17 @@ algo = AlgoConfig(
 )
 
 train = TrainConfig(
-    model_name="my_agent",                               # Required, used to save model in a specific path
-    project_name="my_experiment",                        # Required, used for wandb/tensorboard
-    model_save_path=".checkpoints",                      # Default
-    total_timesteps=1_000_000,                           # Total training steps (renamed from 'timestamp' for clarity)
-    rollout_steps=2048,                                  # Steps per rollout
-    num_envs=1,                                          # Parallel environments
-    normalize=False,                                     # Normalize observations of environment
-    profile=False,                                       # Profile steps of training
-    device=torch.device("cuda"),                         # Tensor device, checks if the device has a GPU 
-    num_update=1_000_000 // (2048 * 1),                  # Number of weight updates (total_timesteps // (rollout_steps * num_envs))
-    model_path=".checkpoints/my_agent.pt"                # Path for saving agent weights 
+    model_name="my_agent",                 # Required, used to save model in a specific path
+    project_name="my_experiment",          # Required, used for wandb/tensorboard
+    model_save_path=".checkpoints",        # Default
+    total_timesteps=1_000_000,             # Total training steps (renamed from 'timestamp' for clarity)
+    rollout_steps=2048,                    # Steps per rollout
+    num_envs=1,                            # Parallel environments
+    normalize=False,                       # Normalize observations of environment
+    profile=False,                         # Profile steps of training
+    device=torch.device("cuda"),           # Tensor device, checks if the device has a GPU 
+    num_update=1_000_000 // (2048 * 1),    # Number of weight updates (total_timesteps // (rollout_steps * num_envs))
+    model_path=".checkpoints/my_agent.pt"  # Path for saving agent weights 
 )
 ```
 
