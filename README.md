@@ -6,21 +6,21 @@
   <h1> zeroRL </h1>
 </div>
 
-Reinforcement learning is a demanding field that requires significant time and focus to train agents properly. Existing solutions such as SB3, RLlib, and Tianshou reduce this friction by providing ready to use implementations. However, some experiments and deeper modifications can be difficult to implement and may require understanding their abstractions and navigating a more complex codebase.
+Reinforcement learning is demanding. Existing solutions are excellent for standard baselines, but when your research requires custom algorithms, novel buffer structures, or specific multi-agent setups, you often end up fighting the framework instead of focusing on the science.
 
-zeroRL takes a different approach: a simple, explicit, and modular architecture designed to facilitate experimentation in reinforcement learning.
+**zeroRL takes a different approach.** It's a simple, explicit, and modular architecture designed to reduce the friction between your research idea and its implementation.
+
+The core principle: **If you can write it in PyTorch, you can use it in zeroRL.**
 
 The framework allows you to:
 
-- Easily implement algorithms that are not included in the framework;
-- Easily integrate new environments;
-- Run experiments without modifying the training pipeline;
-- Replace or modify components of algorithm implementations;
-- Maintain full control over the training pipeline.
+- Implement custom algorithms that are not included in the framework;
+- Integrate new environments with zero wrapper overhead
+- Replace or modify any component in minutes
+- Maintain full control and visibility over the training pipeline
+- Debug and understand what's happening at every step
 
-zeroRL is designed to make reinforcement learning experimentation easier without imposing heavy abstractions.
-
-The framework development follow this [roadmap](https://github.com/Dar-rius/zeroRL/issues/43).
+zeroRL is designed to make reinforcement learning experimentation easier without imposing heavy abstractions or hiding the details that matter.
   
 ## Installation
 
@@ -53,7 +53,7 @@ trainer.test()
 This creates an `ActorCriticAgent`, vectorized environments, a rollout buffer, and runs PPO — all wired together automatically. Override any component:
 
 ```python
-# Custom environment (BaseAgent subclass)
+# Custom agent (BaseAgent subclass)
 trainer = easy_train_ppo("Pendulum-v1", config, algo_config, agent=my_agent)
 
 # Custom environment (BaseEnv subclass)
@@ -107,24 +107,26 @@ class Agent(BaseAgent):
         dist = self.build_distribution(logits)
         if action is None:
             action = dist.sample()
+        # Note: eval_action must be imported or defined in your module
         log_prob, entropy = eval_action(dist, action)
         return {"action": action, "log_prob": log_prob, "entropy": entropy, "value": value}
 
 
 # 2. Set up environment and buffer
-config = TrainConfig(project_name="cartpole_example", model_name="agent", timestamp=1_000_000, num_envs=2)
+config = TrainConfig(project_name="cartpole_example", model_name="agent", total_timesteps=1_000_000, num_envs=2)
 algo_config = AlgoConfig()
 
 env = get_env("CartPole-v1", config.num_envs)
 obs_shape, act_shape, obs_n, act_n, _ = get_obs_act(env)
 
-agent = Agent(obs_n, act_.n)
+# Fixed typo: act_.n -> act_n
+agent = Agent(obs_n, act_n)
 buffer = Buffer(
     data={
         "state": obs_shape, "action": act_shape,
         "reward": (), "done": (), "truncated": (),
         "entropy": (), "value": (), "return": (),
-        "log_prob": (), "advantage": (), "truncated": ()
+        "log_prob": (), "advantage": () 
     },
     config=config,
 )
@@ -185,7 +187,7 @@ Then pass it directly:
 from zerorl.algorithms.ppo import easy_train_ppo
 from zerorl.config import TrainConfig, AlgoConfig
 
-config = TrainConfig(model_name="gridworld", project_name="gridworld_exp", timestamp=500_000)
+config = TrainConfig(model_name="gridworld", project_name="gridworld_exp", total_timesteps=500_000)
 algo_config = AlgoConfig()
 
 trainer = easy_train_ppo(GridWorld(), config, algo_config)
@@ -194,12 +196,12 @@ trainer.train()
 
 ### Modular function
 
-All RL algorithm are modular function where you can change some components:
+All RL algorithms are modular functions where you can change some components:
 
 ```python
 from torch import Tensor
 from zerorl.algorithms.ppo import ppo_func, gae_compute
-from zerorl.algorithms.helpers.agent import BaseAgent
+from zerorl.helpers.agent import BaseAgent # Fixed import path
 
 def custom_ppo_loss(agent: BaseAgent,
                     params: dict,
@@ -215,27 +217,24 @@ def custom_ppo_loss(agent: BaseAgent,
                     clip_eps: float,
                     clip_vf: float,
                     ) -> dict[str, Tensor]:
-    #write your own PPO loss
+    # Write your own PPO loss here
     ...
 
 def update_weights(agent, buffer, scheduler, optimizer, last_output, algo_config):
     all_data = buffer.get_all()
     gae_compute(all_data["reward"], all_data["value"], last_output["value"],
                 all_data["done"], buffer, algo_config)
-    return ppo_func(agent, optimizer, buffer, algo_config, scheduler, ppo_loss_func = custom_ppo_loss, device=agent.device)
+    return ppo_func(agent, optimizer, buffer, algo_config, scheduler, ppo_loss_func=custom_ppo_loss, device=agent.device)
 ```
 
-### Implemented your own algorithm
-
-You can implemented your algorithm using the update_weights function:
+### Implement your own algorithm
 
 ```python
 import torch
-from zerorl import BaseTrain
+from zerorl.train import BaseTrain # Fixed import path
 
 # 1. Define your pure PyTorch update function
-def update_weights(agent, buffer, optimizer, algo_config, scheduler=None, last_output=None):
-    #Reinforce algorithm implementation
+def reinforce_update(agent, buffer, optimizer, algo_config, scheduler=None, last_output=None):
     data = buffer.get_all()
     rewards = data["reward"].squeeze()
     dones = data["done"].squeeze()
@@ -271,32 +270,31 @@ trainer.train()
 
 ## What's Included
 
+zeroRL provides a minimal set of composable components, each designed to be transparent, extensible, and easy to understand.
+
 | Component | Description |
 | --- | --- |
-| `BaseAgent` | Plain `nn.Module` base class. Agents must define `get_action()` returning a dict and `build_distributions()` returning a Distribution from torch. |
-| `BaseEnv` | Abstract Gymnasium environment. Implement `reset()`, `step()`, and `close()`. |
-| `BaseTrain` | Training orchestrator: rollout collection, observation normalization, updates weights, model saving ans profiling. |
-| `Buffer` | Inspired from TorchDict is a dictionary-like data container for tensors that lets you manipulate a collection of tensors. |
-| `AlgoConfig` | Mutable hyperparameters for RL algorithms: `lr`, `gamma`, `gae_lambda`, `clip_eps`, `ent_coef`, `value_coef`, `batch_size`, `epochs`, `tau`. |
-| `TrainConfig` | Training settings with auto-computed `model_path`, `num_update`, and `device`. |
-| `easy_train_ppo` | One-call setup: creates agent, env, buffer, and returns a ready-to-train `BaseTrain`. |
-| `ActorCriticAgent` | Built-in agent with orthogonal init, supports discrete and continuous action spaces. |
-| `vectorize_env` | Wraps env specs into `SyncVectorEnv` with `SAME_STEP` autoreset. |
+| `BaseAgent` | Plain `nn.Module` base class that allows you to define `get_action()` and `build_distribution()` in pure PyTorch — no custom abstractions to learn. |
+| `BaseEnv` | Abstract Gymnasium environment where you implement `reset()`, `step()`, and `close()` for zero-friction integration with the ecosystem. |
+| `BaseTrain` | Transparent training orchestrator handling rollout collection, observation normalization, weight updates, and profiling, keeping everything visible and debuggable. |
+| `Buffer` | Dictionary-like tensor container inspired by TorchDict, allowing you to store and manipulate trajectories with a clean, flexible interface. |
+| `AlgoConfig` | Centralized hyperparameters (`lr`, `gamma`, `gae_lambda`, `clip_eps`, `ent_coef`, `value_coef`, `batch_size`, `epochs`, `tau`) that are mutable at runtime for fast experimentation. |
+| `TrainConfig` | Training settings with auto-computed `model_path`, `num_update`, and device detection, providing sensible defaults while remaining easy to override. |
+| `easy_train_ppo` | One-call setup that wires agent, env, and buffer into a ready-to-train `BaseTrain` — perfect for baselines, trivial to extend. |
+| `ActorCriticAgent` | Built-in agent with orthogonal initialization, supporting both discrete and continuous action spaces out of the box. |
 
-| Algorithm | Included |
+| Algorithm | Status |
 | --- | --- |
-| `PPO` | ✅ |
-| `SAC` | ❌ |
-| `DQN` | ❌ |
-| `TD3` | ❌ |
-| `DDPG` | ❌ |
+| **PPO** | ✅ Implemented & Stable |
+| **SAC, DQN, TD3, DDPG** | 🚧 Planned / Contributions Welcome |
 
-The algorithms not yet included will be added soon, along with their derivatives.
+*These algorithms are the next priorities on our roadmap. If you are familiar with any of these implementations, we would be thrilled to welcome your PRs to integrate them!*
 
 ## Configuration
 
 ```python
 from zerorl.config import AlgoConfig, TrainConfig
+import torch
 
 algo = AlgoConfig(
     lr=3e-4,          
@@ -307,26 +305,29 @@ algo = AlgoConfig(
     value_coef=0.5,   
     batch_size=64,    
     epochs=10,       
-    tau: float = 0.005
+    tau=0.005
 )
 
 train = TrainConfig(
-    model_name="my_agent",                               # Required, used for save model in specific path
-    project_name="my_experiment",                        # Required,  used for wandb/tensorboard
+    model_name="my_agent",                               # Required, used to save model in a specific path
+    project_name="my_experiment",                        # Required, used for wandb/tensorboard
     model_save_path=".checkpoints",                      # Default
-    timestamp=1_000_000,                                 # Total timesteps
+    total_timesteps=1_000_000,                           # Total training steps (renamed from 'timestamp' for clarity)
     rollout_steps=2048,                                  # Steps per rollout
     num_envs=1,                                          # Parallel environments
     normalize=False,                                     # Normalize observations of environment
     profile=False,                                       # Profile steps of training
-    device=torch.device("cuda"),                         # Tensor device, check if the device has a GPU 
-    num_update=timestamp // (rollout_steps * num_envs),  # Number of weights update 
+    device=torch.device("cuda"),                         # Tensor device, checks if the device has a GPU 
+    num_update=1_000_000 // (2048 * 1),                  # Number of weight updates (total_timesteps // (rollout_steps * num_envs))
     model_path=".checkpoints/my_agent.pt"                # Path for saving agent weights 
-
 )
 ```
 
-For any questions and features requests, please create an [issue](https://github.com/Dar-rius/zeroRL/issues/new)
+## Contributing
+
+ZeroRL is actively developed with a focus on modularity and research-grade flexibility. Contributions are welcome in the following areas:
+
+To propose a feature, report a bug, or discuss an idea, please [open an issue](link-to-issues). Pull Requests are encouraged.
 
 ## License
 
