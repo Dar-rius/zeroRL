@@ -194,17 +194,17 @@ class BaseTrain:
                 self.current_episode_reward[finished] = 0.0
 
             state_tensor = next_state_tensor
-            if state_tensor.dim() == 1:
-                state_tensor = state_tensor.unsqueeze(0)
+            if state_tensor.dim() == 1: state_tensor = state_tensor.unsqueeze(0)
 
-        with torch.inference_mode():
-            if self.config.normalize:
-                self.normalizer.update(state_tensor)
-                state_norm = self.normalizer.normalize(state_tensor)
-            else:
-                state_norm = state_tensor
-            next_output: dict[str, Tensor] = self.agent.get_action(state_norm) #type: ignore[operator]
-            next_output["value"] = next_output["value"].squeeze(-1)
+        if self.buffer.get("last_value") is not None:
+            with torch.inference_mode():
+                if self.config.normalize:
+                    self.normalizer.update(state_tensor)
+                    state_norm = self.normalizer.normalize(state_tensor)
+                else:
+                    state_norm = state_tensor
+                next_output: dict[str, Tensor] = self.agent.get_action(state_norm) #type: ignore[operator]
+                next_output["value"] = next_output["value"].squeeze(-1)
         self.state = state_tensor
         return next_output
 
