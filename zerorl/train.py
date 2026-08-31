@@ -195,7 +195,7 @@ class BaseTrain:
             state_tensor = next_state_tensor
             if state_tensor.dim() == 1: state_tensor = state_tensor.unsqueeze(0)
 
-        if self.buffer.data.get("last_value") is not None:
+        if "value" in self.buffer.data:
             with torch.inference_mode():
                 if self.config.normalize:
                     state_norm = self.normalizer.normalize(state_tensor)
@@ -375,7 +375,6 @@ class BaseTrain:
 
                 with torch.inference_mode():
                     outputs: dict[str, Tensor] = self.agent.get_action(state_norm)
-                    print(outputs)
                     if str(self.env_device).startswith("cuda"):
                         action_input: np.ndarray | Tensor = outputs["action"]
                     else:

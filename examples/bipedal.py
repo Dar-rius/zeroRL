@@ -79,7 +79,7 @@ def update_weights(agent, buffer, scheduler, optimizer, last_output, algo_config
     all_data = buffer.get_all()
     # Compute GAE from rollout data
     gae_compute(all_data["reward"], all_data["value"], last_output["value"], all_data["done"], buffer, algo_config)
-    return ppo_func(agent, optimizer, buffer, algo_config, scheduler, device=agent.device)
+    return ppo_func(agent, optimizer, buffer, algo_config, scheduler)
 
 trainer = BaseTrain(agent, env, buffer, update_weights, config, algo_config, render_mode="human")
 trainer.train(use_wandb=True)

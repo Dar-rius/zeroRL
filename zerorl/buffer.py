@@ -47,7 +47,7 @@ class Buffer:
     def size(self): return self.slice
 
     @property
-    def device(self): return self.config.devie
+    def device(self): return self.config.device
 
     def insert(self, **kwargs):
         """Insert one timestep of data into the buffer.
