@@ -156,11 +156,11 @@ class BaseTrain:
                 state_norm = state_tensor
             with torch.inference_mode():
                 outputs: dict[str, Tensor] = self.agent.get_action(state_norm) #type: ignore[operator]
-                outputs["value"] = outputs["value"].squeeze(-1)
+                action = outputs["action"]
                 if str(self.env_device).startswith("cuda"):
-                    action_input: np.ndarray | Tensor = outputs["action"]
+                    action_input: np.ndarray | Tensor = action
                 else:
-                    action_input = outputs["action"].cpu().numpy()
+                    action_input = action.cpu().numpy()
 
             # Gymnasium v1 step() returns: obs, reward, terminated, truncated, info
             # terminated = episode naturally ended; truncated = cut short by time limit
@@ -176,7 +176,6 @@ class BaseTrain:
                 reward_tensor = reward_tensor.unsqueeze(0)
                 done_tensor = done_tensor.unsqueeze(0)
                 trunc_tensor = trunc_tensor.unsqueeze(0)
-            
 
             self.buffer.insert(
                 state = state_norm,
@@ -199,7 +198,6 @@ class BaseTrain:
         if self.buffer.get("last_value") is not None:
             with torch.inference_mode():
                 if self.config.normalize:
-                    self.normalizer.update(state_tensor)
                     state_norm = self.normalizer.normalize(state_tensor)
                 else:
                     state_norm = state_tensor

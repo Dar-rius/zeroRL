@@ -139,7 +139,6 @@ def ppo_func(agent: BaseAgent,
         ppo_loss_func: Callable[[BaseAgent, dict, dict, Tensor, Tensor,
                                  Tensor, Tensor, Tensor, Tensor, float,
                                  float, float, float], dict[str, Tensor]] = ppo_loss,
-        device: torch.device = torch.device("cpu")
         ) ->  dict[str, Tensor]:
     """Run a full PPO update on collected rollout data.
 
@@ -153,7 +152,6 @@ def ppo_func(agent: BaseAgent,
             "log_prob", "value", "advantage", "return".
         algo_config: Algorithm configuration (batch_size, epochs, clip_eps, etc.).
         scheduler: Learning rate scheduler (stepped once per call).
-        device: Torch device for computations.
 
     Returns:
         Dict of averaged loss metrics ("loss", "policy_loss", "value_loss", "entropy_loss").
@@ -205,7 +203,7 @@ def ppo_func(agent: BaseAgent,
         """
         history = []
         for _ in range(algo_config.epochs):
-            shuffle_index = torch.randperm(dataset_size, device=device)
+            shuffle_index = torch.randperm(dataset_size, device=flat_data["return"].device)
             for start in range(0, dataset_size, algo_config.batch_size):
                 end = start + algo_config.batch_size
                 idx = shuffle_index[start:end]

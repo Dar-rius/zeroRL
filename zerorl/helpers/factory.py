@@ -118,4 +118,5 @@ class ActorCriticAgent(BaseAgent):
         dist = self.build_distribution(logits)
         if action is None: action = dist.sample()
         log_prob, dist_entropy = eval_action(dist, action)
+        value = value.squeeze(-1)
         return {"action": action, "log_prob": log_prob, "entropy":dist_entropy, "value":value}
