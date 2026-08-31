@@ -354,9 +354,9 @@ class BaseTrain:
         #check if env has .env or .spec attributs
         if isinstance(env_spec, gym.vector.VectorEnv):
             try:
-                env_spec = env_spec.env[0].spec.id
+                env_spec = env_spec.envs[0].spec.id
             except:
-                pass
+                env_spec = env_spec.envs[0]
 
         env = vectorize_env(env_spec, render_mode = "rgb_array")
         frames: Any = []
@@ -375,6 +375,7 @@ class BaseTrain:
 
                 with torch.inference_mode():
                     outputs: dict[str, Tensor] = self.agent.get_action(state_norm)
+                    print(outputs)
                     if str(self.env_device).startswith("cuda"):
                         action_input: np.ndarray | Tensor = outputs["action"]
                     else:
