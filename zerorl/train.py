@@ -195,7 +195,7 @@ class BaseTrain:
             state_tensor = next_state_tensor
             if state_tensor.dim() == 1: state_tensor = state_tensor.unsqueeze(0)
 
-        if self.buffer.get("last_value") is not None:
+        if self.buffer.data.get("last_value") is not None:
             with torch.inference_mode():
                 if self.config.normalize:
                     state_norm = self.normalizer.normalize(state_tensor)

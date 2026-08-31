@@ -207,7 +207,7 @@ class PolicyAgent(BaseAgent):
                 nn.init.constant_(module.bias, 0.0)
 
     def forward(self, state: Tensor):
-        """Forward pass returning (logits, value)."""
+        """Forward pass returning logits."""
         x = self.extract_layer(state)
         logits = self.actor(x)
         return logits
@@ -221,7 +221,7 @@ class PolicyAgent(BaseAgent):
         return torch.distributions.Normal(logits, std)
     
     def get_action(self, state: torch.Tensor, action: torch.Tensor | None = None):
-        """Sample or evaluate an action, returning action, log_prob, entropy, value."""
+        """Sample or evaluate an action, returning action, log_prob"""
         logits = self.forward(state)
         dist = self.build_distribution(logits)
         if action is None: action = dist.sample()

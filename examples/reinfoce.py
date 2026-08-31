@@ -17,24 +17,25 @@ buffer = get_policy_buffer(obs_dim, act_dim, config)
 
 #2. Define your update function based on Reinforce algorithm
 def reinforce_update(agent, buffer, optimizer, algo_config, scheduler=None, last_output=None): 
-    data = buffer.get_all()
-    rewards = data["reward"].squeeze()
-    dones = data["done"].squeeze()
-    returns = []
+    data = {k: v.reshape(-1,  *v.shape[2:]) for k, v in buffer.get_all().items()}
+    rewards = data["reward"]
+    total_size = rewards.shape[0]
+    print(data["state"].shape)
+    dones = data["done"]
+    returns = torch.empty_like(rewards)
+    mask = 1.0 - dones
     R = 0.0
-    for r, d in zip(reversed(rewards.tolist()), reversed(dones.tolist())):
-        if d: R = 0.0
-        R = r + algo_config.gamma * R
-        returns.insert(0, R)
+    for step in reversed(range(total_size)):
+        R = rewards[step] + algo_config.gamma * mask[step] * R 
+        returns[step] = R
     
-    returns = torch.tensor(returns, device=agent.device)
-    _, log_probs = agent.get_action(data["state"], data["action"])
-    loss = -(log_probs * returns).mean()
+    global_losses = agent.get_action(data["state"], data["action"])
+    loss = -(global_losses["log_prob"] * returns).mean()
     optimizer.zero_grad()
     loss.backward()
     torch.nn.utils.clip_grad_norm_(agent.parameters(), 0.5) # Max grad norm
     optimizer.step()
-    return {"loss": loss}
+    return {"loss": loss.detach()}
 
 
 #3. Define Trainer and train agent
@@ -45,3 +46,4 @@ trainer = BaseTrain(agent=agent,
                     config=config,
                     algo_config=algo_config)
 trainer.train(use_tb=True)
+trainer.test()
