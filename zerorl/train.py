@@ -134,7 +134,7 @@ class BaseTrain:
             self.tb_writer = None #type: ignore[assignment]
 
 
-    def rollout_phase(self) -> Tensor | None:
+    def rollout_phase(self) -> dict[str, Tensor] | None:
         """Collect experience by running the agent in the environment.
 
         Stores each transition in the buffer and resets on episode end.

@@ -101,7 +101,7 @@ class TestPpoFunction:
         buf = self._make_buffer(64, 4, device)
         cfg = AlgoConfig()
         scheduler = LambdaLR(optimizer, lr_lambda=lambda _: 1.0)
-        result = ppo_func(agent, optimizer, buf, cfg, scheduler, device=device)
+        result = ppo_func(agent, optimizer, buf, cfg, scheduler)
         assert "loss" in result
 
     @pytest.mark.gpu
@@ -112,7 +112,7 @@ class TestPpoFunction:
         buf = self._make_buffer(128, 4, device)
         cfg = AlgoConfig()
         scheduler = LambdaLR(optimizer, lr_lambda=lambda _: 1.0)
-        ppo_func(agent, optimizer, buf, cfg, scheduler, device=device)
+        ppo_func(agent, optimizer, buf, cfg, scheduler)
         w_after = agent.state_dict()
         changed = not all(torch.allclose(w_before[k], w_after[k]) for k in w_before)
         assert changed
@@ -282,7 +282,7 @@ class TestPpoEdgeCases:
         buf = TestPpoFunction()._make_buffer(64, 4, device)
         cfg = AlgoConfig()
         scheduler = LambdaLR(optimizer, lr_lambda=lambda _: 1.0)
-        result = ppo_func(agent, optimizer, buf, cfg, scheduler, device=device)
+        result = ppo_func(agent, optimizer, buf, cfg, scheduler)
         assert "loss" in result
 
     @pytest.mark.gpu
@@ -293,7 +293,7 @@ class TestPpoEdgeCases:
         cfg = AlgoConfig()
         scheduler = LambdaLR(optimizer, lr_lambda=lambda _: 1.0)
         cfg.epochs = 0
-        result = ppo_func(agent, optimizer, buf, cfg, scheduler, device=device)
+        result = ppo_func(agent, optimizer, buf, cfg, scheduler)
         assert result == {}
 
     @pytest.mark.gpu
@@ -304,6 +304,6 @@ class TestPpoEdgeCases:
         buf = TestPpoFunction()._make_buffer(64, 4, device)
         cfg = AlgoConfig()
         scheduler = MagicMock()
-        ppo_func(agent, optimizer, buf, cfg, scheduler, device=device)
+        ppo_func(agent, optimizer, buf, cfg, scheduler)
         assert scheduler.step.call_count == 1
 

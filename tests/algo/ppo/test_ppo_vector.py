@@ -42,7 +42,7 @@ class DiscreteTestAgent(BaseAgent):
         dist = self.build_distribution(logits)
         if action is None: action = dist.sample()
         log_prob, dist_entropy = eval_action(dist, action)
-        return {"action": action, "log_prob": log_prob, "entropy": dist_entropy, "value": value}
+        return {"action": action, "log_prob": log_prob, "entropy": dist_entropy, "value": value.squeeze(-1)}
 
 
 class TestPPOVectorizedIntegration:
@@ -120,10 +120,7 @@ class TestPPOVectorizedIntegration:
         # 5. Run PPO Update (which will flatten (T, N) -> (T*N) internally)
         w_before = {k: v.clone() for k, v in agent.state_dict().items()}
         
-        result = ppo_func(
-            agent, optimizer, buf, cfg, scheduler,
-            device=device,
-        )
+        result = ppo_func(agent, optimizer, buf, cfg, scheduler)
 
         # 6. Assertions
         w_after = agent.state_dict()

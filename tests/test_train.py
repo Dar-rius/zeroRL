@@ -49,7 +49,7 @@ class MockAgent(BaseAgent):
         dist = self.build_distribution(logits)
         if action is None: action = dist.sample()
         log_prob, dist_entropy = eval_action(dist, action)
-        return {"action": action, "log_prob": log_prob, "entropy":dist_entropy, "value":value}
+        return {"action": action, "log_prob": log_prob, "entropy":dist_entropy, "value":value.squeeze(-1)}
 
 class CartPoleEnvWrapper(BaseEnv):
     """Real Gymnasium environment wrapper for integration testing."""
@@ -168,6 +168,7 @@ class TestBaseTrainRollout:
         last_output = trainer.rollout_phase()
 
         assert buf.size == rollout_steps
+        assert last_output is not None
         assert "action" in last_output
         assert "log_prob" in last_output
         assert "entropy" in last_output
