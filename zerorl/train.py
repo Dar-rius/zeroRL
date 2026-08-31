@@ -134,7 +134,7 @@ class BaseTrain:
             self.tb_writer = None #type: ignore[assignment]
 
 
-    def rollout_phase(self):
+    def rollout_phase(self) -> Tensor | None:
         """Collect experience by running the agent in the environment.
 
         Stores each transition in the buffer and resets on episode end.
@@ -201,8 +201,9 @@ class BaseTrain:
                     state_norm = self.normalizer.normalize(state_tensor)
                 else:
                     state_norm = state_tensor
-                next_output: dict[str, Tensor] = self.agent.get_action(state_norm) #type: ignore[operator]
-                next_output["value"] = next_output["value"].squeeze(-1)
+                next_output = self.agent.get_action(state_norm) #type: ignore[operator]
+        else:
+            next_output = None
         self.state = state_tensor
         return next_output
 
@@ -349,7 +350,14 @@ class BaseTrain:
             iterations: Number of iterations.
             gif_path: Path to save the GIF.
         """
-        env_spec = self.env.envs[0].spec.id
+        env_spec = self.env
+        #check if env has .env or .spec attributs
+        if isinstance(env_spec, gym.vector.VectorEnv):
+            try:
+                env_spec = env_spec.env[0].spec.id
+            except:
+                pass
+
         env = vectorize_env(env_spec, render_mode = "rgb_array")
         frames: Any = []
         self.agent.eval()
