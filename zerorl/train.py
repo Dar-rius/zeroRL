@@ -134,7 +134,7 @@ class BaseTrain:
             self.tb_writer = None #type: ignore[assignment]
 
 
-    def rollout_phase(self):
+    def rollout_phase(self) -> dict[str, Tensor] | None:
         """Collect experience by running the agent in the environment.
 
         Stores each transition in the buffer and resets on episode end.
@@ -156,11 +156,11 @@ class BaseTrain:
                 state_norm = state_tensor
             with torch.inference_mode():
                 outputs: dict[str, Tensor] = self.agent.get_action(state_norm) #type: ignore[operator]
-                outputs["value"] = outputs["value"].squeeze(-1)
+                action = outputs["action"]
                 if str(self.env_device).startswith("cuda"):
-                    action_input: np.ndarray | Tensor = outputs["action"]
+                    action_input: np.ndarray | Tensor = action
                 else:
-                    action_input = outputs["action"].cpu().numpy()
+                    action_input = action.cpu().numpy()
 
             # Gymnasium v1 step() returns: obs, reward, terminated, truncated, info
             # terminated = episode naturally ended; truncated = cut short by time limit
@@ -176,7 +176,6 @@ class BaseTrain:
                 reward_tensor = reward_tensor.unsqueeze(0)
                 done_tensor = done_tensor.unsqueeze(0)
                 trunc_tensor = trunc_tensor.unsqueeze(0)
-            
 
             self.buffer.insert(
                 state = state_norm,
@@ -194,17 +193,17 @@ class BaseTrain:
                 self.current_episode_reward[finished] = 0.0
 
             state_tensor = next_state_tensor
-            if state_tensor.dim() == 1:
-                state_tensor = state_tensor.unsqueeze(0)
+            if state_tensor.dim() == 1: state_tensor = state_tensor.unsqueeze(0)
 
-        with torch.inference_mode():
-            if self.config.normalize:
-                self.normalizer.update(state_tensor)
-                state_norm = self.normalizer.normalize(state_tensor)
-            else:
-                state_norm = state_tensor
-            next_output: dict[str, Tensor] = self.agent.get_action(state_norm) #type: ignore[operator]
-            next_output["value"] = next_output["value"].squeeze(-1)
+        if "value" in self.buffer.data:
+            with torch.inference_mode():
+                if self.config.normalize:
+                    state_norm = self.normalizer.normalize(state_tensor)
+                else:
+                    state_norm = state_tensor
+                next_output = self.agent.get_action(state_norm) #type: ignore[operator]
+        else:
+            next_output = None
         self.state = state_tensor
         return next_output
 
@@ -351,7 +350,14 @@ class BaseTrain:
             iterations: Number of iterations.
             gif_path: Path to save the GIF.
         """
-        env_spec = self.env.envs[0].spec.id
+        env_spec = self.env
+        #check if env has .env or .spec attributs
+        if isinstance(env_spec, gym.vector.VectorEnv):
+            try:
+                env_spec = env_spec.envs[0].spec.id
+            except:
+                env_spec = env_spec.envs[0]
+
         env = vectorize_env(env_spec, render_mode = "rgb_array")
         frames: Any = []
         self.agent.eval()

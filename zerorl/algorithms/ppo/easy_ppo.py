@@ -6,7 +6,7 @@ and PPO update into a ready-to-train BaseTrain instance.
 
 from typing import Callable
 from torch import optim
-from zerorl.factory import get_env, get_actor_critic_buffer, ActorCriticAgent
+from zerorl.helpers.factory import get_env, get_actor_critic_buffer, ActorCriticAgent
 from zerorl.train import BaseTrain
 from zerorl.algorithms.ppo import ppo_func, gae_compute
 from zerorl.config import TrainConfig, AlgoConfig
@@ -54,7 +54,7 @@ def easy_train_ppo(env_spec: str | Callable | BaseEnv,
     def easy_update_weights(agent, buffer, scheduler, optimizer, last_output, algo_config):
         data = buffer.get_all()
         gae_compute(data["reward"], data["value"], last_output["value"], data["done"], buffer, algo_config)
-        return ppo_func(agent, optimizer, buffer, algo_config, scheduler, device=agent.device)
+        return ppo_func(agent, optimizer, buffer, algo_config, scheduler)
 
     train = BaseTrain(
             agent = agent,

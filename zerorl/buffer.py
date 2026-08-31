@@ -33,18 +33,21 @@ class Buffer:
         Args:
             step: Maximum number of timesteps (capacity).
             data: Dict mapping field names to shape tuples (e.g. {"state": (4,), "action": ()}).
-            device: Torch device to allocate tensors on.
         """
-        self.step = config.rollout_steps
-        self.num_envs = config.num_envs
+        self.config = config
+        self.step = self.config.rollout_steps
+        self.num_envs = self.config.num_envs
         self.slice: int = 0
         self.data = {
-                name: torch.zeros((self.step, self.num_envs, *shape), dtype = torch.float32, device = config.device)
+                name: torch.zeros((self.step, self.num_envs, *shape), dtype = torch.float32, device = self.config.device)
                 for name, shape in data.items()
                 }
 
     @property
     def size(self): return self.slice
+
+    @property
+    def device(self): return self.config.device
 
     def insert(self, **kwargs):
         """Insert one timestep of data into the buffer.

@@ -80,7 +80,7 @@ class ContinuousTestAgent(BaseAgent):
         dist = self.build_distribution(logits)
         if action is None: action = dist.sample()
         log_prob, dist_entropy = eval_action(dist, action)
-        return {"action": action, "log_prob": log_prob, "entropy":dist_entropy, "value":value}
+        return {"action": action, "log_prob": log_prob, "entropy":dist_entropy, "value":value.squeeze(-1)}
 
 
 
@@ -172,10 +172,7 @@ class TestPPOContinuousIntegration:
         # 5. Run PPO Update and verify weights change
         w_before = {k: v.clone() for k, v in agent.state_dict().items()}
         
-        result = ppo_func(
-            agent, optimizer, raw_buf, cfg, scheduler,
-            device=device
-        )
+        result = ppo_func(agent, optimizer, raw_buf, cfg, scheduler)
         
         w_after = agent.state_dict()
         changed = not all(torch.allclose(w_before[k], w_after[k]) for k in w_before)
