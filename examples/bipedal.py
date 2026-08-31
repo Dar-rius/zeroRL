@@ -6,7 +6,7 @@ from zerorl.train import BaseTrain
 from zerorl.buffer import Buffer
 from zerorl.config import TrainConfig, AlgoConfig
 from zerorl.algorithms.ppo import gae_compute, ppo_func
-from zerorl.factory import get_env
+from zerorl.helpers.factory import get_env
 from zerorl.functions import get_obs_act
 
 
