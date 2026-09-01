@@ -108,7 +108,7 @@ class TestGetPolicyBuffer:
 class TestGetReplayBuffer:
     def test_has_correct_keys(self, tmp_config) -> None:
         buf = get_replay_buffer((4,), (), tmp_config)
-        expected_keys = {"state", "action", "reward", "done", "next_state"}
+        expected_keys = {"state", "action", "reward", "done", "next_state", "truncated"}
         assert set(buf.data.keys()) == expected_keys
 
     def test_has_next_state(self, tmp_config) -> None:

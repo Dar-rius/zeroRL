@@ -17,10 +17,9 @@ buffer = get_policy_buffer(obs_dim, act_dim, config)
 
 #2. Define your update function based on Reinforce algorithm
 def reinforce_update(agent, buffer, optimizer, algo_config, scheduler=None, last_output=None): 
-    data = {k: v.reshape(-1,  *v.shape[2:]) for k, v in buffer.get_all().items()}
+    data = buffer.get_all(reshape=True)
     rewards = data["reward"]
     total_size = rewards.shape[0]
-    print(data["state"].shape)
     dones = data["done"]
     returns = torch.empty_like(rewards)
     mask = 1.0 - dones

@@ -104,14 +104,14 @@ class TestPPOVectorizedIntegration:
 
         env.close()
 
-        # 4. Compute GAE on 3D data (T, num_envs, ...)
+        # 4. Compute GAE on 2D data (T, N)
         all_data = buf.get_all()
-        last_value = torch.zeros(num_envs, 1, device=device)  # Mock last value (N, 1)
+        last_value = torch.zeros(num_envs, device=device)  # Mock last value (N,)
         
         gae_compute(
             all_data["reward"],      # (T, N)
-            all_data["value"],       # (T, N, 1)
-            last_value,              # (N, 1)
+            all_data["value"],       # (T, N)
+            last_value,              # (N,)
             all_data["done"],        # (T, N)
             buf,
             cfg,
