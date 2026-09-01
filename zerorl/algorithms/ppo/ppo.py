@@ -39,10 +39,6 @@ def gae_compute(rewards: Tensor,
         buffer: Buffer to write "advantage" and "return" into.
         algo_config: Algorithm configuration (gamma, gae_lambda).
     """
-    rewards = rewards.reshape(rewards.shape[0], -1)
-    values = values.reshape(values.shape[0], -1)
-    dones = dones.reshape(dones.shape[0], -1)
-    last_value = last_value.reshape(-1)
     num_envs = rewards.shape[1]
     gae = torch.zeros(num_envs, dtype=torch.float32, device=rewards.device)
     # Mask: 0.0 at episode boundaries (no bootstrapping across episodes)
@@ -161,10 +157,7 @@ def ppo_func(agent: BaseAgent,
           "build_distribution": "Your agent should have the method `build_distribution`"})
 
     params, buffers = get_buffer_params_model(agent)
-    all_data = buffer.get_all()
-    flat_data = {key: tensor.reshape(-1, *tensor.shape[2:])
-                for key, tensor in all_data.items()}
-
+    flat_data = buffer.get_all(reshape=True)
     mb_advantages = flat_data["advantage"]
     adv_norm = (mb_advantages - mb_advantages.mean()) / (mb_advantages.std() + 1e-8)
     returns = flat_data["return"]

@@ -57,10 +57,10 @@ def get_policy_buffer(state_space: tuple, action_space: tuple, config: TrainConf
 
     Returns:
         Buffer pre-allocated with keys: state, action, reward, done, truncated,
-        entropy, value, return, log_prob, advantage.
+        log_prob.
     """ 
-    buffer = Buffer(data = {"state": state_space, "action": action_space,
-                            "reward": (), "done": (), "truncated": (), "log_prob": ()},
+    buffer = Buffer(data = {"state": state_space, "action": action_space, "reward": (),
+                            "done": (), "truncated": (), "log_prob": ()},
                     config=config)
     return buffer
 
@@ -74,11 +74,10 @@ def get_replay_buffer(state_space: tuple, action_space: tuple, config: TrainConf
         config: Training config providing rollout_steps, num_envs, and device.
 
     Returns:
-        Buffer pre-allocated with keys: state, action, reward, done, truncated,
-        entropy, value, return, log_prob, advantage.
+        Buffer pre-allocated with keys: state, action, reward, done, truncated.
     """ 
     buffer = Buffer(data = {"state": state_space, "action": action_space,
-                            "reward": (), "done": (), "next_state": ()},
+                            "reward": (), "done": (), "next_state": (), "truncated": ()},
                     config=config)
     return buffer
 
