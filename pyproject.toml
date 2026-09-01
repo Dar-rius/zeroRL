@@ -1,6 +1,6 @@
 [project]
 name = "zeroRl"
-version = "0.1.1"
+version = "0.2.0"
 description = "A simple and transparent reinforcement learning library. No black boxes, no boilerplate, compilable torch 2"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -28,6 +28,8 @@ dependencies = [
 mujoco = ["mujoco>=3.2.0"]
 box2d = ["swig>=4.4.1", "box2d==2.3.10"]
 pygame = ["pygame==2.6.1", "pygame-ce==2.5.8"]
+logging = ["wandb>=0.28.1", "tensorboard>=2.21.0"]
+
 
 [tool.ruff]
 target-version="py311"
