@@ -81,7 +81,7 @@ from zerorl.train import BaseTrain
 from zerorl.buffer import Buffer
 from zerorl.config import TrainConfig, AlgoConfig
 from zerorl.algorithms.ppo import gae_compute, ppo_func
-from zerorl.factory import get_env
+from zerorl.helpers.factory import get_env
 from zerorl.functions import get_obs_act
 
 
@@ -233,33 +233,33 @@ def update_weights(agent, buffer, scheduler, optimizer, last_output, algo_config
 ### Implement your own algorithm
 
 ```python
-import torch
-from zerorl.train import BaseTrain # Fixed import path
+# This is an excerpt from examples/reinforce.py
 
-# 1. Define your pure PyTorch update function
+import torch
+from zerorl.train import BaseTrain
+
+# Define your pure PyTorch update function
 def reinforce_update(agent, buffer, optimizer, algo_config, scheduler=None, last_output=None):
-    data = buffer.get_all()
-    rewards = data["reward"].squeeze()
-    dones = data["done"].squeeze()
-    returns = []
+    data = buffer.get_all(reshape=True)
+    rewards = data["reward"]
+    total_size = rewards.shape[0]
+    dones = data["done"]
+    returns = torch.empty_like(rewards)
+    mask = 1.0 - dones
     R = 0.0
-    for r, d in zip(reversed(rewards.tolist()), reversed(dones.tolist())):
-        if d: R = 0.0
-        R = r + algo_config.gamma * R
-        returns.insert(0, R)
+    for step in reversed(range(total_size)):
+        R = rewards[step] + algo_config.gamma * mask[step] * R 
+        returns[step] = R
     
-    returns = torch.tensor(returns, device=agent.device)
-    logits, _ = agent(data["state"])
-    dist = agent.build_distribution(logits)
-    log_probs = dist.log_prob(data["action"]).sum(dim=-1)
-    loss = -(log_probs * returns).mean()
+    global_losses = agent.get_action(data["state"], data["action"])
+    loss = -(global_losses["log_prob"] * returns).mean()
     optimizer.zero_grad()
     loss.backward()
     torch.nn.utils.clip_grad_norm_(agent.parameters(), 0.5) # Max grad norm
     optimizer.step()
-    return {"loss": loss}
+    return {"loss": loss.detach()}
 
-# 2. Plug it in. BaseTrain handles rollouts.
+# Plug it in. BaseTrain handles rollouts.
 trainer = BaseTrain(
     agent=agent, 
     env=env, 
@@ -270,6 +270,8 @@ trainer = BaseTrain(
 )
 trainer.train()
 ```
+
+*Go to the [examples](https://github.com/Dar-rius/zeroRL/tree/main/examples) folder to see some examples of how to use the framework.*
 
 ## What's Included
 
@@ -291,7 +293,7 @@ zeroRL provides a minimal set of composable components, each designed to be tran
 | **PPO** | ✅ Implemented & Tested |
 | **SAC, DQN, PPO Recurrent, DDPG** | 🚧 Planned / Contributions Welcome |
 
-*These algorithms are the next priorities on our roadmap. If you are familiar with any of these implementations, we would be thrilled to welcome your PRs to integrate them!*
+*These algorithms are the next priorities on our [roadmap](https://github.com/Dar-rius/zeroRL/issues/43). If you are familiar with any of these implementations, we would be thrilled to welcome your PRs to integrate them!*
 
 ## Configuration
 
