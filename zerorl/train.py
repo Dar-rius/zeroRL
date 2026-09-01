@@ -133,6 +133,30 @@ class BaseTrain:
         else:
             self.tb_writer = None #type: ignore[assignment]
 
+        self.debug = self.config.debug
+        if self.debug:
+            sys.stderr.write("\033[96mzeroRL DEBUG MODE ENABLED. torch.compile is disabled.\033[0m\n")
+            torch.autograd.set_detect_anomaly(True)
+            obs_space = getattr(self.env, "single_observation_space", self.env.observation_space)
+            act_space = getattr(self.env, "single_action_space", self.env.action_space)
+                        
+            from zerorl.debug import check_tensor, check_shape, check_reward_scale
+            def _env_hook(data_: dict[str, Tensor], step: int):
+                for k, v in data_.items():
+                    check_tensor(v, k , step)
+                    if k in ["state", "next_state"]:
+                        check_shape(v, obs_space.shape, k, step)
+                    elif k == "action":
+                        check_shape(v, act_space.shape, k, step)
+                    else:
+                        check_shape(v, (self.num_envs,), k, step)
+
+                check_reward_scale(data_["reward"], step)
+
+            self._hook_env_check_ = _env_hook
+        else:
+            self._hook_env_check_ = lambda data_, step : None
+
 
     def rollout_phase(self) -> dict[str, Tensor] | None:
         """Collect experience by running the agent in the environment.
@@ -148,7 +172,7 @@ class BaseTrain:
         if self.current_episode_reward is None:
             self.current_episode_reward = torch.zeros(self.num_envs, device=dev)
 
-        for _ in range(self.config.rollout_steps):
+        for i in range(self.config.rollout_steps):
             if self.config.normalize:
                 self.normalizer.update(state_tensor)
                 state_norm = self.normalizer.normalize(state_tensor)
@@ -176,7 +200,11 @@ class BaseTrain:
                 reward_tensor = reward_tensor.unsqueeze(0)
                 done_tensor = done_tensor.unsqueeze(0)
                 trunc_tensor = trunc_tensor.unsqueeze(0)
-
+            
+            data_ = {"state": state_norm, "next_state": next_state_tensor,
+                     "done": done_tensor, "truncated": trunc_tensor,
+                     "reward": reward_tensor, **outputs}
+            self._hook_env_check_(data_, i)
             self.buffer.insert(
                 state = state_norm,
                 reward = reward_tensor,
@@ -385,7 +413,7 @@ class BaseTrain:
                 #capture frames
                 frame = env.render()
                 if frame is not None: frames.append(frame[0])
-                done_or_trunc = terminated or truncated
+                done_or_trunc = bool(np.any(terminated) or np.any(truncated))
                 state = next_state
 
             #save to gif

@@ -32,6 +32,7 @@ class TrainConfig:
     num_envs: int = 1
     normalize: bool = False
     profile: bool = False
+    debug: bool = False
 
     device: torch.device = field(init=False)
     num_update: int = field(init=False)
