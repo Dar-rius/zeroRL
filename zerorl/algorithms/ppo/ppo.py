@@ -167,11 +167,12 @@ def ppo_func(agent: BaseAgent,
     ent_coef = algo_config.ent_coef
     clip_eps = algo_config.clip_eps
     clip_vf = getattr(algo_config, "clip_vf", False)
+    is_debug = getattr(algo_config, "_debug_mode", False)
 
     dataset_size = flat_data["action"].size(0)
     final_metrics: dict[str, Tensor] = {}
 
-    @fast_compile(mode="reduce-overhead") #type: ignore
+    @fast_compile(debug=is_debug, mode="reduce-overhead") #type: ignore
     def ppo_backward(agent: BaseAgent,
                     params: dict,
                     buffers: dict,
