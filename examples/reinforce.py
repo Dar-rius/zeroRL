@@ -6,7 +6,7 @@ from zerorl.train import BaseTrain
 
 
 #1. configure train and define agent
-config = TrainConfig(project_name="reinforce_example", model_name="agent-reinforce", timestamp=1_000_000, num_envs=2, profile=True)
+config = TrainConfig(project_name="reinforce_example", model_name="agent-reinforce", timestamp=1_000_000, num_envs=2, profile=True, debug=True)
 config.device = torch.device("cpu")
 algo_config = AlgoConfig()
 env = get_env("CartPole-v1", config.num_envs)

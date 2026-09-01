@@ -31,11 +31,11 @@ def _cxx_compiler_available() -> bool:
             shutil.which("clang++") is not None)
 
 
-def fast_compile(fn: F | None = None, **kwargs) -> F | Callable:
+def fast_compile(fn: F | None = None,  debug: bool = False, **kwargs) -> F | Callable:
     """Like torch.compile; no-op when a C++ compiler is not on PATH."""
     use_compile = _cxx_compiler_available()
     def wrap(f: F) -> F:
-        if not use_compile:
+        if not use_compile or debug:
             return f
         return torch.compile(f, **kwargs)  # type: ignore[return-value]
 

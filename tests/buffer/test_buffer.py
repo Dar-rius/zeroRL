@@ -91,3 +91,98 @@ class TestBufferKeyError:
             buf.insert(state=torch.zeros(4, device=device),
                        bogus=torch.zeros(4, device=device))
         assert buf.size == 0
+
+
+class TestBufferGetAllReshape:
+    @pytest.mark.gpu
+    def test_reshape_flattens_leading_dims(self, device) -> None:
+        buf = Buffer(data={"state": (4,)}, config=_make_config(5, device=device))
+        for _ in range(5):
+            buf.insert(state=torch.randn(4, device=device))
+        result = buf.get_all(reshape=True)
+        assert result["state"].shape == (5, 4)
+
+    @pytest.mark.gpu
+    def test_reshape_slices_before_reshape(self, device) -> None:
+        buf = Buffer(data={"state": (4,)}, config=_make_config(5, device=device))
+        for _ in range(3):
+            buf.insert(state=torch.randn(4, device=device))
+        result = buf.get_all(reshape=True)
+        assert result["state"].shape == (3, 4)
+
+    @pytest.mark.gpu
+    def test_reshape_multi_env(self, device) -> None:
+        buf = Buffer(data={"state": (4,)}, config=_make_config(3, num_envs=4, device=device))
+        for _ in range(3):
+            buf.insert(state=torch.randn(4, device=device))
+        result = buf.get_all(reshape=True)
+        assert result["state"].shape == (12, 4)
+
+    @pytest.mark.gpu
+    def test_reshape_scalar_fields(self, device) -> None:
+        buf = Buffer(data={"reward": ()}, config=_make_config(3, num_envs=2, device=device))
+        for _ in range(3):
+            buf.insert(reward=torch.tensor([1.0, 2.0], device=device))
+        result = buf.get_all(reshape=True)
+        assert result["reward"].shape == (6,)
+
+    @pytest.mark.gpu
+    def test_no_reshape_preserves_3d(self, device) -> None:
+        buf = Buffer(data={"state": (4,)}, config=_make_config(3, num_envs=2, device=device))
+        for _ in range(3):
+            buf.insert(state=torch.randn(4, device=device))
+        result = buf.get_all(reshape=False)
+        assert result["state"].shape == (3, 2, 4)
+
+
+class TestBufferMultiEnv:
+    @pytest.mark.gpu
+    def test_multi_env_shapes(self, device) -> None:
+        buf = Buffer(data={"state": (4,)}, config=_make_config(5, num_envs=4, device=device))
+        assert buf.data["state"].shape == (5, 4, 4)
+
+    @pytest.mark.gpu
+    def test_multi_env_insert_and_retrieve(self, device) -> None:
+        buf = Buffer(data={"state": (2,)}, config=_make_config(3, num_envs=2, device=device))
+        for _ in range(3):
+            buf.insert(state=torch.randn(2, device=device))
+        result = buf.get_all()
+        assert result["state"].shape == (3, 2, 2)
+        assert buf.size == 3
+
+
+class TestBufferClear:
+    @pytest.mark.gpu
+    def test_clear_resets_size_to_zero(self, device) -> None:
+        buf = Buffer(data={"state": (4,)}, config=_make_config(5, device=device))
+        for _ in range(5):
+            buf.insert(state=torch.randn(4, device=device))
+        buf.clear()
+        assert buf.size == 0
+
+    @pytest.mark.gpu
+    def test_get_all_after_clear_returns_empty(self, device) -> None:
+        buf = Buffer(data={"state": (4,)}, config=_make_config(5, device=device))
+        for _ in range(5):
+            buf.insert(state=torch.randn(4, device=device))
+        buf.clear()
+        result = buf.get_all()
+        assert result["state"].shape[0] == 0
+
+    @pytest.mark.gpu
+    def test_clear_does_not_zero_memory(self, device) -> None:
+        buf = Buffer(data={"state": (2,)}, config=_make_config(3, device=device))
+        buf.insert(state=torch.tensor([1.0, 2.0], device=device))
+        buf.clear()
+        buf.insert(state=torch.tensor([10.0, 20.0], device=device))
+        result = buf.get_all()
+        torch.testing.assert_close(result["state"][0], torch.tensor([[10.0, 20.0]], device=device))
+        assert result["state"].shape[0] == 1
+
+
+class TestBufferDevice:
+    @pytest.mark.gpu
+    def test_device_property_returns_config_device(self, device) -> None:
+        cfg = _make_config(4, device=device)
+        buf = Buffer(data={"state": (4,)}, config=cfg)
+        assert buf.device.type == device.type

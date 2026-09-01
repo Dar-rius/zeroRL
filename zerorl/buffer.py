@@ -72,11 +72,10 @@ class Buffer:
 
     def get_all(self, reshape: bool = False) -> dict[str, torch.Tensor]:
         """Return all inserted data as a dict of sliced tensors."""
+        sliced_data = {name: val[:self.slice] for name, val in self.data.items()}
         if reshape:
-            outputs  = {k: v.reshape(-1,  *v.shape[2:]) for k, v in self.data.items()}
-        else:
-            outputs = {name: val[:self.slice] for name, val in self.data.items()}
-        return outputs
+            return {k: v.reshape(-1,  *v.shape[2:]) for k, v in sliced_data.items()}
+        return sliced_data
 
     def clear(self):
         """Reset the buffer for reuse.

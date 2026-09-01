@@ -137,17 +137,17 @@ class BaseTrain:
         if self.debug:
             sys.stderr.write("\033[96mzeroRL DEBUG MODE ENABLED. torch.compile is disabled.\033[0m\n")
             torch.autograd.set_detect_anomaly(True)
-            obs_space = getattr(self.env, "single_observation_space", self.env.observation_space)
-            act_space = getattr(self.env, "single_action_space", self.env.action_space)
+            obs_space = getattr(env, "single_observation_space", env.observation_space)
+            act_space = getattr(env, "single_action_space", env.action_space)
                         
             from zerorl.debug import check_tensor, check_shape, check_reward_scale
             def _env_hook(data_: dict[str, Tensor], step: int):
                 for k, v in data_.items():
                     check_tensor(v, k , step)
                     if k in ["state", "next_state"]:
-                        check_shape(v, obs_space.shape, k, step)
+                        check_shape(v, (self.num_envs, *obs_space.shape), k, step)
                     elif k == "action":
-                        check_shape(v, act_space.shape, k, step)
+                        check_shape(v, (self.num_envs, *act_space.shape), k, step)
                     else:
                         check_shape(v, (self.num_envs,), k, step)
 
@@ -321,6 +321,10 @@ class BaseTrain:
             if self.buffer.size < self.require_buffer_size:
                 raise EmptyBufferError(self.buffer.size, self.require_buffer_size)
             
+            if self.debug:
+                self.algo_config._debug_mode = True #type: ignore
+                weights_before = {k: v.clone() for k, v in self.agent.state_dict().items()}
+            
             losses = self.update_weights(
                             agent = self.agent,
                             buffer = self.buffer,
@@ -328,6 +332,15 @@ class BaseTrain:
                             optimizer = self.optimizer,
                             last_output = last_output,
                             algo_config = self.algo_config)
+
+            if self.debug:
+                weights_after = self.agent.state_dict()
+                changed = any(not torch.allclose(weights_before[k], weights_after[k]) for k in weights_before)
+                if not changed:
+                    sys.stderr.write(
+                            "\n\033[93m [DEBUG ALERT] Model weights did not change after update_weights()!\n"
+                            "Did you forget to call `optimizer.step()` in your update function ?[0m\n"
+                            )
                
             if is_profile:
                 if is_cuda: sync()
