@@ -14,7 +14,7 @@ The core principle: **If you can write it in PyTorch, you can use it in zeroRL.*
 
 The framework allows you to:
 
-- Implement custom algorithms that are not included in the framework;
+- Implement custom algorithms that are not included in the framework
 - Integrate new environments without unnecessary wrappers
 - Replace or modify individual components without rewriting the training pipeline
 - Maintain full control and visibility over the training pipeline
