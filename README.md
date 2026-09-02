@@ -338,4 +338,4 @@ To propose a feature, report a bug, or discuss an idea, please [open an issue](h
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details.
+Apache 2.0 - see [LICENSE](LICENSE) for details.
