@@ -179,9 +179,9 @@ class BaseTrain:
                 outputs: dict[str, Tensor] = self.agent.get_action(state_norm) #type: ignore[operator]
                 action = outputs["action"]
                 if str(self.env_device).startswith("cuda"):
-                    action_input: np.ndarray | Tensor = action
+                    action_input:Tensor = action
                 else:
-                    action_input = action.cpu().numpy()
+                    action_input:np.ndarray = action.cpu().numpy() #type: ignore
 
             # Gymnasium v1 step() returns: obs, reward, terminated, truncated, info
             # terminated = episode naturally ended; truncated = cut short by time limit

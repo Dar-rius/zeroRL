@@ -46,8 +46,21 @@ def vectorize_env(env_spec: str | Callable | BaseEnv, num_envs: int = 1, render_
     return gym.vector.SyncVectorEnv([make_env_fn(i) for i in range(num_envs)], autoreset_mode=AutoresetMode.SAME_STEP)
 
 
+#Function help agent to interact with his env
+def env_step(env: Any, agent:BaseAgent, state:np.ndarray|Tensor, normalizer:NormMeanStd|None=None, device = torch.device("cpu")) -> dict[str, Tensor]:
+    state_tensor = processing_state(state, normalizer, device)
+    with torch.inference_mode():
+        outputs: dict[str, Tensor] = agent.get_action(state_tensor) #type: ignore[operator]
 
-def processing_state(state: np.ndarray | Tensor, normalizer: NormMeanStd | None, device: torch.device) -> Tensor:
+    action = to_env_action(outputs["action"], device)
+    # Gymnasium v1 step() returns: obs, reward, terminated, truncated, info
+    # terminated = episode naturally ended; truncated = cut short by time limit
+    next_state, reward, terminated, truncated, info = env.step(action)
+    return {"next_state": next_state, "reward": reward, "terminated": terminated, "truncated": truncated, **outputs}
+
+
+
+def processing_state(state:np.ndarray| Tensor, normalizer:NormMeanStd|None = None, device: torch.device = torch.device("cpu")) -> Tensor:
     state_tensor = torch.as_tensor(state, dtype=torch.float32, device=device)
     if state_tensor.dim() == 1:
         state_tensor = state_tensor.unsqueeze(-1)
@@ -66,11 +79,10 @@ def parse_env_step(next_state: np.ndarray, reward: float, terminated: bool, trun
     return (next_state_tensor, reward_tensor, terminated_tensor, truncated_tensor)
 
 
-def to_env_action(action, env_device: str) -> np.ndarray | Tensor:
+def to_env_action(action, env_device: torch.device) -> np.ndarray | Tensor:
     if str(env_device).startswith("cuda"):
         return action
     return action.cpu().numpy()
-
 
 
 def get_obs_act(env: SyncVectorEnv) -> Any:

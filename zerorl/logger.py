@@ -69,7 +69,7 @@ class ProfileMetrics:
     vram_peak_gb: float
 
 # Profiler is a decorator
-def profiler(name:str, is_cuda:bool = False):
+def profile(name:str, is_cuda:bool = False):
     def profile_func(func: Callable):
         @wraps(func)
         def wrapper(*args, **kwargs) -> tuple:
