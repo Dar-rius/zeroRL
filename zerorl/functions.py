@@ -5,43 +5,18 @@ optional torch.compile, get_obs_act() for space extraction, and
 get_buffer_params_model() for extracting model parameters.
 """
 
-import shutil
 import copy
-import sys
 import gymnasium as gym
 import torch
 import numpy as np
-from typing import Any, Callable, TypeVar
+from typing import Any, Callable
 from gymnasium import spaces
+from gymnasium.vector import AutoresetMode, SyncVectorEnv
 from torch import Tensor
 from torch.nn import Parameter
 from zerorl.helpers.agent import BaseAgent
 from zerorl.helpers.env import BaseEnv
-from gymnasium.vector import AutoresetMode, SyncVectorEnv
-
-
-F = TypeVar("F", bound=Callable[..., Any])
-
-def _cxx_compiler_available() -> bool:
-    """True if torch inductor can find a C++ compiler."""
-    if sys.platform == "win32":
-        return shutil.which("cl") is not None
-    return (shutil.which("g++") is not None or
-            shutil.which("c++") is not None or
-            shutil.which("clang++") is not None)
-
-
-def fast_compile(fn: F | None = None,  debug: bool = False, **kwargs) -> F | Callable:
-    """Like torch.compile; no-op when a C++ compiler is not on PATH."""
-    use_compile = _cxx_compiler_available()
-    def wrap(f: F) -> F:
-        if not use_compile or debug:
-            return f
-        return torch.compile(f, **kwargs)  # type: ignore[return-value]
-
-    if fn is not None:
-        return wrap(fn)
-    return wrap
+from zerorl.processing import NormMeanStd
 
 
 def vectorize_env(env_spec: str | Callable | BaseEnv, num_envs: int = 1, render_mode: str | None = None) -> SyncVectorEnv:
@@ -69,6 +44,33 @@ def vectorize_env(env_spec: str | Callable | BaseEnv, num_envs: int = 1, render_
             return env
         return _init
     return gym.vector.SyncVectorEnv([make_env_fn(i) for i in range(num_envs)], autoreset_mode=AutoresetMode.SAME_STEP)
+
+
+
+def processing_state(state: np.ndarray | Tensor, normalizer: NormMeanStd | None, device: torch.device) -> Tensor:
+    state_tensor = torch.as_tensor(state, dtype=torch.float32, device=device)
+    if state_tensor.dim() == 1:
+        state_tensor = state_tensor.unsqueeze(-1)
+    if normalizer is None:
+        normalizer.update(state_tensor)
+        state_tensor = normalizer.normalizer(state_tensor)
+    return state_tensor
+
+
+def parse_env_step(next_state: np.ndarray, reward: float, terminated: bool, truncated: bool, device: torch.device) -> tuple[Tensor, Tensor, Tensor, Tensor]:
+    done_trunc = terminated | truncated
+    next_state_tensor = torch.as_tensor(next_state, dtype=torch.float32, device=device).unsqueeze(0)
+    terminated_tensor = torch.as_tensor(done_trunc, dtype=torch.float32, device=device).unsqueeze(0)
+    truncated_tensor = torch.as_tensor(truncated, dtype=torch.float32, device=device).unsqueeze(0)
+    reward_tensor = torch.as_tensor (reward, dtype=torch.float32, device=device).unsqueeze(0)
+    return (next_state_tensor, reward_tensor, terminated_tensor, truncated_tensor)
+
+
+def to_env_action(action, env_device: str) -> np.ndarray | Tensor:
+    if str(env_device).startswith("cuda"):
+        return action
+    return action.cpu().numpy()
+
 
 
 def get_obs_act(env: SyncVectorEnv) -> Any:
