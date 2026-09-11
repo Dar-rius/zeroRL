@@ -40,9 +40,6 @@ from zerorl.errors import EmptyBufferError, assert_agent_contract
 from zerorl.functions import vectorize_env
 
 
-"""Profiling metrics captured during a training step."""
-
-
 @dataclass
 class ProfileMetrics:
     fps: float
