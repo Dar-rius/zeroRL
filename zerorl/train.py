@@ -435,11 +435,11 @@ class BaseTrain:
             self.env.close()
 
 
-    def save_checkpoints(self):
-        """Save agent weights to the path in config.model_path."""
+    def save(self):
+        """Save agent weights and Normalizer state to the path in config.model_path."""
         checkpoints_state = {
             "agent_state_dict": self.agent.state_dict(),
-            "normalizer_state_dict": self.normalizer.state_dict()
+            "normalizer_state_dict": self.normalizer.state_dict() if self.normalizer is not None else None
                 }
         os.makedirs(os.path.dirname(self.config.model_path), exist_ok=True)
         torch.save(checkpoints_state, self.config.model_path)

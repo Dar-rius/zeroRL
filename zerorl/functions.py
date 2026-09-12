@@ -5,6 +5,7 @@ optional torch.compile, get_obs_act() for space extraction, and
 get_buffer_params_model() for extracting model parameters.
 """
 
+import os
 import copy
 import gymnasium as gym
 import torch
@@ -57,6 +58,16 @@ def env_step(env: Any, agent:BaseAgent, state:np.ndarray|Tensor, normalizer:Norm
     # terminated = episode naturally ended; truncated = cut short by time limit
     next_state, reward, terminated, truncated, _ = env.step(action)
     return {"next_state": next_state, "reward": reward, "terminated": terminated, "truncated": truncated, **outputs}
+
+
+def save_checkpoints(agent: BaseAgent, model_path: str, normalizer: NormMeanStd | None = None):
+    """Save agent weights and Normalizer state to the path in config.model_path."""
+    checkpoints_state = {
+        "agent_state_dict": agent.state_dict(),
+        "normalizer_state_dict": normalizer.state_dict() if normalizer is not None else None
+            }
+    os.makedirs(os.path.dirname(model_path), exist_ok=True)
+    torch.save(checkpoints_state, model_path)
 
 
 def processing_state(state:np.ndarray| Tensor, normalizer:NormMeanStd|None = None, device: torch.device = torch.device("cpu")) -> Tensor:
