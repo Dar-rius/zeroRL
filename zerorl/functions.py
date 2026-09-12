@@ -59,7 +59,6 @@ def env_step(env: Any, agent:BaseAgent, state:np.ndarray|Tensor, normalizer:Norm
     return {"next_state": next_state, "reward": reward, "terminated": terminated, "truncated": truncated, **outputs}
 
 
-
 def processing_state(state:np.ndarray| Tensor, normalizer:NormMeanStd|None = None, device: torch.device = torch.device("cpu")) -> Tensor:
     state_tensor = torch.as_tensor(state, dtype=torch.float32, device=device)
     if state_tensor.dim() == 1:

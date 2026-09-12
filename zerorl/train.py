@@ -435,7 +435,7 @@ class BaseTrain:
             self.env.close()
 
 
-    def save_model(self):
+    def save_checkpoints(self):
         """Save agent weights to the path in config.model_path."""
         os.makedirs(os.path.dirname(self.config.model_path), exist_ok=True)
         torch.save(self.agent.state_dict(), self.config.model_path)

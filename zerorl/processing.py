@@ -31,6 +31,7 @@ class NormMeanStd:
         self.var = torch.ones(shape, device=device)
         self.count = epsilon
     
+
     def update(self, x: Tensor):
         """Update running statistics with a new batch of observations.
 
@@ -50,6 +51,7 @@ class NormMeanStd:
         m2 = m_a + m_b + torch.square(delta) * self.count * batch_count / new_count
         self.var = m2 / new_count
         self.count =  new_count
+
 
     @fast_compile
     def normalize(self, x: Tensor) -> Tensor:
