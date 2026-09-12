@@ -55,7 +55,7 @@ def env_step(env: Any, agent:BaseAgent, state:np.ndarray|Tensor, normalizer:Norm
     action = to_env_action(outputs["action"], device)
     # Gymnasium v1 step() returns: obs, reward, terminated, truncated, info
     # terminated = episode naturally ended; truncated = cut short by time limit
-    next_state, reward, terminated, truncated, info = env.step(action)
+    next_state, reward, terminated, truncated, _ = env.step(action)
     return {"next_state": next_state, "reward": reward, "terminated": terminated, "truncated": truncated, **outputs}
 
 
