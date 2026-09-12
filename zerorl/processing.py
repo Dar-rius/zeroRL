@@ -30,7 +30,7 @@ class NormMeanStd:
         self.mean = torch.zeros(shape, device=device)
         self.var = torch.ones(shape, device=device)
         self.count = epsilon
-    
+
 
     def update(self, x: Tensor):
         """Update running statistics with a new batch of observations.
@@ -57,6 +57,20 @@ class NormMeanStd:
     def normalize(self, x: Tensor) -> Tensor:
         """Normalize observations using current running statistics."""
         return (x - self.mean) / torch.sqrt(self.var + 1e-8)
+
+
+    def state_dict(self) -> dict[str, Tensor]:
+        return  {
+                "mean": self.mean.clone(),
+                "var": self.var.clone(),
+                "count": torch.tensor(self.count, dtype=torch.float32)
+                }
+
+
+    def load_state_dict(self, state_dict: dict[str, Tensor]):
+        self.mean  = state_dict["mean"].to(self.var.device)
+        self.var = state_dict["var"].to(self.var.device)
+        self.count = state_dict["count"].item()
 
 
 class NormMinMax:

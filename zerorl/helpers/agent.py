@@ -4,7 +4,6 @@ Provides BaseAgent, an nn.Module base class with runtime contract
 enforcement for all RL agent implementations.
 """
 
-import os
 import torch
 from torch import nn
 from torch import Tensor
@@ -48,8 +47,3 @@ class BaseAgent(nn.Module):
             return next(self.parameters()).device
         except StopIteration:
             return torch.device("cpu")
-
-
-    def save(self, path: str):
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        torch.save(self.state_dict(), path)
