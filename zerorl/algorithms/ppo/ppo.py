@@ -15,7 +15,8 @@ from torch.optim.lr_scheduler import LambdaLR
 from zerorl.buffer import Buffer
 from zerorl.helpers.agent import BaseAgent, eval_action
 from zerorl.config import AlgoConfig
-from zerorl.functions import get_buffer_params_model, fast_compile
+from zerorl.functions import get_buffer_params_model
+from zerorl.compiler import fast_compile
 from zerorl.errors import assert_agent_contract
 
 
