@@ -70,13 +70,13 @@ def save_checkpoints(agent: BaseAgent, model_path: str, normalizer: NormMeanStd 
     torch.save(checkpoints_state, model_path)
 
 
-def processing_state(state:np.ndarray| Tensor, normalizer:NormMeanStd|None = None, device: torch.device = torch.device("cpu")) -> Tensor:
+def processing_state(state: np.ndarray | Tensor, normalizer: NormMeanStd | None = None, device: torch.device = torch.device("cpu")) -> Tensor:
     state_tensor = torch.as_tensor(state, dtype=torch.float32, device=device)
     if state_tensor.dim() == 1:
         state_tensor = state_tensor.unsqueeze(-1)
-    if normalizer is None:
+    if normalizer is not None:
         normalizer.update(state_tensor)
-        state_tensor = normalizer.normalizer(state_tensor)
+        state_tensor = normalizer.normalize(state_tensor)
     return state_tensor
 
 
