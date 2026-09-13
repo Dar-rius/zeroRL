@@ -1,4 +1,5 @@
 import os
+import warnings
 import time
 import torch
 import numpy as np
@@ -91,3 +92,61 @@ def profile(name:str, is_cuda:bool = False):
             return (result, ProfileMetrics(name, duration_ms, vram_peak_gb))
         return wrapper
     return profile_func
+
+
+@dataclass
+class PhaseMetrics:
+    rollout_ms: float = 0.0
+    update_ms: float = 0.0
+    total_ms: float = 0.0
+    fps: float = 0.0
+    vram_peak_gb: float = 0.0
+    ram_mb: float = 0.0
+
+class PhaseProfiler:
+    def __init__(self, config: TrainConfig, is_cuda: bool = False):
+        self.is_cuda = is_cuda
+        self.total_rollout = config.rollout_steps * config.env
+        self.metrics = PhaseMetrics()
+        self._current_start = 0.0
+
+
+    def start_phase(self):
+        if self.is_cuda:
+            torch.cuda.synchronize()
+            torch.cuda.reset_peak_memory_stats()
+        self._current_start = time.perf_counter()
+
+
+    def track(self, phase_name: str):
+        profiler = self
+        class PhaseContext:
+            def __enter__(self):
+                if profiler.is_cuda: torch.cuda.synchronize()
+                profiler._phase_start = time.perf_counter()
+
+            def __exit__(self, exc_type, exc_val, exc_tb):
+                if profiler.is_cuda: torch.cuda.synchronize()
+                phase_end = time.perf_counter()
+                duration = (phase_end - profiler._phase_start) * 1000
+                setattr(profiler.metrics, f"{phase_name}_ms", duration)
+        return PhaseContext()
+
+
+    def end_phase(self):
+        try:
+            import psutil
+            ram_bytes = psutil.Process().memory_info().rss
+            self.metrics.ram_mb = ram_bytes / (1024 ** 2)
+        except ImportError:
+            warnings.warn("Profiles are running but they are unable to capture the state of ram, install psutil")
+
+        if self.is_cuda:
+            self.metrics.vram_peak_gb = torch.cuda.max_memory_allocated() / (1024 ** 3)
+            end_time = time.perf_counter()
+            self.metrics.total_ms = (end_time - self._current_start) * 1000
+
+            # FPS
+        if self.metrics.rollout_ms > 0:
+            self.metrics.fps = self.total_rollout / (self.metrics.total_ms / 1000)
+        return self.metrics
