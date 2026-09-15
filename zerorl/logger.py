@@ -22,7 +22,6 @@ except ImportError:
 
 # Visualizer (Wandb and TensorBoard)
 def create_logger(config: TrainConfig, algo_config: AlgoConfig, *, use_wandb:bool = False, use_tb:bool = False) -> Callable:
-    os.path.join(config.model_save_path)
     if use_wandb:
         if wandb is None:
             raise ImportError("`Wandb` is not installed. Install it with: pip install wandb")
@@ -143,7 +142,7 @@ class PhaseProfiler:
             warnings.warn("Profiles are running but they are unable to capture the state of ram, install psutil")
 
         if self.is_cuda:
-            self.metrics.vram_allocated_gb = torch.cuda.memory_allocated / (1024 ** 3)
+            self.metrics.vram_allocated_gb = torch.cuda.memory_allocated() / (1024 ** 3)
             self.metrics.vram_peak_gb = torch.cuda.max_memory_allocated() / (1024 ** 3)
         end_time = time.perf_counter()
         self.metrics.total_ms = (end_time - self._current_start) * 1000

@@ -224,7 +224,7 @@ class BaseTrain:
                 if not changed:
                     sys.stderr.write(
                             "\n\033[93m [DEBUG ALERT] Model weights did not change after update_weights()!\n"
-                            "Did you forget to call `optimizer.step()` in your update function ?[0m\n"
+                            "Did you forget to call `optimizer.step()` in your update function ?\033[0m\n"
                             )
                
             if is_profile:
