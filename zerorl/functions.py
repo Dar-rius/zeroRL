@@ -57,7 +57,7 @@ def env_step(env: Any, agent:BaseAgent, state:np.ndarray|Tensor, normalizer:Norm
     # Gymnasium v1 step() returns: obs, reward, terminated, truncated, info
     # terminated = episode naturally ended; truncated = cut short by time limit
     next_state, reward, terminated, truncated, _ = env.step(action)
-    return {"next_state": next_state, "reward": reward, "terminated": terminated, "truncated": truncated, **outputs}
+    return {"state": state, "next_state": next_state, "reward": reward, "terminated": terminated, "truncated": truncated, **outputs}
 
 
 def save_checkpoints(agent: BaseAgent, model_path: str, normalizer: NormMeanStd | None = None):
@@ -72,24 +72,25 @@ def save_checkpoints(agent: BaseAgent, model_path: str, normalizer: NormMeanStd 
 
 def processing_state(state: np.ndarray | Tensor, normalizer: NormMeanStd | None = None, device: torch.device = torch.device("cpu")) -> Tensor:
     state_tensor = torch.as_tensor(state, dtype=torch.float32, device=device)
-    if state_tensor.dim() == 1: state_tensor = state_tensor.unsqueeze(-1)
+    if state_tensor.dim() == 1: state_tensor = state_tensor.unsqueeze(0)
     if normalizer is not None:
         normalizer.update(state_tensor)
         state_tensor = normalizer.normalize(state_tensor)
     return state_tensor
 
 
-def parse_env_step(next_state: np.ndarray, reward: float, terminated: bool, truncated: bool, device: torch.device = torch.device("cpu")) -> tuple[Tensor, Tensor, Tensor, Tensor]:
-    done_trunc = terminated | truncated
-    next_state_tensor = torch.as_tensor(next_state, dtype=torch.float32, device=device).unsqueeze(0)
-    terminated_tensor = torch.as_tensor(done_trunc, dtype=torch.float32, device=device).unsqueeze(0)
-    truncated_tensor = torch.as_tensor(truncated, dtype=torch.float32, device=device).unsqueeze(0)
-    reward_tensor = torch.as_tensor (reward, dtype=torch.float32, device=device).unsqueeze(0)
-    return (next_state_tensor, reward_tensor, terminated_tensor, truncated_tensor)
+def parse_env_step(output: dict[str, Tensor], device: torch.device = torch.device("cpu")) -> dict[str, Tensor]:
+    keys = ["next_state", "reward", "terminated", "truncated"]
+    for k in keys:
+        value = output[k]
+        output[k] = torch.as_tensor(value, dtype=torch.float32, device=device) 
+        if output[k].dim() == 0: output.unsqueeze(0)
+    return output
 
 
-def to_env_action(action, env_device: torch.device) -> np.ndarray | Tensor:
-    if str(env_device).startswith("cuda"):
+def to_env_action(action, env: Any) -> np.ndarray | Tensor:
+    device = getattr(env, "device", "cpu")
+    if str(device).startswith("cuda"):
         return action
     return action.cpu().numpy()
 

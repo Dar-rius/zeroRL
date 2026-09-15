@@ -20,7 +20,7 @@ def reinforce_update(agent, buffer, optimizer, algo_config, scheduler=None, last
     data = buffer.get_all(reshape=True)
     rewards = data["reward"]
     total_size = rewards.shape[0]
-    dones = data["done"]
+    dones = data["terminated"]
     returns = torch.empty_like(rewards)
     mask = 1.0 - dones
     R = 0.0

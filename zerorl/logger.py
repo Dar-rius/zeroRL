@@ -32,7 +32,7 @@ def create_logger(config: TrainConfig, algo_config: AlgoConfig, *, use_wandb:boo
 
     if use_tb:
         if SummaryWriter is None:
-            raise ImportError("`TensorBoard` is not installed. Install it with: pip install wandb")
+            raise ImportError("`TensorBoard` is not installed. Install it with: pip install tensorboard")
         tb_log_dir = os.path.join(config.model_save_path)
         tb_writer = SummaryWriter(tb_log_dir)
     clean_metrics: dict[str, float | np.ndarray] = {}
@@ -54,8 +54,8 @@ def create_logger(config: TrainConfig, algo_config: AlgoConfig, *, use_wandb:boo
 
 
     def finish():
-        if wandb is not None: wandb.finish()
-        if tb_writer is not None: tb_writer.close()
+        if use_wandb: wandb.finish()
+        if use_tb: tb_writer.close()
 
     log.finish =  finish 
     return log
@@ -101,10 +101,11 @@ class PhaseMetrics:
     total_ms: float = 0.0
     fps: float = 0.0
     vram_peak_gb: float = 0.0
+    vram_allocated_gb: float = 0.0
     ram_mb: float = 0.0
 
 class PhaseProfiler:
-    def __init__(self, config: TrainConfig, is_cuda: bool = False):
+    def __init__(self, config: TrainConfig, *, is_cuda: bool = False):
         self.is_cuda = is_cuda
         self.total_rollout = config.rollout_steps * config.env
         self.metrics = PhaseMetrics()
@@ -142,6 +143,7 @@ class PhaseProfiler:
             warnings.warn("Profiles are running but they are unable to capture the state of ram, install psutil")
 
         if self.is_cuda:
+            self.metrics.vram_allocated_gb = torch.cuda.memory_allocated / (1024 ** 3)
             self.metrics.vram_peak_gb = torch.cuda.max_memory_allocated() / (1024 ** 3)
             end_time = time.perf_counter()
             self.metrics.total_ms = (end_time - self._current_start) * 1000
