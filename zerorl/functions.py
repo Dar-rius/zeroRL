@@ -48,8 +48,8 @@ def vectorize_env(env_spec: str | Callable | BaseEnv, num_envs: int = 1, render_
 
 
 #Function help agent to interact with his env
-def env_step(env: Any, agent:BaseAgent, state:np.ndarray|Tensor, normalizer:NormMeanStd|None=None, device = torch.device("cpu")) -> dict[str, Tensor]:
-    state_tensor = processing_state(state, normalizer, device)
+def env_step(env: Any, agent:BaseAgent, state:np.ndarray|Tensor, normalizer:NormMeanStd|None=None, device: torch.device = torch.device("cpu")) -> dict[str, Tensor]:
+    state_tensor = processing_state(state, normalizer, device = device)
     with torch.inference_mode():
         outputs: dict[str, Tensor] = agent.get_action(state_tensor) #type: ignore[operator]
 
