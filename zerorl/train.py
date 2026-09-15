@@ -138,7 +138,7 @@ class BaseTrain:
 
         Uses self.state internally as the starting observation.
         """
-        state_tensor = processing_state(self.state)
+        state_tensor = processing_state(self.state, self.normalizer, device = self.device)
         if self.current_episode_reward is None:
             self.current_episode_reward = torch.zeros(self.num_envs, device=self.device)
 
@@ -148,7 +148,7 @@ class BaseTrain:
             outputs = parse_env_step(outputs, self.device)
             self._hook_env_check_(outputs, i)
             next_state_tensor = outputs.pop("next_state")
-            self.buffer.insert(**outputs)
+            self.buffer.insert(**outputs), self.device
             self.current_episode_reward += outputs["reward"]
             finished = (outputs["terminated"] > 0) | (outputs["truncated"] > 0)
 
@@ -161,7 +161,7 @@ class BaseTrain:
 
         if "value" in self.buffer.data:
             with torch.inference_mode():
-                state_tensor = processing_state(state_tensor, self.normalizer, update=False)
+                state_tensor = processing_state(state_tensor, self.normalizer, update=False, device = self.device)
                 next_output = self.agent.get_action(state_tensor) #type: ignore[operator]
         else:
             next_output = None
