@@ -4,7 +4,7 @@ import time
 import torch
 import numpy as np
 from typing import Callable
-from fucntools import wraps
+from functools import wraps
 from dataclasses import dataclass
 from torch import Tensor
 from zerorl.config import AlgoConfig, TrainConfig
@@ -33,7 +33,7 @@ def create_logger(config: TrainConfig, algo_config: AlgoConfig, *, use_wandb:boo
     if use_tb:
         if SummaryWriter is None:
             raise ImportError("`TensorBoard` is not installed. Install it with: pip install tensorboard")
-        tb_log_dir = os.path.join(config.model_save_path)
+        tb_log_dir = os.path.join(config.model_save_path, f"tensorboard_{config.model_name}")
         tb_writer = SummaryWriter(tb_log_dir)
     clean_metrics: dict[str, float | np.ndarray] = {}
 
@@ -53,11 +53,11 @@ def create_logger(config: TrainConfig, algo_config: AlgoConfig, *, use_wandb:boo
                 tb_writer.add_scalar(key, value, step)
 
 
-    def finish():
+    def close():
         if use_wandb: wandb.finish()
         if use_tb: tb_writer.close()
 
-    log.finish =  finish 
+    log.close = close
     return log
 
 
@@ -107,7 +107,7 @@ class PhaseMetrics:
 class PhaseProfiler:
     def __init__(self, config: TrainConfig, *, is_cuda: bool = False):
         self.is_cuda = is_cuda
-        self.total_rollout = config.rollout_steps * config.env
+        self.total_rollout = config.rollout_steps * config.num_envs
         self.metrics = PhaseMetrics()
         self._current_start = 0.0
 
@@ -145,8 +145,8 @@ class PhaseProfiler:
         if self.is_cuda:
             self.metrics.vram_allocated_gb = torch.cuda.memory_allocated / (1024 ** 3)
             self.metrics.vram_peak_gb = torch.cuda.max_memory_allocated() / (1024 ** 3)
-            end_time = time.perf_counter()
-            self.metrics.total_ms = (end_time - self._current_start) * 1000
+        end_time = time.perf_counter()
+        self.metrics.total_ms = (end_time - self._current_start) * 1000
 
             # FPS
         if self.metrics.rollout_ms > 0:

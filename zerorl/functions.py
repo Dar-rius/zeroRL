@@ -53,7 +53,7 @@ def env_step(env: Any, agent:BaseAgent, state:np.ndarray|Tensor, normalizer:Norm
     with torch.inference_mode():
         outputs: dict[str, Tensor] = agent.get_action(state_tensor) #type: ignore[operator]
 
-    action = to_env_action(outputs["action"], env.device)
+    action = to_env_action(outputs["action"], env)
     # Gymnasium v1 step() returns: obs, reward, terminated, truncated, info
     # terminated = episode naturally ended; truncated = cut short by time limit
     next_state, reward, terminated, truncated, _ = env.step(action)
@@ -70,11 +70,11 @@ def save_checkpoints(agent: BaseAgent, model_path: str, normalizer: NormMeanStd 
     torch.save(checkpoints_state, model_path)
 
 
-def processing_state(state: np.ndarray | Tensor, normalizer: NormMeanStd | None = None, device: torch.device = torch.device("cpu")) -> Tensor:
+def processing_state(state: np.ndarray | Tensor, normalizer: NormMeanStd | None = None, update: bool = True, device: torch.device = torch.device("cpu")) -> Tensor:
     state_tensor = torch.as_tensor(state, dtype=torch.float32, device=device)
     if state_tensor.dim() == 1: state_tensor = state_tensor.unsqueeze(0)
     if normalizer is not None:
-        normalizer.update(state_tensor)
+        if update: normalizer.update(state_tensor)
         state_tensor = normalizer.normalize(state_tensor)
     return state_tensor
 

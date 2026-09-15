@@ -6,7 +6,6 @@ and repeat.
 """
 
 import sys
-import warnings
 import contextlib
 import numpy as np
 import imageio
@@ -23,7 +22,7 @@ from zerorl.buffer import Buffer
 from zerorl.config import TrainConfig, AlgoConfig
 from zerorl.processing import NormMeanStd
 from zerorl.errors import EmptyBufferError, assert_agent_contract
-from zerorl.logger import PhaseProfiler, PhaseMetrics
+from zerorl.logger import PhaseProfiler, PhaseMetrics, create_logger
 from zerorl.functions import (
         vectorize_env,
         processing_state,
@@ -47,7 +46,7 @@ class BaseTrain:
                  buffer: Buffer,
                  update_weights: Callable,
                  config: TrainConfig,
-                 algo_config: AlgoConfig | None = None,
+                 algo_config: AlgoConfig,
                  optimizer: optim.Optimizer | None = None,
                  schedule_func: Callable[[int], float] | None = None,
                  render_mode: str | None = None,
@@ -106,7 +105,6 @@ class BaseTrain:
         self.env_device = getattr(self.env, "device", "cpu")
         self.debug = self.config.debug
         self.device = self.config.device
-        self.
 
         if self.debug:
             sys.stderr.write("\033[96mzeroRL DEBUG MODE ENABLED. torch.compile is disabled.\033[0m\n")
@@ -146,10 +144,11 @@ class BaseTrain:
 
         for i in range(self.config.rollout_steps):
             outputs = env_step(self.env, self.agent, state_tensor, self.normalizer)
+            outputs["terminated"] = outputs["terminated"] | outputs["truncated"]
             outputs = parse_env_step(outputs, self.device)
             self._hook_env_check_(outputs, i)
             next_state_tensor = outputs.pop("next_state")
-            self.buffer.insert(outputs)
+            self.buffer.insert(**outputs)
             self.current_episode_reward += outputs["reward"]
             finished = (outputs["terminated"] > 0) | (outputs["truncated"] > 0)
 
@@ -158,10 +157,11 @@ class BaseTrain:
                 self.episode_rewards.extend(finished_rewards.tolist())
                 self.current_episode_reward[finished] = 0.0
 
-            state_tensor = processing_state(next_state_tensor)
+            state_tensor = next_state_tensor
 
         if "value" in self.buffer.data:
             with torch.inference_mode():
+                state_tensor = processing_state(state_tensor, self.normalizer, update=False)
                 next_output = self.agent.get_action(state_tensor) #type: ignore[operator]
         else:
             next_output = None
@@ -190,24 +190,25 @@ class BaseTrain:
         """
         #Configure env
         is_profile = self.config.profile
-        is_cuda = True if str(self.device).startswith("cuda") else None
+        is_cuda = True if str(self.device).startswith("cuda") else False
         profiler = PhaseProfiler(self.config, is_cuda = is_cuda)
         log = create_logger(self.config, self.algo_config, use_wandb=use_wandb, use_tb=use_tb)
+        state, _ = self.env.reset()
+        self.state = torch.as_tensor(state, dtype=torch.float32, device=self.config.device)
          
         for step in tqdm(range(self.config.num_update)):
             if is_profile: profiler.start_phase()
-                
+
             with profiler.track("rollout") if is_profile else contextlib.nullcontext():
                 last_output = self.rollout_phase() 
 
-            if self.buffer.size < self.require_buffer_size:
-                raise EmptyBufferError(self.buffer.size, self.require_buffer_size)
+            if self.buffer.size < self.require_buffer_size: raise EmptyBufferError(self.buffer.size, self.require_buffer_size)
             
             if self.debug:
                 self.algo_config._debug_mode = True #type: ignore
                 weights_before = {k: v.clone() for k, v in self.agent.state_dict().items()}
             
-            with profiler.track("update") if is_profiler else contextlib.nullcontext():
+            with profiler.track("update") if is_profile else contextlib.nullcontext():
                 losses = self.update_weights(
                                 agent = self.agent,
                                 buffer = self.buffer,
@@ -227,7 +228,7 @@ class BaseTrain:
                             )
                
             if is_profile:
-                profile_data = profile.end_phase()
+                profile_data = profiler.end_phase()
                 self._log_profile_metrics(step, profile_data)
 
             if len(self.episode_rewards) > 0:
@@ -273,11 +274,10 @@ class BaseTrain:
             state, _ = env.reset() #type: ignore
             while not done_or_trunc:
                 outputs = env_step(env, self.agent, state, self.normalizer, self.device)
-
                 #capture frames
                 frame = env.render()
                 if frame is not None: frames.append(frame[0])
-                done_or_trunc = bool(np.any(terminated) or np.any(truncated))
+                done_or_trunc = bool(np.any(outputs["terminated"]) or np.any(outputs["truncated"]))
                 state = outputs["next_state"]
 
             #save to gif
