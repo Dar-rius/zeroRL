@@ -425,7 +425,7 @@ class TestBaseTrainLogMetrics:
         log_fn = mock_log_fn
         log_fn(metrics, step=0)
         logged = log_fn.call_args.args[0]
-        assert logged["x"] == pytest.approx(1.5)
+        assert logged["x"].item() == pytest.approx(1.5)
         assert logged["y"] == 2.5
         env.close()
 
