@@ -68,7 +68,7 @@ class TestPPOVectorizedIntegration:
                 "action": (),
                 "log_prob": (),
                 "reward": (),
-                "done": (),
+                "terminated": (),
                 "value": (),
                 "advantage": (),
                 "return": (),
@@ -97,7 +97,7 @@ class TestPPOVectorizedIntegration:
                 action=out["action"],
                 log_prob=out["log_prob"],
                 reward=reward_tensor,
-                done=done_tensor,
+                terminated=done_tensor,
                 value=out["value"].squeeze(-1),
             )
             state = next_state
@@ -112,7 +112,7 @@ class TestPPOVectorizedIntegration:
             all_data["reward"],      # (T, N)
             all_data["value"],       # (T, N)
             last_value,              # (N,)
-            all_data["done"],        # (T, N)
+            all_data["terminated"],        # (T, N)
             buf,
             cfg,
         )

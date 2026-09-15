@@ -84,7 +84,7 @@ def parse_env_step(output: dict[str, Tensor], device: torch.device = torch.devic
     for k in keys:
         value = output[k]
         output[k] = torch.as_tensor(value, dtype=torch.float32, device=device) 
-        if output[k].dim() == 0: output.unsqueeze(0)
+        if output[k].dim() == 0: output[k] = output[k].unsqueeze(0)
     return output
 
 
