@@ -143,7 +143,7 @@ class BaseTrain:
             self.current_episode_reward = torch.zeros(self.num_envs, device=self.device)
 
         for i in range(self.config.rollout_steps):
-            outputs = env_step(self.env, self.agent, state_tensor, self.normalizer)
+            outputs = env_step(self.env, self.agent, state_tensor, self.normalizer, self.device)
             outputs["terminated"] = outputs["terminated"] | outputs["truncated"]
             outputs = parse_env_step(outputs, self.device)
             self._hook_env_check_(outputs, i)
