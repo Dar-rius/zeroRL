@@ -3,8 +3,8 @@ from zerorl.algorithms.ppo import easy_train_ppo
 from zerorl.config import AlgoConfig, TrainConfig
 
 config = TrainConfig(
-    model_name="HumanoidStandup",
-    project_name="HumanoidStandup",
+    model_name="humanoid_standup",
+    project_name="Humanoid",
     timestamp=10_000_000,
     rollout_steps=512,
     num_envs=20,

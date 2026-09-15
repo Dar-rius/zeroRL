@@ -58,6 +58,7 @@ class Agent(BaseAgent):
         dist = self.build_distribution(logits)
         if action is None: action = dist.sample()
         log_prob, dist_entropy = eval_action(dist, action)
+        value = value.squeeze(-1)
         return {"action": action, "log_prob": log_prob, "entropy":dist_entropy, "value":value}
 
 
@@ -70,7 +71,7 @@ env = get_env("BipedalWalker-v3", config.num_envs)
 obs_dim, act_dim, obs_n, act_n, _ = get_obs_act(env)
 agent = Agent(obs_n, act_n) #type: ignore
 buffer = Buffer(data={"state": obs_dim, "action": act_dim, #type: ignore
-                      "reward": (), "done": (), "entropy": (), "value": (),
+                      "reward": (), "terminated": (), "entropy": (), "value": (),
                       "return": (), "log_prob": (), "advantage": (), "truncated": ()},
                 config=config)
 
@@ -78,7 +79,7 @@ def update_weights(agent, buffer, scheduler, optimizer, last_output, algo_config
     """Compute GAE advantages then run PPO update."""
     all_data = buffer.get_all()
     # Compute GAE from rollout data
-    gae_compute(all_data["reward"], all_data["value"], last_output["value"], all_data["done"], buffer, algo_config)
+    gae_compute(all_data["reward"], all_data["value"], last_output["value"], all_data["terminated"], buffer, algo_config)
     return ppo_func(agent, optimizer, buffer, algo_config, scheduler)
 
 trainer = BaseTrain(agent, env, buffer, update_weights, config, algo_config, render_mode="human")

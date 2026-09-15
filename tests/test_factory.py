@@ -51,7 +51,7 @@ class TestGetEnv:
 class TestGetActorCriticBuffer:
     def test_buffer_has_all_required_keys(self, tmp_config) -> None:
         buf = get_actor_critic_buffer((4,), (2,), tmp_config)
-        expected_keys = {"state", "action", "reward", "done", "entropy",
+        expected_keys = {"state", "action", "reward", "terminated", "entropy",
                          "value", "return", "log_prob", "advantage",
                          "truncated"}
         assert set(buf.data.keys()) == expected_keys
@@ -95,7 +95,7 @@ class TestActorCriticAgent:
 class TestGetPolicyBuffer:
     def test_has_correct_keys(self, tmp_config) -> None:
         buf = get_policy_buffer((4,), (), tmp_config)
-        expected_keys = {"state", "action", "reward", "done", "truncated", "log_prob"}
+        expected_keys = {"state", "action", "reward", "terminated", "truncated", "log_prob"}
         assert set(buf.data.keys()) == expected_keys
 
     def test_shapes(self, tmp_config) -> None:
@@ -108,7 +108,7 @@ class TestGetPolicyBuffer:
 class TestGetReplayBuffer:
     def test_has_correct_keys(self, tmp_config) -> None:
         buf = get_replay_buffer((4,), (), tmp_config)
-        expected_keys = {"state", "action", "reward", "done", "next_state", "truncated"}
+        expected_keys = {"state", "action", "reward", "terminated", "next_state", "truncated"}
         assert set(buf.data.keys()) == expected_keys
 
     def test_has_next_state(self, tmp_config) -> None:

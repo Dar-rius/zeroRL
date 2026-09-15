@@ -5,43 +5,19 @@ optional torch.compile, get_obs_act() for space extraction, and
 get_buffer_params_model() for extracting model parameters.
 """
 
-import shutil
+import os
 import copy
-import sys
 import gymnasium as gym
 import torch
 import numpy as np
-from typing import Any, Callable, TypeVar
+from typing import Any, Callable
 from gymnasium import spaces
+from gymnasium.vector import AutoresetMode, SyncVectorEnv
 from torch import Tensor
 from torch.nn import Parameter
 from zerorl.helpers.agent import BaseAgent
 from zerorl.helpers.env import BaseEnv
-from gymnasium.vector import AutoresetMode, SyncVectorEnv
-
-
-F = TypeVar("F", bound=Callable[..., Any])
-
-def _cxx_compiler_available() -> bool:
-    """True if torch inductor can find a C++ compiler."""
-    if sys.platform == "win32":
-        return shutil.which("cl") is not None
-    return (shutil.which("g++") is not None or
-            shutil.which("c++") is not None or
-            shutil.which("clang++") is not None)
-
-
-def fast_compile(fn: F | None = None,  debug: bool = False, **kwargs) -> F | Callable:
-    """Like torch.compile; no-op when a C++ compiler is not on PATH."""
-    use_compile = _cxx_compiler_available()
-    def wrap(f: F) -> F:
-        if not use_compile or debug:
-            return f
-        return torch.compile(f, **kwargs)  # type: ignore[return-value]
-
-    if fn is not None:
-        return wrap(fn)
-    return wrap
+from zerorl.processing import NormMeanStd
 
 
 def vectorize_env(env_spec: str | Callable | BaseEnv, num_envs: int = 1, render_mode: str | None = None) -> SyncVectorEnv:
@@ -69,6 +45,54 @@ def vectorize_env(env_spec: str | Callable | BaseEnv, num_envs: int = 1, render_
             return env
         return _init
     return gym.vector.SyncVectorEnv([make_env_fn(i) for i in range(num_envs)], autoreset_mode=AutoresetMode.SAME_STEP)
+
+
+#Function help agent to interact with his env
+def env_step(env: Any, agent:BaseAgent, state:np.ndarray|Tensor, normalizer:NormMeanStd|None=None, device: torch.device = torch.device("cpu")) -> dict[str, Tensor]:
+    state_tensor = processing_state(state, normalizer, device = device)
+    with torch.inference_mode():
+        outputs: dict[str, Tensor] = agent.get_action(state_tensor) #type: ignore[operator]
+
+    action = to_env_action(outputs["action"], env)
+    # Gymnasium v1 step() returns: obs, reward, terminated, truncated, info
+    # terminated = episode naturally ended; truncated = cut short by time limit
+    next_state, reward, terminated, truncated, _ = env.step(action)
+    return {"state": state, "next_state": next_state, "reward": reward, "terminated": terminated, "truncated": truncated, **outputs}
+
+
+def save_checkpoints(agent: BaseAgent, model_path: str, normalizer: NormMeanStd | None = None):
+    """Save agent weights and Normalizer state to the path in config.model_path."""
+    checkpoints_state = {
+        "agent_state_dict": agent.state_dict(),
+        "normalizer_state_dict": normalizer.state_dict() if normalizer is not None else None
+            }
+    os.makedirs(os.path.dirname(model_path), exist_ok=True)
+    torch.save(checkpoints_state, model_path)
+
+
+def processing_state(state: np.ndarray | Tensor, normalizer: NormMeanStd | None = None, update: bool = True, device: torch.device = torch.device("cpu")) -> Tensor:
+    state_tensor = torch.as_tensor(state, dtype=torch.float32, device=device)
+    if state_tensor.dim() == 1: state_tensor = state_tensor.unsqueeze(0)
+    if normalizer is not None:
+        if update: normalizer.update(state_tensor)
+        state_tensor = normalizer.normalize(state_tensor)
+    return state_tensor
+
+
+def parse_env_step(output: dict[str, Tensor], device: torch.device = torch.device("cpu")) -> dict[str, Tensor]:
+    keys = ["next_state", "reward", "terminated", "truncated"]
+    for k in keys:
+        value = output[k]
+        output[k] = torch.as_tensor(value, dtype=torch.float32, device=device) 
+        if output[k].dim() == 0: output[k] = output[k].unsqueeze(0)
+    return output
+
+
+def to_env_action(action, env: Any) -> np.ndarray | Tensor:
+    device = getattr(env, "device", "cpu")
+    if str(device).startswith("cuda"):
+        return action
+    return action.cpu().numpy()
 
 
 def get_obs_act(env: SyncVectorEnv) -> Any:

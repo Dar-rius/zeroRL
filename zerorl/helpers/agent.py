@@ -39,6 +39,7 @@ class BaseAgent(nn.Module):
     def __init__(self):
         super().__init__()
 
+
     @property
     def device(self) -> torch.device:
         """Return the device where the model runs."""

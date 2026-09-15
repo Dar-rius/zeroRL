@@ -5,52 +5,30 @@ collect experience, compute GAE, run the update_weights callable,
 and repeat.
 """
 
-import os
 import sys
-import time
-import warnings
-try:
-    import psutil
-    _PSUTIL_AVAILABLE = True
-except ImportError:
-    _PSUTIL_AVAILABLE = False
+import contextlib
 import numpy as np
 import imageio
 import torch
 import gymnasium as gym
-from dataclasses import dataclass, asdict
-try:
-    import wandb
-except ImportError:
-    wandb = None  # type: ignore[assignment]
+from dataclasses import asdict
 from tqdm import tqdm
 from typing import Callable, Any
 from torch import Tensor
 from torch import optim
 from torch.optim.lr_scheduler import LambdaLR
-try:
-    from torch.utils.tensorboard import SummaryWriter
-except ImportError:
-    SummaryWriter = None  # type: ignore[misc,assignment]
 from zerorl.helpers.agent import BaseAgent
 from zerorl.buffer import Buffer
 from zerorl.config import TrainConfig, AlgoConfig
 from zerorl.processing import NormMeanStd
 from zerorl.errors import EmptyBufferError, assert_agent_contract
-from zerorl.functions import vectorize_env
-
-
-"""Profiling metrics captured during a training step."""
-
-
-@dataclass
-class ProfileMetrics:
-    fps: float
-    rollout_ms: float
-    update_ms: float
-    vram_allocated_gb: float
-    vram_peak_gb: float
-    ram_mb: float
+from zerorl.logger import PhaseProfiler, PhaseMetrics, create_logger
+from zerorl.functions import (
+        vectorize_env,
+        processing_state,
+        parse_env_step,
+        env_step,
+        save_checkpoints)
 
 
 class BaseTrain:
@@ -68,7 +46,7 @@ class BaseTrain:
                  buffer: Buffer,
                  update_weights: Callable,
                  config: TrainConfig,
-                 algo_config: AlgoConfig | None = None,
+                 algo_config: AlgoConfig,
                  optimizer: optim.Optimizer | None = None,
                  schedule_func: Callable[[int], float] | None = None,
                  render_mode: str | None = None,
@@ -114,26 +92,20 @@ class BaseTrain:
 
         obs_ = getattr(env, "single_observation_space", env.observation_space)
         obs_shape = obs_.shape
+
         if obs_shape is None:
             raise ValueError("NormMeanStd requires environment with a defined observation shape")
 
-        if schedule_func is None:
-            schedule_func = lambda current_step: 1.0 - (current_step / self.config.num_update)
+        if schedule_func is None: schedule_func = lambda current_step: 1.0 - (current_step / self.config.num_update)
         self.scheduler = LambdaLR(self.optimizer, schedule_func)
-
         self.require_buffer_size = require_buffer_size
-        self.normalizer = NormMeanStd(obs_shape, config.device)
-        tb_log_dir = os.path.join(self.config.model_save_path, "tensorboard")
+        self.normalizer = NormMeanStd(obs_shape, config.device) if self.config.normalize else None
         self.current_episode_reward: Tensor | None = None
         self.episode_rewards: list[float] = []
         self.env_device = getattr(self.env, "device", "cpu")
-        if SummaryWriter is not None:
-            tb_log_dir = os.path.join(self.config.model_save_path, "tensorboard")
-            self.tb_writer = SummaryWriter(tb_log_dir)
-        else:
-            self.tb_writer = None #type: ignore[assignment]
-
         self.debug = self.config.debug
+        self.device = self.config.device
+
         if self.debug:
             sys.stderr.write("\033[96mzeroRL DEBUG MODE ENABLED. torch.compile is disabled.\033[0m\n")
             torch.autograd.set_detect_anomaly(True)
@@ -166,54 +138,19 @@ class BaseTrain:
 
         Uses self.state internally as the starting observation.
         """
-        dev = self.config.device
-        state_tensor = self.state
-        if state_tensor.dim() == 1: state_tensor = state_tensor.unsqueeze(0)
+        state_tensor = processing_state(self.state, self.normalizer, device = self.device)
         if self.current_episode_reward is None:
-            self.current_episode_reward = torch.zeros(self.num_envs, device=dev)
+            self.current_episode_reward = torch.zeros(self.num_envs, device=self.device)
 
         for i in range(self.config.rollout_steps):
-            if self.config.normalize:
-                self.normalizer.update(state_tensor)
-                state_norm = self.normalizer.normalize(state_tensor)
-            else:
-                state_norm = state_tensor
-            with torch.inference_mode():
-                outputs: dict[str, Tensor] = self.agent.get_action(state_norm) #type: ignore[operator]
-                action = outputs["action"]
-                if str(self.env_device).startswith("cuda"):
-                    action_input: np.ndarray | Tensor = action
-                else:
-                    action_input = action.cpu().numpy()
-
-            # Gymnasium v1 step() returns: obs, reward, terminated, truncated, info
-            # terminated = episode naturally ended; truncated = cut short by time limit
-            next_state, reward, done, truncate, info = self.env.step(action_input)
-            done_trunc = done | truncate
-            done_tensor = torch.as_tensor(done_trunc, dtype=torch.float32, device=dev)
-            trunc_tensor = torch.as_tensor(truncate, dtype=torch.float32, device=dev)
-            reward_tensor = torch.as_tensor(reward, dtype=torch.float32, device=dev)
-            next_state_tensor = torch.as_tensor(next_state, dtype=torch.float32, device=dev)
-
-            if reward_tensor.dim() == 0:
-                next_state_tensor = next_state_tensor.unsqueeze(0)
-                reward_tensor = reward_tensor.unsqueeze(0)
-                done_tensor = done_tensor.unsqueeze(0)
-                trunc_tensor = trunc_tensor.unsqueeze(0)
-            
-            data_ = {"state": state_norm, "next_state": next_state_tensor,
-                     "done": done_tensor, "truncated": trunc_tensor,
-                     "reward": reward_tensor, **outputs}
-            self._hook_env_check_(data_, i)
-            self.buffer.insert(
-                state = state_norm,
-                reward = reward_tensor,
-                done = done_tensor,
-                truncated = trunc_tensor,
-                **outputs
-            )
-            self.current_episode_reward += reward_tensor
-            finished = (done_tensor > 0) | (trunc_tensor > 0)
+            outputs = env_step(self.env, self.agent, state_tensor, self.normalizer, self.device)
+            outputs["terminated"] = outputs["terminated"] | outputs["truncated"]
+            outputs = parse_env_step(outputs, self.device)
+            self._hook_env_check_(outputs, i)
+            next_state_tensor = outputs.pop("next_state")
+            self.buffer.insert(**outputs), self.device
+            self.current_episode_reward += outputs["reward"]
+            finished = (outputs["terminated"] > 0) | (outputs["truncated"] > 0)
 
             if finished.any():
                 finished_rewards = self.current_episode_reward[finished]
@@ -221,66 +158,24 @@ class BaseTrain:
                 self.current_episode_reward[finished] = 0.0
 
             state_tensor = next_state_tensor
-            if state_tensor.dim() == 1: state_tensor = state_tensor.unsqueeze(0)
 
         if "value" in self.buffer.data:
             with torch.inference_mode():
-                if self.config.normalize:
-                    state_norm = self.normalizer.normalize(state_tensor)
-                else:
-                    state_norm = state_tensor
-                next_output = self.agent.get_action(state_norm) #type: ignore[operator]
+                state_tensor = processing_state(state_tensor, self.normalizer, update=False, device = self.device)
+                next_output = self.agent.get_action(state_tensor) #type: ignore[operator]
         else:
             next_output = None
         self.state = state_tensor
         return next_output
 
-    
     #Profiler display
-    def _log_profile_metrics(self, step: int, metrics: ProfileMetrics):
+    def _log_profile_metrics(self, step: int, metrics: PhaseMetrics):
         sys.stderr.write(
                 f"\n\033[94m[Profile] Step {step} | FPS: {metrics.fps:.0f} | "
                 f"Rollout: {metrics.rollout_ms:.1f}ms | Update: {metrics.update_ms:1f}ms |"
                 f"VRAM: {metrics.vram_allocated_gb:.2f}GB (Peak: {metrics.vram_peak_gb:.2f}GB) | "
                 f"RAM: {metrics.ram_mb:.0f}MB\033[0m\n"
                 )
-
-
-    def _log_metrics(self, metrics: dict, step: int, use_wandb: bool, use_tb: bool):
-        """Log training metrics to wandb and/or TensorBoard.
-
-        Args:
-            metrics: Dict of metric names to values (floats or Tensors).
-            step: Current training step.
-            use_wandb: Whether to log to Weights & Biases.
-            use_tb: Whether to log to TensorBoard.
-        """
-        clean_metrics: dict[str, float] = {}
-        tensor_keys: list[str]  = []
-        tensor_vals: list[Tensor] = []
-
-        for k, v in metrics.items():
-            if isinstance(v, Tensor):
-                tensor_keys.append(f"train/{k}")
-                tensor_vals.append(v)
-            else:
-                clean_metrics[k] = float(v)
-            
-        if tensor_vals:
-            cpu_vals = torch.stack(tensor_vals).cpu().numpy()
-            for k, v in zip(tensor_keys, cpu_vals):
-                clean_metrics[k] = float(v)
-
-        if use_wandb:
-            if wandb is None:
-                raise ImportError("`wandb` is not installed. Install it with: pip install wandb")
-            wandb.log(clean_metrics, step=step) #type: ignore[attr-defined]
-
-        if use_tb:
-            if self.tb_writer is None:
-                raise ImportError("`tensorboard` is not installed. Install it with: pip install tensorboard")
-            for key, value in clean_metrics.items():
-                self.tb_writer.add_scalar(key, value, step)
 
 
     def train(self, *, save_model: bool = False, use_wandb: bool = False, use_tb: bool = False):
@@ -295,71 +190,45 @@ class BaseTrain:
         """
         #Configure env
         is_profile = self.config.profile
-        is_cuda = self.config.device ==  torch.device("cuda") and torch.cuda.is_available()
-        sync = torch.cuda.synchronize
-        if is_profile: sys.stderr.write("\033[96mZeroRL Profiler Enabled (TIME & VRAM).\033[0m\n")
+        is_cuda = True if str(self.device).startswith("cuda") else False
+        profiler = PhaseProfiler(self.config, is_cuda = is_cuda)
+        log = create_logger(self.config, self.algo_config, use_wandb=use_wandb, use_tb=use_tb)
         state, _ = self.env.reset()
         self.state = torch.as_tensor(state, dtype=torch.float32, device=self.config.device)
-        if use_wandb:
-            if wandb is None:
-                raise ImportError("`wandb` is not installed. Install it with: pip install wandb")
-            wandb.init(project=self.config.project_name, config={"Train Configs": self.config.__dict__, #type: ignore[attr-defined]
-                     "Hyper Parameters": self.algo_config.__dict__ if self.algo_config else {}}) 
+         
         for step in tqdm(range(self.config.num_update)):
-            if is_profile:
-                if is_cuda :
-                    sync()
-                    torch.cuda.reset_peak_memory_stats()
-                t_start = time.perf_counter()
+            if is_profile: profiler.start_phase()
 
-            last_output = self.rollout_phase()
+            with profiler.track("rollout") if is_profile else contextlib.nullcontext():
+                last_output = self.rollout_phase() 
 
-            if is_profile:
-                if is_cuda: sync()
-                t_rollout = time.perf_counter()
-
-            if self.buffer.size < self.require_buffer_size:
-                raise EmptyBufferError(self.buffer.size, self.require_buffer_size)
+            if self.buffer.size < self.require_buffer_size: raise EmptyBufferError(self.buffer.size, self.require_buffer_size)
             
             if self.debug:
                 self.algo_config._debug_mode = True #type: ignore
                 weights_before = {k: v.clone() for k, v in self.agent.state_dict().items()}
             
-            losses = self.update_weights(
-                            agent = self.agent,
-                            buffer = self.buffer,
-                            scheduler = self.scheduler,
-                            optimizer = self.optimizer,
-                            last_output = last_output,
-                            algo_config = self.algo_config)
+            with profiler.track("update") if is_profile else contextlib.nullcontext():
+                losses = self.update_weights(
+                                agent = self.agent,
+                                buffer = self.buffer,
+                                scheduler = self.scheduler,
+                                optimizer = self.optimizer,
+                                last_output = last_output,
+                                algo_config = self.algo_config)
 
+            
             if self.debug:
                 weights_after = self.agent.state_dict()
                 changed = any(not torch.allclose(weights_before[k], weights_after[k]) for k in weights_before)
                 if not changed:
                     sys.stderr.write(
                             "\n\033[93m [DEBUG ALERT] Model weights did not change after update_weights()!\n"
-                            "Did you forget to call `optimizer.step()` in your update function ?[0m\n"
+                            "Did you forget to call `optimizer.step()` in your update function ?\033[0m\n"
                             )
                
             if is_profile:
-                if is_cuda: sync()
-                t_end = time.perf_counter()
-                if _PSUTIL_AVAILABLE:
-                    ram_kb = psutil.Process(os.getpid()).memory_info().rss
-                    ram_mb = ram_kb / (1024 ** 2) if ram_kb > 0 else 0.0
-                else:
-                    warnings.warn("Profiles are running but they are unable to capture the state of ram, install psutil")
-                    ram_mb = 0.0
-
-                profile_data = ProfileMetrics(
-                    fps= (self.config.rollout_steps * self.num_envs) / (t_end - t_start),
-                    rollout_ms = (t_rollout - t_start) * 1000,
-                    update_ms = (t_end - t_rollout) * 1000,
-                    vram_allocated_gb = torch.cuda.memory_allocated() / (1024 ** 3) if is_cuda else 0.0,
-                    vram_peak_gb = torch.cuda.max_memory_allocated() / (1024 ** 3) if is_cuda else 0.0,
-                    ram_mb = ram_mb
-                    )
+                profile_data = profiler.end_phase()
                 self._log_profile_metrics(step, profile_data)
 
             if len(self.episode_rewards) > 0:
@@ -372,16 +241,14 @@ class BaseTrain:
                         "train/learning_rate": self.optimizer.param_groups[0]['lr']}
             if use_wandb and is_profile:
                 for k, v in asdict(profile_data).items(): metrics[f"profile/{k}"] = v
-            for k, v in losses.items(): metrics[k] = v
-            self._log_metrics(metrics, step, use_wandb, use_tb)
+            for k, v in losses.items(): metrics[f"train/{k}"] = v
+            log(metrics, step)
             self.buffer.clear()
 
         self.env.close()
-        #Close Wandb or TensorBoard
-        if use_wandb and wandb is not None: wandb.finish() #type: ignore[attr-defined]
-        if use_tb and self.tb_writer is not None: self.tb_writer.close()
+        log.close()
         #Save model
-        if save_model: self.save_model()
+        if save_model: self.save()
 
 
     def test(self, iterations: int = 1, gif_path: str | None = None):
@@ -406,28 +273,12 @@ class BaseTrain:
             done_or_trunc = False
             state, _ = env.reset() #type: ignore
             while not done_or_trunc:
-                state_tensor = torch.as_tensor(state, dtype=torch.float32, device=self.config.device)
-                if state_tensor.dim() == 1: state_tensor = state_tensor.unsqueeze(0)
-                if self.config.normalize:
-                    self.normalizer.update(state_tensor)
-                    state_norm = self.normalizer.normalize(state_tensor)
-                else:
-                    state_norm = state_tensor
-
-                with torch.inference_mode():
-                    outputs: dict[str, Tensor] = self.agent.get_action(state_norm)
-                    if str(self.env_device).startswith("cuda"):
-                        action_input: np.ndarray | Tensor = outputs["action"]
-                    else:
-                        action_input = outputs["action"].cpu().numpy()
-
-                next_state, _, terminated, truncated, _ = env.step(action_input) #type: ignore
-
+                outputs = env_step(env, self.agent, state, self.normalizer, self.device)
                 #capture frames
                 frame = env.render()
                 if frame is not None: frames.append(frame[0])
-                done_or_trunc = bool(np.any(terminated) or np.any(truncated))
-                state = next_state
+                done_or_trunc = bool(np.any(outputs["terminated"]) or np.any(outputs["truncated"]))
+                state = outputs["next_state"]
 
             #save to gif
             if gif_path is None:
@@ -435,10 +286,7 @@ class BaseTrain:
             else:
                 gif_path = f"./{gif_path}_{i}.gif"
             imageio.mimsave(gif_path, frames, fps=25)
-            self.env.close()
+            env.close()
 
 
-    def save_model(self):
-        """Save agent weights to the path in config.model_path."""
-        os.makedirs(os.path.dirname(self.config.model_path), exist_ok=True)
-        torch.save(self.agent.state_dict(), self.config.model_path)
+    def save(self): save_checkpoints(self.agent, self.config.model_path, self.normalizer)
