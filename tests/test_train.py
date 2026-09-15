@@ -873,12 +873,12 @@ class TestBaseTrainProfilerTrain:
         env.close()
 
     @pytest.mark.gpu
-    @pytest.mark.xfail(reason="core bug: torch.cuda.memory_allocated missing () in logger.py:146")
     def test_train_profile_cuda_vram_uses_memory_allocated(self, tmp_path: Path,
                                                             device: torch.device) -> None:
         agent = MockAgent()
         env = FakeVecEnv(num_envs=1, obs_dim=4, act_dim=2, steps_until_done=(100,), auto_reset=True)
         cfg = _make_profile_config(tmp_path, torch.device("cpu"), profile=True, num_steps=1)
+        cfg.normalize = True
         buf = Buffer(data={
             "state": (4,), "reward": (), "terminated": (),
             "action": (), "log_prob": (), "entropy": (), "value": (),
