@@ -2,7 +2,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from zerorl.helpers.agent import BaseAgent, eval_action
-from zerorl.train import BaseTrain
+from zerorl.helpers.train import BaseTrain
 from zerorl.buffer import Buffer
 from zerorl.config import TrainConfig, AlgoConfig
 from zerorl.algorithms.ppo import gae_compute, ppo_func

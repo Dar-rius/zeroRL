@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 import gymnasium as gym
 from zerorl.algorithms.ppo.easy_ppo import easy_train_ppo
-from zerorl.train import BaseTrain
+from zerorl.helpers.train import BaseTrain
 from zerorl.helpers.agent import BaseAgent, eval_action
 from zerorl.config import TrainConfig, AlgoConfig
 from gymnasium.vector import SyncVectorEnv

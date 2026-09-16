@@ -2,7 +2,7 @@ import torch
 from zerorl.helpers.factory  import get_env, PolicyAgent, get_policy_buffer
 from zerorl.config import TrainConfig, AlgoConfig
 from zerorl.functions import get_obs_act
-from zerorl.train import BaseTrain
+from zerorl.helpers.train import BaseTrain
 
 
 #1. configure train and define agent

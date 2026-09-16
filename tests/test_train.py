@@ -1,4 +1,4 @@
-"""Unit tests for BaseTrain (zerorl.train)."""
+"""Unit tests for BaseTrain (zerorl.helpers.train)."""
 
 import math
 import pytest
@@ -17,7 +17,7 @@ from zerorl.buffer import Buffer
 from zerorl.config import AlgoConfig, TrainConfig
 from zerorl.errors import EmptyBufferError
 from zerorl.helpers.env import BaseEnv
-from zerorl.train import BaseTrain
+from zerorl.helpers.train import BaseTrain
 from zerorl.logger import PhaseMetrics
 from torch.optim.lr_scheduler import LambdaLR
 from zerorl.functions import vectorize_env
@@ -361,7 +361,7 @@ class TestBaseTrainTrain:
         mock_log_fn = MagicMock()
         mock_close_fn = MagicMock()
         mock_log_fn.close = mock_close_fn
-        with patch("zerorl.train.create_logger", return_value=mock_log_fn):
+        with patch("zerorl.helpers.train.create_logger", return_value=mock_log_fn):
             trainer.train(use_wandb=False, use_tb=True)
         assert mock_log_fn.called
         keys_logged = set()
@@ -420,7 +420,7 @@ class TestBaseTrainLogMetrics:
         mock_log_fn = MagicMock()
         mock_close_fn = MagicMock()
         mock_log_fn.close = mock_close_fn
-        with patch("zerorl.train.create_logger", return_value=mock_log_fn):
+        with patch("zerorl.helpers.train.create_logger", return_value=mock_log_fn):
             trainer.train(use_wandb=False, use_tb=False)
         log_fn = mock_log_fn
         log_fn(metrics, step=0)
@@ -446,7 +446,7 @@ class TestBaseTrainLogMetrics:
         mock_log_fn = MagicMock()
         mock_close_fn = MagicMock()
         mock_log_fn.close = mock_close_fn
-        with patch("zerorl.train.create_logger", return_value=mock_log_fn):
+        with patch("zerorl.helpers.train.create_logger", return_value=mock_log_fn):
             trainer.train(use_wandb=False, use_tb=False)
         log_fn = mock_log_fn
         log_fn({"y": 1.5}, step=0)
