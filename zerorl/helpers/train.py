@@ -251,7 +251,7 @@ class BaseTrain:
         if save_model: self.save()
 
 
-    def test(self, iterations: int = 1, gif_path: str | None = None):
+    def try_agent(self, iterations: int = 1, gif_path: str | None = None):
         try_agent(self.env, self.agent, self.config, self.normalizer, iterations, gif_path)
 
 
