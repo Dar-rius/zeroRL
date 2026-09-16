@@ -8,7 +8,6 @@ and repeat.
 import sys
 import contextlib
 import numpy as np
-import imageio
 import torch
 import gymnasium as gym
 from dataclasses import asdict
@@ -28,7 +27,8 @@ from zerorl.functions import (
         processing_state,
         parse_env_step,
         env_step,
-        save_checkpoints)
+        save_checkpoints,
+        try_agent)
 
 
 class BaseTrain:
@@ -252,41 +252,7 @@ class BaseTrain:
 
 
     def test(self, iterations: int = 1, gif_path: str | None = None):
-        """Evaluate the agent and save a GIF of its behavior.
-        
-        Args:
-            iterations: Number of iterations.
-            gif_path: Path to save the GIF.
-        """
-        env_spec = self.env
-        #check if env has .env or .spec attributs
-        if isinstance(env_spec, gym.vector.VectorEnv):
-            try:
-                env_spec = env_spec.envs[0].spec.id
-            except:
-                env_spec = env_spec.envs[0]
-
-        env = vectorize_env(env_spec, render_mode = "rgb_array")
-        frames: Any = []
-        self.agent.eval()
-        for i in range(iterations):
-            done_or_trunc = False
-            state, _ = env.reset() #type: ignore
-            while not done_or_trunc:
-                outputs = env_step(env, self.agent, state, self.normalizer, self.device)
-                #capture frames
-                frame = env.render()
-                if frame is not None: frames.append(frame[0])
-                done_or_trunc = bool(np.any(outputs["terminated"]) or np.any(outputs["truncated"]))
-                state = outputs["next_state"]
-
-            #save to gif
-            if gif_path is None:
-                gif_path = f"./{self.config.project_name}_{i}.gif"
-            else:
-                gif_path = f"./{gif_path}_{i}.gif"
-            imageio.mimsave(gif_path, frames, fps=25)
-            env.close()
+        try_agent(self.env, self.agent, self.config, self.normalizer, iterations, gif_path)
 
 
     def save(self): save_checkpoints(self.agent, self.config.model_path, self.normalizer)
