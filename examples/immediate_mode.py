@@ -12,7 +12,8 @@ from zerorl.functions import (env_step,
                               parse_env_step,
                               try_agent,
                               get_obs_act,
-                              vectorize_env)
+                              vectorize_env,
+                              set_seed)
 
 
 cfg = TrainConfig(model_name="Lunar-model", project_name="Lunar-example", num_envs=4)
@@ -25,11 +26,12 @@ buffer = get_actor_critic_buffer(obs_dim, act_dim, cfg)
 optimizer = optim.Adam(agent.parameters(), lr=algo_cfg.lr, eps=1e-5)
 scheduler = LambdaLR(optimizer, lambda step_: 1.0 - (step_ / cfg.num_update))
 log = create_logger(cfg, algo_cfg, use_tb=True)
+reward_tensor = torch.zeros(cfg.num_envs, device=cfg.device)
+seed = set_seed(42, cfg.num_envs)
+state, _ = env.reset(seed=seed)
 
 for step in tqdm(range(cfg.num_update)):
-    state, _ = env.reset(seed=29)
     episodic_reward = []
-    reward_tensor = torch.zeros(cfg.num_envs, device=cfg.device)
     metrics = {}
 
     for _ in range(cfg.rollout_steps):

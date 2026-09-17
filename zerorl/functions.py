@@ -7,6 +7,7 @@ get_buffer_params_model() for extracting model parameters.
 
 import os
 import copy
+import random
 import gymnasium as gym
 import torch
 import numpy as np
@@ -90,6 +91,13 @@ def to_env_action(action, env: Any) -> np.ndarray | Tensor:
     if str(device).startswith("cuda"):
         return action
     return action.cpu().numpy()
+
+def set_seed(seed: int, num_envs: int):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    sequence = np.random.SeedSequence(seed)
+    return [int(child.generate_state(1)[0]) for child in sequence.spawn(num_envs)]
 
 def try_agent(env: Any, agent: BaseAgent, config: TrainConfig, *, normalizer: NormMeanStd | None = None, iterations: int = 1, gif_path: str | None = None):
     """Evaluate the agent and save a GIF of its behavior.
