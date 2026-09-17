@@ -19,6 +19,7 @@ from zerorl.functions import (env_step,
 cfg = TrainConfig(model_name="Lunar-model", project_name="Lunar-example", num_envs=4)
 cfg.device = torch.device("cpu")
 algo_cfg = AlgoConfig(ent_coef=0.0)
+seed = set_seed(42, cfg.num_envs)
 env = vectorize_env("LunarLander-v3", num_envs = cfg.num_envs)
 obs_dim, act_dim, obs_n, act_n, is_discrete = get_obs_act(env)
 agent = ActorCriticAgent(obs_n, act_n, is_discrete)
@@ -27,7 +28,6 @@ optimizer = optim.Adam(agent.parameters(), lr=algo_cfg.lr, eps=1e-5)
 scheduler = LambdaLR(optimizer, lambda step_: 1.0 - (step_ / cfg.num_update))
 log = create_logger(cfg, algo_cfg, use_tb=True)
 reward_tensor = torch.zeros(cfg.num_envs, device=cfg.device)
-seed = set_seed(42, cfg.num_envs)
 state, _ = env.reset(seed=seed)
 
 for step in tqdm(range(cfg.num_update)):

@@ -49,7 +49,7 @@ class BaseTrain:
                  algo_config: AlgoConfig,
                  optimizer: optim.Optimizer | None = None,
                  schedule_func: Callable[[int], float] | None = None,
-                 seed: int = 20,
+                 seed: int = 22,
                  render_mode: str | None = None,
                  require_buffer_size: int = 10):
         """Initialize the training loop.

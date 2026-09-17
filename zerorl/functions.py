@@ -34,7 +34,7 @@ def vectorize_env(env_spec: str | Callable | BaseEnv, *,  num_envs: int = 1, ren
     Returns:
         SyncVectorEnv wrapping num_envs independent copies.
     """
-    def make_env_fn(seed:int) -> Callable:
+    def make_env_fn() -> Callable:
         def _init():
             if isinstance(env_spec, str):
                 env = gym.make(env_spec, render_mode = render_mode)
@@ -44,7 +44,7 @@ def vectorize_env(env_spec: str | Callable | BaseEnv, *,  num_envs: int = 1, ren
                 env = env_spec()
             else:
                 env = copy.deepcopy(env_spec)
-            env.reset(seed=seed)
+            env.reset()
             return env
         return _init
     return gym.vector.SyncVectorEnv([make_env_fn(i) for i in range(num_envs)], autoreset_mode=AutoresetMode.SAME_STEP)
