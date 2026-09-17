@@ -18,10 +18,11 @@ def easy_train_ppo(env_spec: str | Callable | BaseEnv,
                     config: TrainConfig,
                     algo_config: AlgoConfig,
                     hidden_layer: int = 64,
-                    render_mode: str | None = None,
                     base_agent: BaseAgent | None = None,
                     optimizer: optim.Optimizer | None = None,
                     schedule_func: Callable[[int], float] | None = None,
+                    seed: int = 22,
+                    render_mode: str | None = None,
                    ):
     """Create and return a BaseTrain instance with PPO wiring.
 
@@ -65,6 +66,7 @@ def easy_train_ppo(env_spec: str | Callable | BaseEnv,
             algo_config = algo_config,
             optimizer = optimizer,
             schedule_func = schedule_func,
+            seed = seed,
             render_mode = render_mode,
             )
     return train

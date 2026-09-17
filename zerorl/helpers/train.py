@@ -28,7 +28,8 @@ from zerorl.functions import (
         parse_env_step,
         env_step,
         save_checkpoints,
-        try_agent)
+        try_agent,
+        set_seed)
 
 
 class BaseTrain:
@@ -39,7 +40,6 @@ class BaseTrain:
     and repeat. Handles observation normalization, logging, and
     model saving.
     """
-
     def __init__(self,
                  agent: BaseAgent,
                  env: Any,
@@ -49,6 +49,7 @@ class BaseTrain:
                  algo_config: AlgoConfig,
                  optimizer: optim.Optimizer | None = None,
                  schedule_func: Callable[[int], float] | None = None,
+                 seed: int = 22,
                  render_mode: str | None = None,
                  require_buffer_size: int = 10):
         """Initialize the training loop.
@@ -77,7 +78,7 @@ class BaseTrain:
                         {"get_action": "Your agent should have the method `get_action`"})
         self.env = env
         if not isinstance(env, gym.vector.VectorEnv) and not getattr(env, "auto_reset", False):
-            self.env = vectorize_env(self.env, self.num_envs, render_mode)
+            self.env = vectorize_env(self.env, num_envs = self.num_envs, render_mode = render_mode)
         self.state = Tensor()
         self.buffer = buffer
         self.update_weights = update_weights
@@ -98,6 +99,7 @@ class BaseTrain:
 
         if schedule_func is None: schedule_func = lambda current_step: 1.0 - (current_step / self.config.num_update)
         self.scheduler = LambdaLR(self.optimizer, schedule_func)
+        self.seed = set_seed(seed, self.num_envs)
         self.require_buffer_size = require_buffer_size
         self.normalizer = NormMeanStd(obs_shape, config.device) if self.config.normalize else None
         self.current_episode_reward: Tensor | None = None
@@ -128,7 +130,6 @@ class BaseTrain:
             self._hook_env_check_ = _env_hook
         else:
             self._hook_env_check_ = lambda data_, step : None
-
 
     def rollout_phase(self) -> dict[str, Tensor] | None:
         """Collect experience by running the agent in the environment.
@@ -177,7 +178,6 @@ class BaseTrain:
                 f"RAM: {metrics.ram_mb:.0f}MB\033[0m\n"
                 )
 
-
     def train(self, *, save_model: bool = False, use_wandb: bool = False, use_tb: bool = False):
         """Run the full training loop.
 
@@ -193,14 +193,14 @@ class BaseTrain:
         is_cuda = True if str(self.device).startswith("cuda") else False
         profiler = PhaseProfiler(self.config, is_cuda = is_cuda)
         log = create_logger(self.config, self.algo_config, use_wandb=use_wandb, use_tb=use_tb)
-        state, _ = self.env.reset()
+        state, _ = self.env.reset(seed = self.seed)
         self.state = torch.as_tensor(state, dtype=torch.float32, device=self.config.device)
-         
+
         for step in tqdm(range(self.config.num_update)):
             if is_profile: profiler.start_phase()
 
             with profiler.track("rollout") if is_profile else contextlib.nullcontext():
-                last_output = self.rollout_phase() 
+                last_output = self.rollout_phase()
 
             if self.buffer.size < self.require_buffer_size: raise EmptyBufferError(self.buffer.size, self.require_buffer_size)
             
@@ -250,9 +250,7 @@ class BaseTrain:
         #Save model
         if save_model: self.save()
 
-
     def try_agent(self, iterations: int = 1, gif_path: str | None = None):
         try_agent(self.env, self.agent, self.config, self.normalizer, iterations, gif_path)
-
 
     def save(self): save_checkpoints(self.agent, self.config.model_path, self.normalizer)

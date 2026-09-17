@@ -41,5 +41,3 @@ def check_reward_scale(tensor: torch.Tensor, step:int):
             f"Cause: Env might be returning raw unnormalized rewards. Consider Reward Scaling."
           )
         raise RLSanityError(msg)
-
-

@@ -26,7 +26,7 @@ def get_env(env_id: str | Callable | BaseEnv, num_envs: int = 1, render_mode: st
     Returns:
         SyncVectorEnv with SAME_STEP autoreset.
     """
-    return vectorize_env(env_id, num_envs, render_mode)
+    return vectorize_env(env_id, num_envs = num_envs, render_mode = render_mode)
 
 def get_actor_critic_buffer(state_space: tuple, action_space: tuple, config: TrainConfig):
     """Create a Buffer with standard Actor-Critic Standard field names.
