@@ -22,7 +22,7 @@ from zerorl.processing import NormMeanStd
 from zerorl.config import TrainConfig
 
 
-def vectorize_env(env_spec: str | Callable | BaseEnv, num_envs: int = 1, render_mode: str | None = None) -> SyncVectorEnv:
+def vectorize_env(env_spec: str | Callable | BaseEnv, *,  num_envs: int = 1, render_mode: str | None = None) -> SyncVectorEnv:
     """Wrap an env spec into a SyncVectorEnv with SAME_STEP autoreset.
 
     Args:
@@ -48,7 +48,6 @@ def vectorize_env(env_spec: str | Callable | BaseEnv, num_envs: int = 1, render_
         return _init
     return gym.vector.SyncVectorEnv([make_env_fn(i) for i in range(num_envs)], autoreset_mode=AutoresetMode.SAME_STEP)
 
-
 #Function help agent to interact with his env
 def env_step(env: Any, agent:BaseAgent, state:np.ndarray|Tensor, normalizer:NormMeanStd|None=None, device: torch.device = torch.device("cpu")) -> dict[str, Tensor]:
     state_tensor = processing_state(state, normalizer, device = device)
@@ -59,8 +58,7 @@ def env_step(env: Any, agent:BaseAgent, state:np.ndarray|Tensor, normalizer:Norm
     # Gymnasium v1 step() returns: obs, reward, terminated, truncated, info
     # terminated = episode naturally ended; truncated = cut short by time limit
     next_state, reward, terminated, truncated, _ = env.step(action)
-    return {"state": state, "next_state": next_state, "reward": reward, "terminated": terminated, "truncated": truncated, **outputs}
-
+    return {"state": state_tensor, "next_state": next_state, "reward": reward, "terminated": terminated, "truncated": truncated, **outputs}
 
 def save_checkpoints(agent: BaseAgent, model_path: str, normalizer: NormMeanStd | None = None):
     """Save agent weights and Normalizer state to the path in config.model_path."""
@@ -71,7 +69,6 @@ def save_checkpoints(agent: BaseAgent, model_path: str, normalizer: NormMeanStd 
     os.makedirs(os.path.dirname(model_path), exist_ok=True)
     torch.save(checkpoints_state, model_path)
 
-
 def processing_state(state: np.ndarray | Tensor, normalizer: NormMeanStd | None = None, update: bool = True, device: torch.device = torch.device("cpu")) -> Tensor:
     state_tensor = torch.as_tensor(state, dtype=torch.float32, device=device)
     if state_tensor.dim() == 1: state_tensor = state_tensor.unsqueeze(0)
@@ -79,7 +76,6 @@ def processing_state(state: np.ndarray | Tensor, normalizer: NormMeanStd | None 
         if update: normalizer.update(state_tensor)
         state_tensor = normalizer.normalize(state_tensor)
     return state_tensor
-
 
 def parse_env_step(output: dict[str, Tensor], device: torch.device = torch.device("cpu")) -> dict[str, Tensor]:
     keys = ["next_state", "reward", "terminated", "truncated"]
@@ -89,15 +85,13 @@ def parse_env_step(output: dict[str, Tensor], device: torch.device = torch.devic
         if output[k].dim() == 0: output[k] = output[k].unsqueeze(0)
     return output
 
-
 def to_env_action(action, env: Any) -> np.ndarray | Tensor:
     device = getattr(env, "device", "cpu")
     if str(device).startswith("cuda"):
         return action
     return action.cpu().numpy()
 
-
-def try_agent(env: Any, agent: BaseAgent, config: TrainConfig, normalizer: NormMeanStd | None = None, iterations: int = 1, gif_path: str | None = None):
+def try_agent(env: Any, agent: BaseAgent, config: TrainConfig, *, normalizer: NormMeanStd | None = None, iterations: int = 1, gif_path: str | None = None):
     """Evaluate the agent and save a GIF of its behavior.
     
     Args:
@@ -134,7 +128,6 @@ def try_agent(env: Any, agent: BaseAgent, config: TrainConfig, normalizer: NormM
         imageio.mimsave(gif_path, frames, fps=25)
         env.close()
 
-
 def get_obs_act(env: SyncVectorEnv) -> Any:
     """Extract observation and action spaces from a vectorized environment.
 
@@ -167,7 +160,6 @@ def get_obs_act(env: SyncVectorEnv) -> Any:
     else:
         obs_n = obs_dim.shape[-1] #type: ignore
     return (obs_dim.shape, act_dim.shape, obs_n, act_n, is_discrete)
-
 
 def get_buffer_params_model(model: BaseAgent) -> tuple[dict[str, Parameter], dict[str, Tensor]]:
     """Extract named parameters and buffers from a model.
