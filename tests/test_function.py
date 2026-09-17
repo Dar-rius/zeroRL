@@ -67,14 +67,14 @@ def simple_agent() -> SimpleAgent:
 
 @pytest.fixture
 def cartpole_env():
-    env = vectorize_env("CartPole-v1", 1)
+    env = vectorize_env("CartPole-v1", num_envs=1)
     yield env
     env.close()
 
 
 @pytest.fixture
 def pendulum_env():
-    env = vectorize_env("Pendulum-v1", 1)
+    env = vectorize_env("Pendulum-v1", num_envs=1)
     yield env
     env.close()
 
@@ -154,19 +154,19 @@ class TestGetObsAct:
 
 class TestVectorizeEnv:
     def test_returns_sync_vector_env(self) -> None:
-        env = vectorize_env("CartPole-v1", 1)
+        env = vectorize_env("CartPole-v1", num_envs=1)
         assert isinstance(env, SyncVectorEnv)
         env.close()
 
     def test_num_envs_propagates(self) -> None:
-        env = vectorize_env("CartPole-v1", 3)
+        env = vectorize_env("CartPole-v1", num_envs=3)
         obs: np.ndarray
         obs, _ = env.reset(seed=0)
         assert obs.shape == (3, 4)
         env.close()
 
     def test_callable_spec(self) -> None:
-        env = vectorize_env(lambda: __import__("gymnasium").make("CartPole-v1"), 1)
+        env = vectorize_env(lambda: __import__("gymnasium").make("CartPole-v1"), num_envs=1)
         obs: np.ndarray
         obs, _ = env.reset(seed=0)
         assert obs.shape == (1, 4)
@@ -174,7 +174,7 @@ class TestVectorizeEnv:
 
     def test_class_spec(self) -> None:
         import gymnasium.envs.classic_control.cartpole as cp
-        env = vectorize_env(cp.CartPoleEnv, 1)
+        env = vectorize_env(cp.CartPoleEnv, num_envs=1)
         obs: np.ndarray
         obs, _ = env.reset(seed=0)
         assert obs.shape == (1, 4)
@@ -183,7 +183,7 @@ class TestVectorizeEnv:
     def test_instance_spec_deepcopies(self) -> None:
         import gymnasium
         base = gymnasium.make("CartPole-v1")
-        env = vectorize_env(base, 2)  # type: ignore[arg-type]
+        env = vectorize_env(base, num_envs=2)  # type: ignore[arg-type]
         obs: np.ndarray
         obs, _ = env.reset(seed=0)
         assert obs.shape == (2, 4)
@@ -191,7 +191,7 @@ class TestVectorizeEnv:
         base.close()
 
     def test_render_mode_propagates(self) -> None:
-        env = vectorize_env("CartPole-v1", 1, render_mode="rgb_array")
+        env = vectorize_env("CartPole-v1", num_envs=1, render_mode="rgb_array")
         obs: np.ndarray
         obs, _ = env.reset(seed=0)
         assert obs.shape == (1, 4)

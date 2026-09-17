@@ -570,7 +570,7 @@ class TestBaseTrainVectorizedRollout:
                 "truncated": (),
         }, config=cfg)
         trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, AlgoConfig())
-        state, _ = trainer.env.reset()
+        state, _ = trainer.env.reset(seed=[0, 1])
         trainer.state = torch.as_tensor(state, dtype=torch.float32, device=device)
         trainer.rollout_phase()
         data = buf.get_all()
@@ -601,7 +601,7 @@ class TestBaseTrainVectorizedRollout:
             "truncated": (),
         }, config=cfg)
         trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, AlgoConfig())
-        state, _ = trainer.env.reset()
+        state, _ = trainer.env.reset(seed=[0, 1])
         trainer.state = torch.as_tensor(state, dtype=torch.float32, device=device)
         trainer.rollout_phase()
         data = buf.get_all()
