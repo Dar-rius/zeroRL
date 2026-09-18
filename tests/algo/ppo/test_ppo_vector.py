@@ -63,7 +63,9 @@ class TestPPOVectorizedIntegration:
 
         # 2. Setup Buffer with num_envs to match vectorized outputs
         buf = Buffer(
-            data={
+            capacity=T,
+            num_envs=num_envs,
+            schema={
                 "state": (obs_dim, ),
                 "action": (),
                 "log_prob": (),
@@ -73,7 +75,7 @@ class TestPPOVectorizedIntegration:
                 "advantage": (),
                 "return": (),
             },
-            config=_make_config(T, num_envs=num_envs, device=device),
+            device=device,
         )
 
         # 3. Simulate Vectorized Rollout
