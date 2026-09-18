@@ -103,14 +103,14 @@ def set_seed(seed: int, num_envs: int):
     sequence = np.random.SeedSequence(seed)
     return [int(child.generate_state(1)[0]) for child in sequence.spawn(num_envs)]
 
-def try_agent(env: Any, agent: BaseAgent, config: TrainConfig, *, normalizer: NormMeanStd | None = None, iterations: int = 1, gif_path: str | None = None):
+def try_agent(env_eval: Any, agent: BaseAgent, config: TrainConfig, *, normalizer: NormMeanStd | None = None, iterations: int = 1, gif_path: str | None = None):
     """Evaluate the agent and save a GIF of its behavior.
     
     Args:
         iterations: Number of iterations.
         gif_path: Path to save the GIF.
     """
-    env_spec = env
+    env_spec = env_eval
     #check if env has .env or .spec attributs
     if isinstance(env_spec, gym.vector.VectorEnv):
         try:
@@ -118,17 +118,18 @@ def try_agent(env: Any, agent: BaseAgent, config: TrainConfig, *, normalizer: No
         except:
             env_spec = env_spec.envs[0]
 
-    env = vectorize_env(env_spec, render_mode = "rgb_array")
+    env_eval = vectorize_env(env_spec, render_mode = "rgb_array")
     frames: Any = []
+    was_training = agent.training
     agent.eval()
     for i in range(iterations):
         done_or_trunc = False
-        state, _ = env.reset() #type: ignore
+        state, _ = env_eval.reset() #type: ignore
         while not done_or_trunc:
             state_tensor = processing_state(state, normalizer, update = False, device = config.device)
-            outputs = env_step(env, agent, state_tensor)
+            outputs = env_step(env_eval, agent, state_tensor)
             #capture frames
-            frame = env.render()
+            frame = env_eval.render()
             if frame is not None: frames.append(frame[0])
             done_or_trunc = bool(np.any(outputs["terminated"]) or np.any(outputs["truncated"]))
             state = outputs["next_state"]
@@ -139,7 +140,8 @@ def try_agent(env: Any, agent: BaseAgent, config: TrainConfig, *, normalizer: No
         else:
             gif_path = f"./{gif_path}_{i}.gif"
         imageio.mimsave(gif_path, frames, fps=25)
-        env.close()
+    env_eval.close()
+    if was_training: agent.train()
 
 def get_obs_act(env: SyncVectorEnv) -> Any:
     """Extract observation and action spaces from a vectorized environment.

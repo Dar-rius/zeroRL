@@ -24,14 +24,12 @@ seed = set_seed(42, cfg.num_envs)
 env = vectorize_env("LunarLander-v3", num_envs = cfg.num_envs)
 obs_dim, act_dim, obs_n, act_n, is_discrete = get_obs_act(env)
 agent = ActorCriticAgent(obs_n, act_n, is_discrete)
-buffer = Buffer(
-                capacity = cfg.rollout_steps,
+buffer = Buffer(capacity = cfg.rollout_steps,
                 num_envs = cfg.num_ens,
                 schema = {"state": obs_dim, "action": act_dim,
                           "reward": (), "terminated": (), "entropy": (), "value": (),
                           "return": (), "log_prob": (), "advantage": (), "truncated": ()},
-                device = cfg.device
-        )
+                device = cfg.device)
 optimizer = optim.Adam(agent.parameters(), lr=algo_cfg.lr, eps=1e-5)
 scheduler = LambdaLR(optimizer, lambda step_: 1.0 - (step_ / cfg.num_update))
 log = create_logger(cfg, algo_cfg, use_tb=True)
@@ -81,4 +79,4 @@ for step in tqdm(range(cfg.num_update)):
 
 env.close()
 log.close()
-try_agent(env, agent, cfg)
+try_agent("LunarLander-v3", agent, cfg)
