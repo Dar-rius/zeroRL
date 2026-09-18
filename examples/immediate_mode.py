@@ -4,11 +4,12 @@ from tqdm import tqdm
 from torch import optim
 from torch.optim.lr_scheduler import LambdaLR
 from zerorl.algorithms.ppo import ppo_func, gae_compute
-from zerorl.helpers.factory import get_actor_critic_buffer, ActorCriticAgent
+from zerorl.helpers.factory import ActorCriticAgent
+from zerorl.buffer import Buffer
 from zerorl.config import TrainConfig, AlgoConfig
 from zerorl.logger import create_logger
 from zerorl.functions import (processing_state,
-                              parse_env_step,
+                              parse_dict_to_tensor,
                               to_env_action,
                               try_agent,
                               get_obs_act,
@@ -23,7 +24,14 @@ seed = set_seed(42, cfg.num_envs)
 env = vectorize_env("LunarLander-v3", num_envs = cfg.num_envs)
 obs_dim, act_dim, obs_n, act_n, is_discrete = get_obs_act(env)
 agent = ActorCriticAgent(obs_n, act_n, is_discrete)
-buffer = get_actor_critic_buffer(obs_dim, act_dim, cfg)
+buffer = Buffer(
+                capacity = cfg.rollout_steps,
+                num_envs = cfg.num_ens,
+                schema = {"state": obs_dim, "action": act_dim,
+                          "reward": (), "terminated": (), "entropy": (), "value": (),
+                          "return": (), "log_prob": (), "advantage": (), "truncated": ()},
+                device = cfg.device
+        )
 optimizer = optim.Adam(agent.parameters(), lr=algo_cfg.lr, eps=1e-5)
 scheduler = LambdaLR(optimizer, lambda step_: 1.0 - (step_ / cfg.num_update))
 log = create_logger(cfg, algo_cfg, use_tb=True)
@@ -43,7 +51,7 @@ for step in tqdm(range(cfg.num_update)):
         terminated = terminated | truncated
         outputs = {"next_state": next_state, "reward": reward,
                    "terminated": terminated, "truncated": truncated} 
-        outputs = parse_env_step(outputs)
+        outputs = parse_dict_to_tensor(outputs)
         next_state = outputs.pop("next_state")
         buffer.insert(state = state_tensor, **outputs)
         reward_tensor += outputs["reward"]

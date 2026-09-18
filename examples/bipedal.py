@@ -72,7 +72,7 @@ obs_dim, act_dim, obs_n, act_n, _ = get_obs_act(env)
 agent = Agent(obs_n, act_n) #type: ignore
 buffer = Buffer(capacity=config.rollout_steps,
                 num_envs=config.num_envs,
-                schema={"state": obs_dim, "action": act_dim, #type: ignore
+                schema={"state": obs_dim, "action": act_dim,
                       "reward": (), "terminated": (), "entropy": (), "value": (),
                       "return": (), "log_prob": (), "advantage": (), "truncated": ()},
                 device=config.device)
