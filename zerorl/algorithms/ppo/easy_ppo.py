@@ -17,8 +17,9 @@ from zerorl.functions import get_obs_act
 def easy_train_ppo(env_spec: str | Callable | BaseEnv, 
                     config: TrainConfig,
                     algo_config: AlgoConfig,
-                    hidden_layer: int = 64,
+                    *,
                     base_agent: BaseAgent | None = None,
+                    hidden_layer: int = 64,
                     optimizer: optim.Optimizer | None = None,
                     schedule_func: Callable[[int], float] | None = None,
                     seed: int = 22,
@@ -43,16 +44,16 @@ def easy_train_ppo(env_spec: str | Callable | BaseEnv,
     """
     env = get_env(env_spec, config.num_envs, render_mode)
     obs_dim, act_dim, n_obs, n_act, is_discrete = get_obs_act(env)
-    
+
     if base_agent is not None:
         agent = base_agent
     else:
         agent = ActorCriticAgent(n_obs, n_act, is_discrete, hidden_layer) #type: ignore
 
-    buffer = get_actor_critic_buffer(obs_dim, act_dim, config) #type: ignore
+    buffer = get_actor_critic_buffer(obs_dim, act_dim, config.rollout_steps, config.num_envs, config.device) #type: ignore
 
-    #update weights function
     def easy_update_weights(agent, buffer, scheduler, optimizer, last_output, algo_config):
+        """Compute GAE advantages then run PPO update."""
         data = buffer.get_all()
         gae_compute(data["reward"], data["value"], last_output["value"], data["terminated"], buffer, algo_config)
         return ppo_func(agent, optimizer, buffer, algo_config, scheduler)

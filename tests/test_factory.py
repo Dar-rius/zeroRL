@@ -50,14 +50,14 @@ class TestGetEnv:
 
 class TestGetActorCriticBuffer:
     def test_buffer_has_all_required_keys(self, tmp_config) -> None:
-        buf = get_actor_critic_buffer((4,), (2,), tmp_config)
+        buf = get_actor_critic_buffer((4,), (2,), tmp_config.rollout_steps, tmp_config.num_envs, tmp_config.device)
         expected_keys = {"state", "action", "reward", "terminated", "entropy",
                          "value", "return", "log_prob", "advantage",
                          "truncated"}
         assert set(buf.data.keys()) == expected_keys
 
     def test_buffer_shapes(self, tmp_config) -> None:
-        buf = get_actor_critic_buffer((4,), (2,), tmp_config)
+        buf = get_actor_critic_buffer((4,), (2,), tmp_config.rollout_steps, tmp_config.num_envs, tmp_config.device)
         assert buf.data["state"].shape == (8, 1, 4)
         assert buf.data["action"].shape == (8, 1, 2)
         assert buf.data["reward"].shape == (8, 1)
@@ -94,12 +94,12 @@ class TestActorCriticAgent:
 
 class TestGetPolicyBuffer:
     def test_has_correct_keys(self, tmp_config) -> None:
-        buf = get_policy_buffer((4,), (), tmp_config)
+        buf = get_policy_buffer((4,), (), tmp_config.rollout_steps, tmp_config.num_envs, tmp_config.device)
         expected_keys = {"state", "action", "reward", "terminated", "truncated", "log_prob"}
         assert set(buf.data.keys()) == expected_keys
 
     def test_shapes(self, tmp_config) -> None:
-        buf = get_policy_buffer((4,), (2,), tmp_config)
+        buf = get_policy_buffer((4,), (2,), tmp_config.rollout_steps, tmp_config.num_envs, tmp_config.device)
         assert buf.data["state"].shape == (8, 1, 4)
         assert buf.data["action"].shape == (8, 1, 2)
         assert buf.data["reward"].shape == (8, 1)
@@ -107,12 +107,12 @@ class TestGetPolicyBuffer:
 
 class TestGetReplayBuffer:
     def test_has_correct_keys(self, tmp_config) -> None:
-        buf = get_replay_buffer((4,), (), tmp_config)
+        buf = get_replay_buffer((4,), (), tmp_config.rollout_steps, tmp_config.num_envs, tmp_config.device)
         expected_keys = {"state", "action", "reward", "terminated", "next_state", "truncated"}
         assert set(buf.data.keys()) == expected_keys
 
     def test_has_next_state(self, tmp_config) -> None:
-        buf = get_replay_buffer((4,), (), tmp_config)
+        buf = get_replay_buffer((4,), (), tmp_config.rollout_steps, tmp_config.num_envs, tmp_config.device)
         assert "next_state" in buf.data
         assert buf.data["next_state"].shape == (8, 1)
 
@@ -163,5 +163,5 @@ class TestBufferDeviceProperty:
         cfg.rollout_steps = 4
         cfg.num_envs = 1
         cfg.device = device
-        buf = Buffer(data={"state": (4,)}, config=cfg)
+        buf = Buffer(capacity=cfg.rollout_steps, num_envs=cfg.num_envs, schema={"state": (4,)}, device=cfg.device)
         assert buf.device.type == device.type

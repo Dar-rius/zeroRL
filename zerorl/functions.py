@@ -1,8 +1,8 @@
 """Utility functions for RL training.
 
-Provides vectorize_env() for environment wrapping, fast_compile() for
-optional torch.compile, get_obs_act() for space extraction, and
-get_buffer_params_model() for extracting model parameters.
+Provides vectorize_env() for environment wrapping, env_step() for
+agent-env interaction, and helpers for state processing, seeding,
+and action conversion.
 """
 
 import os
@@ -49,17 +49,16 @@ def vectorize_env(env_spec: str | Callable | BaseEnv, *,  num_envs: int = 1, ren
         return _init
     return gym.vector.SyncVectorEnv([make_env_fn() for _ in range(num_envs)], autoreset_mode=AutoresetMode.SAME_STEP)
 
-#Function help agent to interact with his env
-def env_step(env: Any, agent:BaseAgent, state:np.ndarray|Tensor, normalizer:NormMeanStd|None=None, device: torch.device = torch.device("cpu")) -> dict[str, Tensor]:
-    state_tensor = processing_state(state, normalizer, device = device)
+def env_step(env: Any, agent: BaseAgent, state_tensor: Tensor) -> dict[str, Tensor]:
+    """Run one agent-environment step: get_action → env.step → return transition dict."""
     with torch.inference_mode():
         outputs: dict[str, Tensor] = agent.get_action(state_tensor) #type: ignore[operator]
 
     action = to_env_action(outputs["action"], env)
     # Gymnasium v1 step() returns: obs, reward, terminated, truncated, info
     # terminated = episode naturally ended; truncated = cut short by time limit
-    next_state, reward, terminated, truncated, _ = env.step(action)
-    return {"state": state_tensor, "next_state": next_state, "reward": reward, "terminated": terminated, "truncated": truncated, **outputs}
+    next_state, reward, terminated, truncated, info = env.step(action)
+    return {"state": state_tensor, "next_state": next_state, "reward": reward, "terminated": terminated, "truncated": truncated, "info": info, **outputs}
 
 def save_checkpoints(agent: BaseAgent, model_path: str, normalizer: NormMeanStd | None = None):
     """Save agent weights and Normalizer state to the path in config.model_path."""
@@ -71,6 +70,7 @@ def save_checkpoints(agent: BaseAgent, model_path: str, normalizer: NormMeanStd 
     torch.save(checkpoints_state, model_path)
 
 def processing_state(state: np.ndarray | Tensor, normalizer: NormMeanStd | None = None, update: bool = True, device: torch.device = torch.device("cpu")) -> Tensor:
+    """Convert observation to tensor, optionally normalize, ensure batch dim."""
     state_tensor = torch.as_tensor(state, dtype=torch.float32, device=device)
     if state_tensor.dim() == 1: state_tensor = state_tensor.unsqueeze(0)
     if normalizer is not None:
@@ -78,7 +78,8 @@ def processing_state(state: np.ndarray | Tensor, normalizer: NormMeanStd | None 
         state_tensor = normalizer.normalize(state_tensor)
     return state_tensor
 
-def parse_env_step(output: dict[str, Tensor], device: torch.device = torch.device("cpu")) -> dict[str, Tensor]:
+def parse_dict_to_tensor(output: dict[str, Tensor], device: torch.device = torch.device("cpu")) -> dict[str, Tensor]:
+    """Convert next_state, reward, terminated, truncated to float32 tensors."""
     keys = ["next_state", "reward", "terminated", "truncated"]
     for k in keys:
         value = output[k]
@@ -86,55 +87,67 @@ def parse_env_step(output: dict[str, Tensor], device: torch.device = torch.devic
         if output[k].dim() == 0: output[k] = output[k].unsqueeze(0)
     return output
 
+def parse_to_tensor(value: int | float, device: torch.device = torch.device("cpu")) -> Tensor:
+    """Convert a scalar to a 1-D float32 tensor."""
+    output = torch.as_tensor(value, dtype=torch.float32, device=device)
+    if output.dim() == 0: output = output.unsqueeze(0)
+    return output
+
 def to_env_action(action, env: Any) -> np.ndarray | Tensor:
+    """Convert action to numpy on CPU, or keep as-is if env is on CUDA."""
     device = getattr(env, "device", "cpu")
     if str(device).startswith("cuda"):
         return action
     return action.cpu().numpy()
 
 def set_seed(seed: int, num_envs: int):
+    """Seed all RNGs and return per-env derived seeds."""
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     sequence = np.random.SeedSequence(seed)
     return [int(child.generate_state(1)[0]) for child in sequence.spawn(num_envs)]
 
-def try_agent(env: Any, agent: BaseAgent, config: TrainConfig, *, normalizer: NormMeanStd | None = None, iterations: int = 1, gif_path: str | None = None):
-    """Evaluate the agent and save a GIF of its behavior.
-    
+def try_agent(env_eval: Any, agent: BaseAgent, config: TrainConfig, *, normalizer: NormMeanStd | None = None, iterations: int = 1, gif_path: str | None = None):
+    """Evaluate agent and save a GIF of its behavior.
+
     Args:
-        iterations: Number of iterations.
-        gif_path: Path to save the GIF.
+        env_eval: Environment to evaluate in.
+        agent: Trained agent.
+        config: Training config (provides device and project_name).
+        normalizer: Optional observation normalizer.
+        iterations: Number of evaluation episodes.
+        gif_path: Output GIF path (default: ./{project_name}_{i}.gif).
     """
-    env_spec = env
-    #check if env has .env or .spec attributs
+    env_spec = env_eval
     if isinstance(env_spec, gym.vector.VectorEnv):
         try:
             env_spec = env_spec.envs[0].spec.id
         except:
             env_spec = env_spec.envs[0]
 
-    env = vectorize_env(env_spec, render_mode = "rgb_array")
+    env_eval = vectorize_env(env_spec, render_mode = "rgb_array")
     frames: Any = []
+    was_training = agent.training
     agent.eval()
     for i in range(iterations):
         done_or_trunc = False
-        state, _ = env.reset() #type: ignore
+        state, _ = env_eval.reset() #type: ignore
         while not done_or_trunc:
-            outputs = env_step(env, agent, state, normalizer, config.device)
-            #capture frames
-            frame = env.render()
+            state_tensor = processing_state(state, normalizer, update = False, device = config.device)
+            outputs = env_step(env_eval, agent, state_tensor)
+            frame = env_eval.render()
             if frame is not None: frames.append(frame[0])
             done_or_trunc = bool(np.any(outputs["terminated"]) or np.any(outputs["truncated"]))
             state = outputs["next_state"]
 
-        #save to gif
         if gif_path is None:
             gif_path = f"./{config.project_name}_{i}.gif"
         else:
             gif_path = f"./{gif_path}_{i}.gif"
         imageio.mimsave(gif_path, frames, fps=25)
-        env.close()
+    env_eval.close()
+    if was_training: agent.train()
 
 def get_obs_act(env: SyncVectorEnv) -> Any:
     """Extract observation and action spaces from a vectorized environment.

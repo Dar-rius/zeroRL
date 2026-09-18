@@ -6,7 +6,6 @@ tensors and converts them for the PPO update step.
 
 import torch
 from zerorl.errors import KeyBufferError
-from zerorl.config import TrainConfig
 
 
 class Buffer:
@@ -18,7 +17,7 @@ class Buffer:
     PyTorch tensors for the PPO update step.
 
     Example:
-        buf = Buffer(step=2048, data={"state": (4,), "action": ()})
+        buf = Buffer(capacity=2048, num_envs=1, schema={"state": (4,), "action": ()})
         for _ in range(2048):
             buf.insert(state=..., action=..., reward=..., ...)
         tensors = buf.get_all()
@@ -26,28 +25,36 @@ class Buffer:
     """
 
     def __init__(self,
-                 data: dict[str, tuple],
-                 config: TrainConfig):
+                 capacity: int,
+                 num_envs: int,
+                 schema: dict[str, tuple],
+                 device: torch.device = torch.device("cpu")):
         """Initialize pre-allocated arrays.
 
         Args:
-            step: Maximum number of timesteps (capacity).
-            data: Dict mapping field names to shape tuples (e.g. {"state": (4,), "action": ()}).
+            capacity: Maximum number of timesteps.
+            num_envs: Number of parallel environments.
+            schema: Dict mapping field names to shape tuples (e.g. {"state": (4,), "action": ()}).
+            device: Torch device to allocate tensors on.
         """
-        self.config = config
-        self.step = self.config.rollout_steps
-        self.num_envs = self.config.num_envs
+        self.step = capacity
+        self.num_envs = num_envs
+        self.device_ = device
         self.slice: int = 0
         self.data = {
-                name: torch.zeros((self.step, self.num_envs, *shape), dtype = torch.float32, device = self.config.device)
-                for name, shape in data.items()
+                name: torch.zeros((self.step, self.num_envs, *shape), dtype = torch.float32, device = device)
+                for name, shape in schema.items()
                 }
 
     @property
-    def size(self): return self.slice
+    def size(self):
+        """Number of timesteps inserted so far."""
+        return self.slice
 
     @property
-    def device(self): return self.config.device
+    def device(self):
+        """Torch device where buffer tensors are allocated."""
+        return self.device_
 
     def insert(self, **kwargs):
         """Insert one timestep of data into the buffer.

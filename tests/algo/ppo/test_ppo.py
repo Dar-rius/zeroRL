@@ -7,18 +7,11 @@ from torch.optim.lr_scheduler import LambdaLR
 from zerorl.helpers.agent import BaseAgent, eval_action
 from zerorl.algorithms.ppo.ppo import gae_compute, ppo_loss, ppo_func
 from zerorl.buffer import Buffer
-from zerorl.config import AlgoConfig, TrainConfig
+from zerorl.config import AlgoConfig
 
 @pytest.fixture
 def device() -> torch.device:
     return torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-def _make_config(step: int, num_envs: int = 1, device: torch.device = torch.device("cpu")) -> TrainConfig:
-    cfg = TrainConfig(model_name="test", model_save_path="/tmp", project_name="test")
-    cfg.rollout_steps = step
-    cfg.num_envs = num_envs
-    cfg.device = device
-    return cfg
 
 class DiscreteTestAgent(BaseAgent):
     def __init__(self, obs_dim: int = 4, act_dim: int = 2):
@@ -32,7 +25,7 @@ class DiscreteTestAgent(BaseAgent):
     @staticmethod
     def build_distribution(logits: torch.Tensor):
         return torch.distributions.Categorical(logits=logits)
-    
+
     def get_action(self, state: torch.Tensor, action: torch.Tensor | None = None, **kwargs):
         logits, value = self.forward(state, **kwargs)
         dist = self.build_distribution(logits)
@@ -44,7 +37,7 @@ class TestGaeCompute:
     @pytest.mark.gpu
     def test_returns_equals_advantages_plus_values(self, device) -> None:
         cfg = AlgoConfig()
-        buf = Buffer(data={"return":(), "advantage": ()}, config=_make_config(3, device=device))
+        buf = Buffer(capacity=3, num_envs=1, schema={"return":(), "advantage": ()}, device=device)
         buf.slice = 3
         reward = torch.tensor([1.0, 2.0, 3.0], device=device).unsqueeze(-1)
         values = torch.tensor([0.5, 0.5, 0.5], device=device).unsqueeze(-1)
@@ -58,7 +51,7 @@ class TestGaeCompute:
     @pytest.mark.gpu
     def test_buffer_inside_advantages_(self, device) -> None:
         cfg = AlgoConfig()
-        buf = Buffer(data={"return":(), "advantage": ()}, config=_make_config(3, device=device))
+        buf = Buffer(capacity=3, num_envs=1, schema={"return":(), "advantage": ()}, device=device)
         buf.slice = 3
         reward = torch.tensor([1.0, 2.0, 3.0], device=device).unsqueeze(-1)
         values = torch.tensor([0.5, 0.5, 0.5], device=device).unsqueeze(-1)
@@ -89,7 +82,10 @@ class TestPpoLoss:
 
 class TestPpoFunction:
     def _make_buffer(self, n, obs_dim, device):
-        buf = Buffer(data={"state": (obs_dim,), "action": (), "log_prob": (), "advantage": (), "return": (), "value": ()}, config=_make_config(n, device=device))
+        buf = Buffer(capacity=n, num_envs=1,
+                     schema={"state": (obs_dim,), "action": (), "log_prob": (),
+                             "advantage": (), "return": (), "value": ()},
+                     device=device)
         for _ in range(n):
             buf.insert(state=torch.randn(obs_dim, device=device), action=torch.tensor(0, device=device), log_prob=torch.tensor(-0.5, device=device), advantage=torch.tensor(1.0, device=device), **{"return": torch.tensor(2.0, device=device)}, value=torch.tensor(0.5, device=device))
         return buf
@@ -127,11 +123,11 @@ class TestGaeDoneMask:
         last_value = torch.tensor([1.0], device=device)
         dones_no = torch.tensor([0.0, 0.0, 0.0], device=device).unsqueeze(-1)
         dones_mid = torch.tensor([0.0, 1.0, 0.0], device=device).unsqueeze(-1)
-        buf_no = Buffer(data={"return":(), "advantage": ()}, config=_make_config(3, device=device))
+        buf_no = Buffer(capacity=3, num_envs=1, schema={"return":(), "advantage": ()}, device=device)
         buf_no.slice = 3
         gae_compute(reward, values, last_value, dones_no, buf_no, cfg)
         adv_no = buf_no.data["advantage"][:3]
-        buf_done = Buffer(data={"return":(), "advantage": ()}, config=_make_config(3, device=device))
+        buf_done = Buffer(capacity=3, num_envs=1, schema={"return":(), "advantage": ()}, device=device)
         buf_done.slice = 3
         gae_compute(reward, values, last_value, dones_mid, buf_done, cfg)
         adv_done = buf_done.data["advantage"][:3]
@@ -146,10 +142,10 @@ class TestGaeDoneMask:
         big_last = torch.tensor([100.0], device=device)
         dones_last = torch.tensor([0.0, 0.0, 1.0], device=device).unsqueeze(-1)
         dones_none = torch.tensor([0.0, 0.0, 0.0], device=device).unsqueeze(-1)
-        buf_done = Buffer(data={"return":(), "advantage": ()}, config=_make_config(3, device=device))
+        buf_done = Buffer(capacity=3, num_envs=1, schema={"return":(), "advantage": ()}, device=device)
         buf_done.slice = 3
         gae_compute(reward, values, big_last, dones_last, buf_done, cfg)
-        buf_none = Buffer(data={"return":(), "advantage": ()}, config=_make_config(3, device=device))
+        buf_none = Buffer(capacity=3, num_envs=1, schema={"return":(), "advantage": ()}, device=device)
         buf_none.slice = 3
         gae_compute(reward, values, big_last, dones_none, buf_none, cfg)
         delta_done = reward[-1] - values[-1]
@@ -163,10 +159,10 @@ class TestGaeDoneMask:
         values = torch.tensor([[0.5, 5.0], [0.5, 5.0], [0.5, 5.0]], device=device)
         last_value = torch.tensor([1.0, 10.0], device=device)
         dones = torch.tensor([[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]], device=device)
-        buf_both = Buffer(data={"return":(), "advantage": ()}, config=_make_config(3, num_envs=2, device=device))
+        buf_both = Buffer(capacity=3, num_envs=2, schema={"return":(), "advantage": ()}, device=device)
         buf_both.slice = 3
         gae_compute(reward, values, last_value, dones, buf_both, cfg)
-        buf_0 = Buffer(data={"return":(), "advantage": ()}, config=_make_config(3, device=device))
+        buf_0 = Buffer(capacity=3, num_envs=1, schema={"return":(), "advantage": ()}, device=device)
         buf_0.slice = 3
         gae_compute(reward[:, 0:1], values[:, 0:1], last_value[0:1], dones[:, 0:1], buf_0, cfg)
         torch.testing.assert_close(buf_both.data["return"][:3, 0], buf_0.data["return"][:3].squeeze(-1))
@@ -306,4 +302,3 @@ class TestPpoEdgeCases:
         scheduler = MagicMock()
         ppo_func(agent, optimizer, buf, cfg, scheduler)
         assert scheduler.step.call_count == 1
-

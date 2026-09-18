@@ -4,12 +4,13 @@ from tqdm import tqdm
 from torch import optim
 from torch.optim.lr_scheduler import LambdaLR
 from zerorl.algorithms.ppo import ppo_func, gae_compute
-from zerorl.helpers.factory import get_actor_critic_buffer, ActorCriticAgent
+from zerorl.helpers.factory import ActorCriticAgent
+from zerorl.buffer import Buffer
 from zerorl.config import TrainConfig, AlgoConfig
 from zerorl.logger import create_logger
-from zerorl.functions import (env_step, 
-                              processing_state,
-                              parse_env_step,
+from zerorl.functions import (processing_state,
+                              parse_dict_to_tensor,
+                              to_env_action,
                               try_agent,
                               get_obs_act,
                               vectorize_env,
@@ -23,23 +24,34 @@ seed = set_seed(42, cfg.num_envs)
 env = vectorize_env("LunarLander-v3", num_envs = cfg.num_envs)
 obs_dim, act_dim, obs_n, act_n, is_discrete = get_obs_act(env)
 agent = ActorCriticAgent(obs_n, act_n, is_discrete)
-buffer = get_actor_critic_buffer(obs_dim, act_dim, cfg)
+buffer = Buffer(capacity = cfg.rollout_steps,
+                num_envs = cfg.num_ens,
+                schema = {"state": obs_dim, "action": act_dim,
+                          "reward": (), "terminated": (), "entropy": (), "value": (),
+                          "return": (), "log_prob": (), "advantage": (), "truncated": ()},
+                device = cfg.device)
 optimizer = optim.Adam(agent.parameters(), lr=algo_cfg.lr, eps=1e-5)
 scheduler = LambdaLR(optimizer, lambda step_: 1.0 - (step_ / cfg.num_update))
 log = create_logger(cfg, algo_cfg, use_tb=True)
 reward_tensor = torch.zeros(cfg.num_envs, device=cfg.device)
-state, _ = env.reset(seed=seed)
+state, _ = env.reset(seed = seed)
+state_tensor = processing_state(state)
 
 for step in tqdm(range(cfg.num_update)):
     episodic_reward = []
     metrics = {}
 
     for _ in range(cfg.rollout_steps):
-        outputs = env_step(env, agent, state)
-        outputs["terminated"] = outputs["terminated"] | outputs["truncated"]
-        outputs = parse_env_step(outputs)
+        with torch.inference_mode:
+            outputs = agent.get_action(state_tensor)
+        action  = to_env_action(outputs["action"], env)
+        next_state, reward, terminated, truncated, _ = env.step(action)
+        terminated = terminated | truncated
+        outputs = {"next_state": next_state, "reward": reward,
+                   "terminated": terminated, "truncated": truncated} 
+        outputs = parse_dict_to_tensor(outputs)
         next_state = outputs.pop("next_state")
-        buffer.insert(**outputs)
+        buffer.insert(state = state_tensor, **outputs)
         reward_tensor += outputs["reward"]
         finished = outputs["terminated"] > 0
 
@@ -67,5 +79,4 @@ for step in tqdm(range(cfg.num_update)):
 
 env.close()
 log.close()
-
-try_agent(env, agent, cfg)
+try_agent("LunarLander-v3", agent, cfg)

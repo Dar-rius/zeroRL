@@ -1,3 +1,5 @@
+"""Optional torch.compile wrapper. No-ops when no C++ compiler is available."""
+
 import sys
 import shutil
 import torch

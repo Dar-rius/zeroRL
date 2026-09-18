@@ -11,7 +11,7 @@ from zerorl.functions import (
     env_step,
     get_buffer_params_model,
     get_obs_act,
-    parse_env_step,
+    parse_dict_to_tensor,
     processing_state,
     save_checkpoints,
     to_env_action,
@@ -205,39 +205,45 @@ class TestVectorizeEnv:
 class TestEnvStep:
     def test_returns_expected_keys(self, simple_agent, cartpole_env) -> None:
         obs, _ = cartpole_env.reset(seed=0)
-        result = env_step(cartpole_env, simple_agent, obs)
-        expected = {"state", "next_state", "reward", "terminated", "truncated",
+        state_tensor = processing_state(obs)
+        result = env_step(cartpole_env, simple_agent, state_tensor)
+        expected = {"state", "next_state", "reward", "terminated", "truncated", "info",
                     "action", "log_prob", "entropy", "value"}
         assert set(result.keys()) == expected
 
     def test_next_state_shape(self, simple_agent, cartpole_env) -> None:
         obs, _ = cartpole_env.reset(seed=0)
-        result = env_step(cartpole_env, simple_agent, obs)
+        state_tensor = processing_state(obs)
+        result = env_step(cartpole_env, simple_agent, state_tensor)
         assert result["next_state"].shape == (1, 4)
 
     def test_reward_is_numeric(self, simple_agent, cartpole_env) -> None:
         obs, _ = cartpole_env.reset(seed=0)
-        result = env_step(cartpole_env, simple_agent, obs)
+        state_tensor = processing_state(obs)
+        result = env_step(cartpole_env, simple_agent, state_tensor)
         reward_arr = np.asarray(result["reward"])
         assert np.all(np.isfinite(reward_arr))
 
     def test_action_matches_agent_output(self, simple_agent, cartpole_env) -> None:
         obs, _ = cartpole_env.reset(seed=0)
+        state_tensor = processing_state(obs)
         with torch.inference_mode():
-            agent_out = simple_agent.get_action(torch.as_tensor(obs, dtype=torch.float32))
-        result = env_step(cartpole_env, simple_agent, obs)
+            agent_out = simple_agent.get_action(state_tensor)
+        result = env_step(cartpole_env, simple_agent, state_tensor)
         assert result["action"].shape == agent_out["action"].shape
 
     def test_with_normalizer(self, simple_agent, cartpole_env) -> None:
         norm = NormMeanStd(shape=(4,))
         obs, _ = cartpole_env.reset(seed=0)
-        result = env_step(cartpole_env, simple_agent, obs, normalizer=norm)
+        state_tensor = processing_state(obs, normalizer=norm)
+        result = env_step(cartpole_env, simple_agent, state_tensor)
         assert "next_state" in result
         assert norm.count > 1.0
 
     def test_device_cpu(self, simple_agent, cartpole_env) -> None:
         obs, _ = cartpole_env.reset(seed=0)
-        result = env_step(cartpole_env, simple_agent, obs, device=torch.device("cpu"))
+        state_tensor = processing_state(obs, device=torch.device("cpu"))
+        result = env_step(cartpole_env, simple_agent, state_tensor)
         assert isinstance(result["next_state"], np.ndarray)
 
 
@@ -347,10 +353,10 @@ class TestProcessingState:
 
 
 # ===========================================================================
-# parse_env_step
+# parse_dict_to_tensor
 # ===========================================================================
 
-class TestParseEnvStep:
+class TestParseDictToTensor:
     def _make_array_output(self):
         return {
             "next_state": np.array([1.0, 2.0, 3.0, 4.0], dtype=np.float32),
@@ -368,26 +374,26 @@ class TestParseEnvStep:
         }
 
     def test_returns_dict(self) -> None:
-        out = parse_env_step(self._make_array_output())
+        out = parse_dict_to_tensor(self._make_array_output())
         assert isinstance(out, dict)
 
     def test_keys_preserved(self) -> None:
-        out = parse_env_step(self._make_array_output())
+        out = parse_dict_to_tensor(self._make_array_output())
         for k in ("next_state", "reward", "terminated", "truncated"):
             assert k in out
 
     def test_values_are_tensors(self) -> None:
-        out = parse_env_step(self._make_array_output())
+        out = parse_dict_to_tensor(self._make_array_output())
         for k in ("next_state", "reward", "terminated", "truncated"):
             assert isinstance(out[k], torch.Tensor)
 
     def test_dtype_is_float32(self) -> None:
-        out = parse_env_step(self._make_array_output())
+        out = parse_dict_to_tensor(self._make_array_output())
         for k in ("next_state", "reward", "terminated", "truncated"):
             assert out[k].dtype == torch.float32
 
     def test_array_reward_becomes_tensor(self) -> None:
-        out = parse_env_step(self._make_array_output())
+        out = parse_dict_to_tensor(self._make_array_output())
         assert out["reward"].ndim == 1
 
     def test_already_tensor_unchanged(self) -> None:
@@ -397,12 +403,12 @@ class TestParseEnvStep:
             "terminated": torch.tensor([False]),
             "truncated": torch.tensor([False]),
         }
-        out = parse_env_step(output)
+        out = parse_dict_to_tensor(output)
         for k in ("next_state", "reward", "terminated", "truncated"):
             assert out[k].dtype == torch.float32
 
     def test_scalar_unsqueeze(self) -> None:
-        parse_env_step(self._make_scalar_output())
+        parse_dict_to_tensor(self._make_scalar_output())
 
 
 # ===========================================================================

@@ -60,6 +60,7 @@ class NormMeanStd:
 
 
     def state_dict(self) -> dict[str, Tensor]:
+        """Return running statistics as a serializable dict."""
         return  {
                 "mean": self.mean.clone(),
                 "var": self.var.clone(),
@@ -68,6 +69,7 @@ class NormMeanStd:
 
 
     def load_state_dict(self, state_dict: dict[str, Tensor]):
+        """Restore running statistics from a dict."""
         self.mean  = state_dict["mean"].to(self.var.device)
         self.var = state_dict["var"].to(self.var.device)
         self.count = state_dict["count"].item()

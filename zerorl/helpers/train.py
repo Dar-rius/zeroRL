@@ -25,7 +25,7 @@ from zerorl.logger import PhaseProfiler, PhaseMetrics, create_logger
 from zerorl.functions import (
         vectorize_env,
         processing_state,
-        parse_env_step,
+        parse_dict_to_tensor,
         env_step,
         save_checkpoints,
         try_agent,
@@ -144,12 +144,13 @@ class BaseTrain:
             self.current_episode_reward = torch.zeros(self.num_envs, device=self.device)
 
         for i in range(self.config.rollout_steps):
-            outputs = env_step(self.env, self.agent, state_tensor, self.normalizer, self.device)
+            outputs = env_step(self.env, self.agent, state_tensor)
             outputs["terminated"] = outputs["terminated"] | outputs["truncated"]
-            outputs = parse_env_step(outputs, self.device)
+            outputs = parse_dict_to_tensor(outputs, self.device)
             self._hook_env_check_(outputs, i)
             next_state_tensor = outputs.pop("next_state")
-            self.buffer.insert(**outputs), self.device
+            outputs.pop("info")
+            self.buffer.insert(**outputs)
             self.current_episode_reward += outputs["reward"]
             finished = (outputs["terminated"] > 0) | (outputs["truncated"] > 0)
 
@@ -169,8 +170,8 @@ class BaseTrain:
         self.state = state_tensor
         return next_output
 
-    #Profiler display
     def _log_profile_metrics(self, step: int, metrics: PhaseMetrics):
+        """Print profiling metrics for the current training step to stderr."""
         sys.stderr.write(
                 f"\n\033[94m[Profile] Step {step} | FPS: {metrics.fps:.0f} | "
                 f"Rollout: {metrics.rollout_ms:.1f}ms | Update: {metrics.update_ms:1f}ms |"
@@ -188,7 +189,6 @@ class BaseTrain:
             use_wandb: Whether to log to Weights & Biases.
             use_tb: Whether to log to TensorBoard.
         """
-        #Configure env
         is_profile = self.config.profile
         is_cuda = True if str(self.device).startswith("cuda") else False
         profiler = PhaseProfiler(self.config, is_cuda = is_cuda)
@@ -247,10 +247,12 @@ class BaseTrain:
 
         self.env.close()
         log.close()
-        #Save model
         if save_model: self.save()
 
     def try_agent(self, iterations: int = 1, gif_path: str | None = None):
+        """Evaluate the agent and save a GIF."""
         try_agent(self.env, self.agent, self.config, self.normalizer, iterations, gif_path)
 
-    def save(self): save_checkpoints(self.agent, self.config.model_path, self.normalizer)
+    def save(self):
+        """Save agent weights and normalizer state to disk."""
+        save_checkpoints(self.agent, self.config.model_path, self.normalizer)

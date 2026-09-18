@@ -37,6 +37,7 @@ class BaseAgent(nn.Module):
     """
 
     def __init__(self):
+        """Initialize the base agent."""
         super().__init__()
 
 

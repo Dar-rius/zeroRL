@@ -115,7 +115,9 @@ class TestPPOContinuousIntegration:
         # 2. Setup Buffer
         n_steps = 128
         raw_buf = Buffer(
-            data={
+            capacity=n_steps,
+            num_envs=1,
+            schema={
                 "state": (obs_dim,),
                 "action": (act_dim,),
                 "log_prob": (),
@@ -125,7 +127,7 @@ class TestPPOContinuousIntegration:
                 "advantage": (),
                 "return": (),
             },
-            config=_make_config(n_steps, device=device),
+            device=device,
         )
 
         # 3. Collect Rollout (Interact with real env)
