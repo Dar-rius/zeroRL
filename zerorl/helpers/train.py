@@ -25,7 +25,7 @@ from zerorl.logger import PhaseProfiler, PhaseMetrics, create_logger
 from zerorl.functions import (
         vectorize_env,
         processing_state,
-        parse_env_step,
+        parse_dict_to_tensor,
         env_step,
         save_checkpoints,
         try_agent,
@@ -144,12 +144,13 @@ class BaseTrain:
             self.current_episode_reward = torch.zeros(self.num_envs, device=self.device)
 
         for i in range(self.config.rollout_steps):
-            outputs = env_step(self.env, self.agent, state_tensor, self.normalizer, self.device)
+            outputs = env_step(self.env, self.agent, state_tensor)
             outputs["terminated"] = outputs["terminated"] | outputs["truncated"]
-            outputs = parse_env_step(outputs, self.device)
+            outputs = parse_dict_to_tensor(outputs, self.device)
             self._hook_env_check_(outputs, i)
             next_state_tensor = outputs.pop("next_state")
-            self.buffer.insert(**outputs), self.device
+            outputs.pop("info")
+            self.buffer.insert(**outputs)
             self.current_episode_reward += outputs["reward"]
             finished = (outputs["terminated"] > 0) | (outputs["truncated"] > 0)
 

@@ -26,28 +26,30 @@ class Buffer:
     """
 
     def __init__(self,
-                 data: dict[str, tuple],
-                 config: TrainConfig):
+                 capacity: int,
+                 num_envs: int,
+                 schema: dict[str, tuple],
+                 device: torch.device = torch.device("cpu")):
         """Initialize pre-allocated arrays.
 
         Args:
             step: Maximum number of timesteps (capacity).
             data: Dict mapping field names to shape tuples (e.g. {"state": (4,), "action": ()}).
         """
-        self.config = config
-        self.step = self.config.rollout_steps
-        self.num_envs = self.config.num_envs
+        self.step = capacity
+        self.num_envs = num_envs
+        self.device_ = device
         self.slice: int = 0
         self.data = {
-                name: torch.zeros((self.step, self.num_envs, *shape), dtype = torch.float32, device = self.config.device)
-                for name, shape in data.items()
+                name: torch.zeros((self.step, self.num_envs, *shape), dtype = torch.float32, device = device)
+                for name, shape in schema.items()
                 }
 
     @property
     def size(self): return self.slice
 
     @property
-    def device(self): return self.config.device
+    def device(self): return self.device_
 
     def insert(self, **kwargs):
         """Insert one timestep of data into the buffer.

@@ -28,7 +28,11 @@ def get_env(env_id: str | Callable | BaseEnv, num_envs: int = 1, render_mode: st
     """
     return vectorize_env(env_id, num_envs = num_envs, render_mode = render_mode)
 
-def get_actor_critic_buffer(state_space: tuple, action_space: tuple, config: TrainConfig):
+def get_actor_critic_buffer(state_space: tuple,
+                            action_space: tuple,
+                            capacity: int,
+                            num_envs: int,
+                            device: torch.device = torch.device("cpu")):
     """Create a Buffer with standard Actor-Critic Standard field names.
 
     Args:
@@ -39,15 +43,21 @@ def get_actor_critic_buffer(state_space: tuple, action_space: tuple, config: Tra
     Returns:
         Buffer pre-allocated with keys: state, action, reward, terminated, truncated,
         entropy, value, return, log_prob, advantage.
-    """ 
-    buffer = Buffer(data = {"state": state_space, "action": action_space,
-                            "reward": (), "terminated": (), "truncated": (), "entropy": (),
-                            "value": (), "return": (), "log_prob": (), "advantage": ()},
-                    config=config)
+    """
+    buffer = Buffer(capacity = capacity,
+                    num_envs = num_envs,
+                    schema = {"state": state_space, "action": action_space,
+                                "reward": (), "terminated": (), "truncated": (), "entropy": (),
+                                "value": (), "return": (), "log_prob": (), "advantage": ()},
+                    device = device)
     return buffer
 
 
-def get_policy_buffer(state_space: tuple, action_space: tuple, config: TrainConfig):
+def get_policy_buffer(state_space: tuple,
+                      action_space: tuple,
+                      capacity: int,
+                      num_envs: int,
+                      device: torch.device = torch.device("cpu")):
     """Create a Buffer with standard Policy-Gradient Standard field names.
 
     Args:
@@ -58,14 +68,20 @@ def get_policy_buffer(state_space: tuple, action_space: tuple, config: TrainConf
     Returns:
         Buffer pre-allocated with keys: state, action, reward, terminated, truncated,
         log_prob.
-    """ 
-    buffer = Buffer(data = {"state": state_space, "action": action_space, "reward": (),
+    """
+    buffer = Buffer(capacity = capacity,
+                    num_envs = num_envs,
+                    schema = {"state": state_space, "action": action_space, "reward": (),
                             "terminated": (), "truncated": (), "log_prob": ()},
-                    config=config)
+                    device=device)
     return buffer
 
 
-def get_replay_buffer(state_space: tuple, action_space: tuple, config: TrainConfig):
+def get_replay_buffer(state_space: tuple,
+                      action_space: tuple,
+                      capacity: int,
+                      num_envs: int,
+                      device: torch.device = torch.device("cpu")):
     """Create a Buffer with standard Replay Buffer Standard field names.
 
     Args:
@@ -76,9 +92,11 @@ def get_replay_buffer(state_space: tuple, action_space: tuple, config: TrainConf
     Returns:
         Buffer pre-allocated with keys: state, action, reward, terminated, truncated.
     """ 
-    buffer = Buffer(data = {"state": state_space, "action": action_space,
+    buffer = Buffer(capacity = capacity,
+                    num_envs = num_envs,
+                    schema = {"state": state_space, "action": action_space,
                             "reward": (), "terminated": (), "next_state": (), "truncated": ()},
-                    config=config)
+                    device = device)
     return buffer
 
 
@@ -101,7 +119,7 @@ class ActorCriticAgent(BaseAgent):
         self.hidden_dim = hidden_dim
         self.input_dim = input_dim
         self.output_dim = output_dim
-        
+
         # Feature Extractor
         self.extract_layer = nn.Sequential(
                 nn.Linear(self.input_dim, self.hidden_dim),

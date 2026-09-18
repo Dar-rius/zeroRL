@@ -133,9 +133,7 @@ def ppo_func(agent: BaseAgent,
         algo_config: AlgoConfig,
         scheduler: LambdaLR,
         *,
-        ppo_loss_func: Callable[[BaseAgent, dict, dict, Tensor, Tensor,
-                                 Tensor, Tensor, Tensor, Tensor, float,
-                                 float, float, float], dict[str, Tensor]] = ppo_loss,
+        ppo_loss_func: Callable = ppo_loss,
         ) ->  dict[str, Tensor]:
     """Run a full PPO update on collected rollout data.
 
@@ -185,7 +183,7 @@ def ppo_func(agent: BaseAgent,
                     return_: Tensor) -> dict[str, Tensor]:
         global_losses = ppo_loss_func(agent, params, buffers, state, action,
                                 old_log_prob, old_values, advantage, return_,
-                                value_coef, ent_coef, clip_eps, clip_vf)
+                                ent_coef, value_coef, clip_eps, clip_vf)
         loss_tensor = global_losses["loss"]
         loss_tensor.backward()
         return global_losses

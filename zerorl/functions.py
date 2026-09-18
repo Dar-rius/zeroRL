@@ -50,16 +50,15 @@ def vectorize_env(env_spec: str | Callable | BaseEnv, *,  num_envs: int = 1, ren
     return gym.vector.SyncVectorEnv([make_env_fn() for _ in range(num_envs)], autoreset_mode=AutoresetMode.SAME_STEP)
 
 #Function help agent to interact with his env
-def env_step(env: Any, agent:BaseAgent, state:np.ndarray|Tensor, normalizer:NormMeanStd|None=None, device: torch.device = torch.device("cpu")) -> dict[str, Tensor]:
-    state_tensor = processing_state(state, normalizer, device = device)
+def env_step(env: Any, agent: BaseAgent, state_tensor: Tensor) -> dict[str, Tensor]:
     with torch.inference_mode():
         outputs: dict[str, Tensor] = agent.get_action(state_tensor) #type: ignore[operator]
 
     action = to_env_action(outputs["action"], env)
     # Gymnasium v1 step() returns: obs, reward, terminated, truncated, info
     # terminated = episode naturally ended; truncated = cut short by time limit
-    next_state, reward, terminated, truncated, _ = env.step(action)
-    return {"state": state_tensor, "next_state": next_state, "reward": reward, "terminated": terminated, "truncated": truncated, **outputs}
+    next_state, reward, terminated, truncated, info = env.step(action)
+    return {"state": state_tensor, "next_state": next_state, "reward": reward, "terminated": terminated, "truncated": truncated, "info": info, **outputs}
 
 def save_checkpoints(agent: BaseAgent, model_path: str, normalizer: NormMeanStd | None = None):
     """Save agent weights and Normalizer state to the path in config.model_path."""
@@ -78,12 +77,17 @@ def processing_state(state: np.ndarray | Tensor, normalizer: NormMeanStd | None 
         state_tensor = normalizer.normalize(state_tensor)
     return state_tensor
 
-def parse_env_step(output: dict[str, Tensor], device: torch.device = torch.device("cpu")) -> dict[str, Tensor]:
+def parse_dict_to_tensor(output: dict[str, Tensor], device: torch.device = torch.device("cpu")) -> dict[str, Tensor]:
     keys = ["next_state", "reward", "terminated", "truncated"]
     for k in keys:
         value = output[k]
         output[k] = torch.as_tensor(value, dtype=torch.float32, device=device) 
         if output[k].dim() == 0: output[k] = output[k].unsqueeze(0)
+    return output
+
+def parse_to_tensor(value: int | float, device: torch.device = torch.device("cpu")) -> Tensor:
+    output = torch.as_tensor(value, dtype=torch.float32, device=device)
+    if output.dim() == 0: output = output.unsqueeze(0)
     return output
 
 def to_env_action(action, env: Any) -> np.ndarray | Tensor:
@@ -121,7 +125,8 @@ def try_agent(env: Any, agent: BaseAgent, config: TrainConfig, *, normalizer: No
         done_or_trunc = False
         state, _ = env.reset() #type: ignore
         while not done_or_trunc:
-            outputs = env_step(env, agent, state, normalizer, config.device)
+            state_tensor = processing_state(state, normalizer, update = False, device = config.device)
+            outputs = env_step(env, agent, state_tensor)
             #capture frames
             frame = env.render()
             if frame is not None: frames.append(frame[0])
