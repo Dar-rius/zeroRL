@@ -11,7 +11,6 @@ from zerorl.functions import vectorize_env
 from zerorl.helpers.agent import BaseAgent, eval_action
 from zerorl.helpers.env import BaseEnv
 from zerorl.buffer import Buffer 
-from zerorl.config import TrainConfig 
 from torch import nn
 
 
