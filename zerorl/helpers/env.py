@@ -22,14 +22,19 @@ class BaseEnv(gym.Env, ABC):
     """
 
     def __init__(self):
+        """Initialize observation and action space placeholders."""
         self.observation_space: spaces.Space
         self.action_space: spaces.Space
 
     @property
-    def device(self): return torch.device("cpu")
+    def device(self):
+        """Return device (CPU by default)."""
+        return torch.device("cpu")
 
     @property
-    def auto_reset(self): return False
+    def auto_reset(self):
+        """Whether the env auto-resets on episode end."""
+        return False
 
 
     @abstractmethod

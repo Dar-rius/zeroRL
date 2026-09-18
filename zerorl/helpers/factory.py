@@ -37,7 +37,9 @@ def get_actor_critic_buffer(state_space: tuple,
     Args:
         state_space: Observation shape tuple, e.g. (4,) for a 4-dim vector.
         action_space: Action shape tuple, e.g. () for discrete or (n,) for continuous.
-        config: Training config providing rollout_steps, num_envs, and device.
+        capacity: Maximum rollout steps.
+        num_envs: Number of parallel environments.
+        device: Torch device to allocate tensors on.
 
     Returns:
         Buffer pre-allocated with keys: state, action, reward, terminated, truncated,
@@ -62,7 +64,9 @@ def get_policy_buffer(state_space: tuple,
     Args:
         state_space: Observation shape tuple, e.g. (4,) for a 4-dim vector.
         action_space: Action shape tuple, e.g. () for discrete or (n,) for continuous.
-        config: Training config providing rollout_steps, num_envs, and device.
+        capacity: Maximum rollout steps.
+        num_envs: Number of parallel environments.
+        device: Torch device to allocate tensors on.
 
     Returns:
         Buffer pre-allocated with keys: state, action, reward, terminated, truncated,
@@ -86,7 +90,9 @@ def get_replay_buffer(state_space: tuple,
     Args:
         state_space: Observation shape tuple, e.g. (4,) for a 4-dim vector.
         action_space: Action shape tuple, e.g. () for discrete or (n,) for continuous.
-        config: Training config providing rollout_steps, num_envs, and device.
+        capacity: Maximum rollout steps.
+        num_envs: Number of parallel environments.
+        device: Torch device to allocate tensors on.
 
     Returns:
         Buffer pre-allocated with keys: state, action, reward, terminated, truncated.

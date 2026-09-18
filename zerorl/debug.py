@@ -1,3 +1,5 @@
+"""Debug utilities for detecting NaN/Inf and shape mismatches in RL tensors."""
+
 import torch
 from torch import Tensor
 
@@ -8,7 +10,7 @@ class RLSanityError(Exception):
 
 
 def check_tensor(tensor: Tensor, name: str, step: int):
-    "Verify if there are NaN in tensor"
+    """Raise RLSanityError if tensor contains NaN or Inf."""
     if not torch.isfinite(tensor).all():
         bad_idx = torch.where(~torch.isfinite(tensor))
         first_bad_idx = bad_idx[0][0].item() if len(bad_idx) > 0 else 0
@@ -23,7 +25,7 @@ def check_tensor(tensor: Tensor, name: str, step: int):
         raise RLSanityError(msg)
 
 def check_shape(tensor: Tensor, expected_shape: tuple, name: str, step: int):
-    "Verify if tensors shape are correct"
+    """Raise RLSanityError if tensor shape doesn't match expected shape."""
     if tensor.shape != expected_shape:
         msg = (
                 f"\n[DEBUG FATAL] Step {step}: Shape mismatch for '{name}'\n"
@@ -33,7 +35,7 @@ def check_shape(tensor: Tensor, expected_shape: tuple, name: str, step: int):
         raise RLSanityError(msg)
 
 def check_reward_scale(tensor: torch.Tensor, step:int):
-    "Verify if rewards are correct (ex: 1e8)"
+    """Raise RLSanityError if rewards exceed 100k (likely unnormalized)."""
     if tensor.abs().max() > 1e5:
         msg = (
             f"\n[DEBUG FATAL] Step {step}: Reward scale is abnormally high (> 100,000)\n"

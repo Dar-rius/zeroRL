@@ -170,8 +170,8 @@ class BaseTrain:
         self.state = state_tensor
         return next_output
 
-    #Profiler display
     def _log_profile_metrics(self, step: int, metrics: PhaseMetrics):
+        """Print profiling metrics for the current training step to stderr."""
         sys.stderr.write(
                 f"\n\033[94m[Profile] Step {step} | FPS: {metrics.fps:.0f} | "
                 f"Rollout: {metrics.rollout_ms:.1f}ms | Update: {metrics.update_ms:1f}ms |"
@@ -189,7 +189,6 @@ class BaseTrain:
             use_wandb: Whether to log to Weights & Biases.
             use_tb: Whether to log to TensorBoard.
         """
-        #Configure env
         is_profile = self.config.profile
         is_cuda = True if str(self.device).startswith("cuda") else False
         profiler = PhaseProfiler(self.config, is_cuda = is_cuda)
@@ -248,10 +247,12 @@ class BaseTrain:
 
         self.env.close()
         log.close()
-        #Save model
         if save_model: self.save()
 
     def try_agent(self, iterations: int = 1, gif_path: str | None = None):
+        """Evaluate the agent and save a GIF."""
         try_agent(self.env, self.agent, self.config, self.normalizer, iterations, gif_path)
 
-    def save(self): save_checkpoints(self.agent, self.config.model_path, self.normalizer)
+    def save(self):
+        """Save agent weights and normalizer state to disk."""
+        save_checkpoints(self.agent, self.config.model_path, self.normalizer)

@@ -1,3 +1,5 @@
+"""Logging, profiling, and metrics utilities for RL training."""
+
 import os
 import warnings
 import time
@@ -20,8 +22,8 @@ except ImportError:
     SummaryWriter = None #type: ignore
 
 
-# Visualizer (Wandb and TensorBoard)
 def create_logger(config: TrainConfig, algo_config: AlgoConfig, *, use_wandb:bool = False, use_tb:bool = False) -> Callable:
+    """Create a logging closure for wandb/tensorboard."""
     if use_wandb:
         if wandb is None:
             raise ImportError("`Wandb` is not installed. Install it with: pip install wandb")
@@ -60,16 +62,15 @@ def create_logger(config: TrainConfig, algo_config: AlgoConfig, *, use_wandb:boo
     return log
 
 
-# profiler
-"""Profiling metrics captured during a training step."""
 @dataclass
 class ProfileMetrics:
+    """Profiling metrics for a single function call."""
     name: str
     duration_ms: float
     vram_peak_gb: float
 
-# Profiler is a decorator
 def profile(name:str, is_cuda:bool = False):
+    """Decorator that measures execution time and optional VRAM usage."""
     def profile_func(func: Callable):
         @wraps(func)
         def wrapper(*args, **kwargs) -> tuple:
@@ -95,6 +96,7 @@ def profile(name:str, is_cuda:bool = False):
 
 @dataclass
 class PhaseMetrics:
+    """Aggregated metrics for a training step (rollout + update)."""
     rollout_ms: float = 0.0
     update_ms: float = 0.0
     total_ms: float = 0.0
@@ -104,6 +106,8 @@ class PhaseMetrics:
     ram_mb: float = 0.0
 
 class PhaseProfiler:
+    """Context-manager-based profiler for rollout/update phases."""
+
     def __init__(self, config: TrainConfig, *, is_cuda: bool = False):
         self.is_cuda = is_cuda
         self.total_rollout = config.rollout_steps * config.num_envs
@@ -112,6 +116,7 @@ class PhaseProfiler:
 
 
     def start_phase(self):
+        """Reset timers and VRAM stats before a new training step."""
         if self.is_cuda:
             torch.cuda.synchronize()
             torch.cuda.reset_peak_memory_stats()
@@ -119,6 +124,7 @@ class PhaseProfiler:
 
 
     def track(self, phase_name: str):
+        """Context manager that times a phase and stores duration in metrics."""
         profiler = self
         class PhaseContext:
             def __enter__(self):
@@ -134,6 +140,7 @@ class PhaseProfiler:
 
 
     def end_phase(self):
+        """Capture RAM/VRAM stats and compute total timing. Returns PhaseMetrics."""
         try:
             import psutil
             ram_bytes = psutil.Process().memory_info().rss
@@ -147,7 +154,6 @@ class PhaseProfiler:
         end_time = time.perf_counter()
         self.metrics.total_ms = (end_time - self._current_start) * 1000
 
-            # FPS
         if self.metrics.rollout_ms > 0:
             self.metrics.fps = self.total_rollout / (self.metrics.total_ms / 1000)
         return self.metrics

@@ -4,11 +4,11 @@ from zerorl.helpers.agent import BaseAgent
 
 
 def assert_agent_contract(agent: BaseAgent, attr_search: dict[str, str]):
-    """
-        Check if attributes exist in Agent
-        agent: Agent
-        attr_search: Key -> Attribute Name
-                     Value -> Message Error
+    """Verify agent has required attributes. Raises NotImplementedError if missing.
+
+    Args:
+        agent: Agent to check.
+        attr_search: Mapping of {attribute_name: error_message}.
     """
     for attr, message in attr_search.items():
         if not hasattr(agent, attr):

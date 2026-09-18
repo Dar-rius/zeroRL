@@ -161,7 +161,6 @@ def ppo_func(agent: BaseAgent,
     adv_norm = (mb_advantages - mb_advantages.mean()) / (mb_advantages.std() + 1e-8)
     returns = flat_data["return"]
 
-    #coefficient and eps for clipping
     value_coef = algo_config.value_coef
     ent_coef = algo_config.ent_coef
     clip_eps = algo_config.clip_eps
@@ -181,6 +180,7 @@ def ppo_func(agent: BaseAgent,
                     old_values: Tensor,
                     advantage: Tensor,
                     return_: Tensor) -> dict[str, Tensor]:
+        """Compute PPO loss and call backward()."""
         global_losses = ppo_loss_func(agent, params, buffers, state, action,
                                 old_log_prob, old_values, advantage, return_,
                                 ent_coef, value_coef, clip_eps, clip_vf)
@@ -210,7 +210,6 @@ def ppo_func(agent: BaseAgent,
                 history.append({k: v.clone().detach() for k, v in global_losses.items()})
         return history
 
-    # Compute losses and update weights
     history = update()
     scheduler.step()
     # Return average losses over all actual updates ([:index_loss] excludes

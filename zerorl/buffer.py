@@ -17,7 +17,7 @@ class Buffer:
     PyTorch tensors for the PPO update step.
 
     Example:
-        buf = Buffer(step=2048, data={"state": (4,), "action": ()})
+        buf = Buffer(capacity=2048, num_envs=1, schema={"state": (4,), "action": ()})
         for _ in range(2048):
             buf.insert(state=..., action=..., reward=..., ...)
         tensors = buf.get_all()
@@ -32,8 +32,10 @@ class Buffer:
         """Initialize pre-allocated arrays.
 
         Args:
-            step: Maximum number of timesteps (capacity).
-            data: Dict mapping field names to shape tuples (e.g. {"state": (4,), "action": ()}).
+            capacity: Maximum number of timesteps.
+            num_envs: Number of parallel environments.
+            schema: Dict mapping field names to shape tuples (e.g. {"state": (4,), "action": ()}).
+            device: Torch device to allocate tensors on.
         """
         self.step = capacity
         self.num_envs = num_envs
@@ -45,10 +47,14 @@ class Buffer:
                 }
 
     @property
-    def size(self): return self.slice
+    def size(self):
+        """Number of timesteps inserted so far."""
+        return self.slice
 
     @property
-    def device(self): return self.device_
+    def device(self):
+        """Torch device where buffer tensors are allocated."""
+        return self.device_
 
     def insert(self, **kwargs):
         """Insert one timestep of data into the buffer.

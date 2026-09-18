@@ -52,8 +52,8 @@ def easy_train_ppo(env_spec: str | Callable | BaseEnv,
 
     buffer = get_actor_critic_buffer(obs_dim, act_dim, config.rollout_steps, config.num_envs, config.device) #type: ignore
 
-    #update weights function
     def easy_update_weights(agent, buffer, scheduler, optimizer, last_output, algo_config):
+        """Compute GAE advantages then run PPO update."""
         data = buffer.get_all()
         gae_compute(data["reward"], data["value"], last_output["value"], data["terminated"], buffer, algo_config)
         return ppo_func(agent, optimizer, buffer, algo_config, scheduler)
