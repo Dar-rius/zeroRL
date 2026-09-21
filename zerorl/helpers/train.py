@@ -91,7 +91,7 @@ class BaseTrain:
         else:
             self.optimizer = optimizer
 
-        obs_ = getattr(env, "single_observation_space", env.observation_space)
+        obs_ = getattr(self.env, "single_observation_space", self.env.observation_space)
         obs_shape = obs_.shape
 
         if obs_shape is None:
