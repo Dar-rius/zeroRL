@@ -4,7 +4,6 @@ import os
 import warnings
 import time
 import torch
-import numpy as np
 from typing import Callable
 from functools import wraps
 from dataclasses import dataclass
@@ -29,7 +28,7 @@ def create_logger(config: TrainConfig, algo_config: AlgoConfig, *, use_wandb:boo
             raise ImportError("`Wandb` is not installed. Install it with: pip install wandb")
         wandb.init(project=config.project_name,
                    config={"Train Configs": config.__dict__,
-                           "Hyper Paramters": algo_config.__dict__})
+                           "Hyper Parameters": algo_config.__dict__})
 
     if use_tb:
         if SummaryWriter is None:
@@ -39,10 +38,10 @@ def create_logger(config: TrainConfig, algo_config: AlgoConfig, *, use_wandb:boo
 
 
     def log(metrics:dict, step:int):
-        clean_metrics: dict[str, float | np.ndarray] = {}
+        clean_metrics: dict[str, float] = {}
         for k, v in metrics.items():
             if isinstance(v, Tensor):
-                if v.numel() != 1: raise ValueError(f"Mtric '{k}' must be scalar, got shape {tuple(v.shape)}")
+                if v.numel() != 1: raise ValueError(f"Metric '{k}' must be scalar, got shape {tuple(v.shape)}")
                 clean_metrics[k] = v.detach().item()
             else:
                 clean_metrics[k] = float(v)

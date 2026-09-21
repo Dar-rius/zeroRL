@@ -123,7 +123,7 @@ def try_agent(env_eval: Any, agent: BaseAgent, config: TrainConfig, *, normalize
     if isinstance(env_spec, gym.vector.VectorEnv):
         try:
             env_spec = env_spec.envs[0].spec.id
-        except:
+        except AttributeError:
             env_spec = env_spec.envs[0]
 
     env_eval = vectorize_env(env_spec, render_mode = "rgb_array")
