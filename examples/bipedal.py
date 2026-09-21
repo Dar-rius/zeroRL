@@ -69,7 +69,7 @@ algo_config = AlgoConfig(ent_coef=0.0)
 env = get_env("BipedalWalker-v3", config.num_envs)
 
 obs_dim, act_dim, obs_n, act_n, _ = get_obs_act(env)
-agent = Agent(obs_n, act_n) #type: ignore
+agent = Agent(obs_n, act_n).to(config.device)
 buffer = Buffer(capacity=config.rollout_steps,
                 num_envs=config.num_envs,
                 schema={"state": obs_dim, "action": act_dim,

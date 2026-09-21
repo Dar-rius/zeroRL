@@ -11,7 +11,7 @@ config.device = torch.device("cpu")
 algo_config = AlgoConfig()
 env = get_env("CartPole-v1", config.num_envs)
 obs_dim, act_dim, obs_n, act_n, is_discrete = get_obs_act(env)
-agent = PolicyAgent(obs_n, act_n, is_discrete)
+agent = PolicyAgent(obs_n, act_n, is_discrete).to(config.devie)
 buffer = get_policy_buffer(obs_dim, act_dim, config.rollout_steps, config.num_envs, config.device)
 
 
