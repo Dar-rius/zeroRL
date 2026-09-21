@@ -77,7 +77,7 @@ class BaseTrain:
         assert_agent_contract(self.agent,
                         {"get_action": "Your agent should have the method `get_action`"})
         self.env = env
-        if not isinstance(env, gym.vector.VectorEnv) and not getattr(env, "auto_reset", False):
+        if not isinstance(self.env, gym.vector.VectorEnv) and not getattr(self.env, "auto_reset", False):
             self.env = vectorize_env(self.env, num_envs = self.num_envs, render_mode = render_mode)
         self.state = Tensor()
         self.buffer = buffer
@@ -111,8 +111,8 @@ class BaseTrain:
         if self.debug:
             sys.stderr.write("\033[96mzeroRL DEBUG MODE ENABLED. torch.compile is disabled.\033[0m\n")
             torch.autograd.set_detect_anomaly(True)
-            obs_space = getattr(env, "single_observation_space", env.observation_space)
-            act_space = getattr(env, "single_action_space", env.action_space)
+            obs_space = getattr(self.env, "single_observation_space", self.env.observation_space)
+            act_space = getattr(self.env, "single_action_space", self.env.action_space)
                         
             from zerorl.debug import check_tensor, check_shape, check_reward_scale
             def _env_hook(data_: dict[str, Tensor], step: int):
@@ -139,17 +139,19 @@ class BaseTrain:
 
         Uses self.state internally as the starting observation.
         """
-        state_tensor = processing_state(self.state, self.normalizer, device = self.device)
+        state = self.state
         if self.current_episode_reward is None:
             self.current_episode_reward = torch.zeros(self.num_envs, device=self.device)
 
         for i in range(self.config.rollout_steps):
-            outputs = env_step(self.env, self.agent, state_tensor)
-            outputs["terminated"] = outputs["terminated"] | outputs["truncated"]
+            state_processed = processing_state(state, self.normalizer, device = self.device)
+            outputs = env_step(self.env, self.agent, state_processed)
+            done = outputs["terminated"] | outputs["truncated"]
+            outputs["terminated"] = done
             outputs = parse_dict_to_tensor(outputs, self.device)
-            self._hook_env_check_(outputs, i)
-            next_state_tensor = outputs.pop("next_state")
             outputs.pop("info")
+            self._hook_env_check_(outputs, i)
+            next_state = outputs.pop("next_state")
             self.buffer.insert(**outputs)
             self.current_episode_reward += outputs["reward"]
             finished = (outputs["terminated"] > 0) | (outputs["truncated"] > 0)
@@ -159,15 +161,15 @@ class BaseTrain:
                 self.episode_rewards.extend(finished_rewards.tolist())
                 self.current_episode_reward[finished] = 0.0
 
-            state_tensor = next_state_tensor
+            state = next_state
 
         if "value" in self.buffer.data:
             with torch.inference_mode():
-                state_tensor = processing_state(state_tensor, self.normalizer, update=False, device = self.device)
-                next_output = self.agent.get_action(state_tensor) #type: ignore[operator]
+                state_processed = processing_state(state, self.normalizer, update=False, device = self.device)
+                next_output = self.agent.get_action(state_processed) #type: ignore[operator]
         else:
             next_output = None
-        self.state = state_tensor
+        self.state = state
         return next_output
 
     def _log_profile_metrics(self, step: int, metrics: PhaseMetrics):
@@ -203,11 +205,11 @@ class BaseTrain:
                 last_output = self.rollout_phase()
 
             if self.buffer.size < self.require_buffer_size: raise EmptyBufferError(self.buffer.size, self.require_buffer_size)
-            
+
             if self.debug:
                 self.algo_config._debug_mode = True #type: ignore
                 weights_before = {k: v.clone() for k, v in self.agent.state_dict().items()}
-            
+
             with profiler.track("update") if is_profile else contextlib.nullcontext():
                 losses = self.update_weights(
                                 agent = self.agent,
@@ -217,7 +219,7 @@ class BaseTrain:
                                 last_output = last_output,
                                 algo_config = self.algo_config)
 
-            
+
             if self.debug:
                 weights_after = self.agent.state_dict()
                 changed = any(not torch.allclose(weights_before[k], weights_after[k]) for k in weights_before)
@@ -251,7 +253,7 @@ class BaseTrain:
 
     def try_agent(self, iterations: int = 1, gif_path: str | None = None):
         """Evaluate the agent and save a GIF."""
-        try_agent(self.env, self.agent, self.config, self.normalizer, iterations, gif_path)
+        try_agent(self.env, self.agent, self.config, normalizer = self.normalizer, iterations= iterations, gif_path = gif_path)
 
     def save(self):
         """Save agent weights and normalizer state to disk."""

@@ -25,4 +25,4 @@ algo_config = AlgoConfig(
 trainer = easy_train_ppo("HumanoidStandup-v5", config, algo_config, hidden_layer=256)
 torch.nn.init.constant_(trainer.agent.log_std, -2.0)
 trainer.train(use_tb=True, save_model=True)
-trainer.test(iterations=2, gif_path="humanoid_standup")
+trainer.try_agent(iterations=2, gif_path="humanoid_standup")

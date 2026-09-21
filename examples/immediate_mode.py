@@ -23,9 +23,9 @@ algo_cfg = AlgoConfig(ent_coef=0.0)
 seed = set_seed(42, cfg.num_envs)
 env = vectorize_env("LunarLander-v3", num_envs = cfg.num_envs)
 obs_dim, act_dim, obs_n, act_n, is_discrete = get_obs_act(env)
-agent = ActorCriticAgent(obs_n, act_n, is_discrete)
+agent = ActorCriticAgent(obs_n, act_n, is_discrete).to(cfg.device)
 buffer = Buffer(capacity = cfg.rollout_steps,
-                num_envs = cfg.num_ens,
+                num_envs = cfg.num_envs,
                 schema = {"state": obs_dim, "action": act_dim,
                           "reward": (), "terminated": (), "entropy": (), "value": (),
                           "return": (), "log_prob": (), "advantage": (), "truncated": ()},
@@ -35,25 +35,24 @@ scheduler = LambdaLR(optimizer, lambda step_: 1.0 - (step_ / cfg.num_update))
 log = create_logger(cfg, algo_cfg, use_tb=True)
 reward_tensor = torch.zeros(cfg.num_envs, device=cfg.device)
 state, _ = env.reset(seed = seed)
-state_tensor = processing_state(state)
 
 for step in tqdm(range(cfg.num_update)):
     episodic_reward = []
     metrics = {}
-
     for _ in range(cfg.rollout_steps):
-        with torch.inference_mode:
-            outputs = agent.get_action(state_tensor)
+        state_processed = processing_state(state)
+        with torch.inference_mode():
+            outputs = agent.get_action(state_processed)
         action  = to_env_action(outputs["action"], env)
         next_state, reward, terminated, truncated, _ = env.step(action)
         terminated = terminated | truncated
-        outputs = {"next_state": next_state, "reward": reward,
-                   "terminated": terminated, "truncated": truncated} 
-        outputs = parse_dict_to_tensor(outputs)
-        next_state = outputs.pop("next_state")
-        buffer.insert(state = state_tensor, **outputs)
-        reward_tensor += outputs["reward"]
-        finished = outputs["terminated"] > 0
+        outputs_final = {"next_state": next_state, "reward": reward,
+                   "terminated": terminated, "truncated": truncated, **outputs} 
+        outputs_final = parse_dict_to_tensor(outputs_final)
+        next_state = outputs_final.pop("next_state")
+        buffer.insert(state = state_processed, **outputs_final)
+        reward_tensor += outputs_final["reward"]
+        finished = outputs_final["terminated"] > 0
 
         if finished.any():
             episodic_reward.extend(reward_tensor[finished].tolist())
@@ -61,8 +60,8 @@ for step in tqdm(range(cfg.num_update)):
         state = next_state
 
     with torch.inference_mode():
-        state = processing_state(state)
-        last_output = agent.get_action(state)
+        state_processed = processing_state(state)
+        last_output = agent.get_action(state_processed)
 
     data = buffer.get_all()
     gae_compute(data["reward"], data["value"], last_output["value"], data["terminated"], buffer, algo_cfg)

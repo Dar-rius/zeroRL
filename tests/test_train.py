@@ -163,7 +163,7 @@ class TestBaseTrainRollout:
         algo_cfg = AlgoConfig()
         trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, algo_cfg)
 
-        state, _ = env.reset(seed=42)
+        state, _ = trainer.env.reset(seed=42)
         trainer.state = torch.as_tensor(state, dtype=torch.float32, device=device)
         if trainer.state.dim() == 1:
             trainer.state = trainer.state.unsqueeze(0)
