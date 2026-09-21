@@ -13,4 +13,4 @@ algo_config = AlgoConfig(ent_coef=0.0)
 
 trainer = easy_train_ppo("Pendulum-v1", config, algo_config)
 trainer.train(use_tb=True)
-trainer.test()
+trainer.try_agent()

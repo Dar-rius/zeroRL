@@ -63,7 +63,7 @@ class Agent(BaseAgent):
 
 
 # 3. Configure and train
-config = TrainConfig(project_name="acrobot_example", model_name="agent_1", timestamp=2_000_000, num_envs=4, profile=True)
+config = TrainConfig(project_name="bipedal_example", model_name="agent_bipedal", timestamp=2_000_000, num_envs=4, profile=True)
 config.device = torch.device("cpu")
 algo_config = AlgoConfig(ent_coef=0.0)
 env = get_env("BipedalWalker-v3", config.num_envs)
