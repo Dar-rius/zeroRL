@@ -44,12 +44,11 @@ def vectorize_env(env_spec: str | Callable | BaseEnv, *,  num_envs: int = 1, ren
                 env = env_spec()
             else:
                 env = copy.deepcopy(env_spec)
-            env.reset()
             return env
         return _init
     return gym.vector.SyncVectorEnv([make_env_fn() for _ in range(num_envs)], autoreset_mode=AutoresetMode.SAME_STEP)
 
-def env_step(env: Any, agent: BaseAgent, state_tensor: Tensor) -> dict[str, Tensor]:
+def env_step(env: Any, agent: BaseAgent, state_tensor: Tensor) -> dict[str, Any]:
     """Run one agent-environment step: get_action → env.step → return transition dict."""
     with torch.inference_mode():
         outputs: dict[str, Tensor] = agent.get_action(state_tensor) #type: ignore[operator]
@@ -66,7 +65,8 @@ def save_checkpoints(agent: BaseAgent, model_path: str, normalizer: NormMeanStd 
         "agent_state_dict": agent.state_dict(),
         "normalizer_state_dict": normalizer.state_dict() if normalizer is not None else None
             }
-    os.makedirs(os.path.dirname(model_path), exist_ok=True)
+    directory = os.path.dirname(model_path)
+    if directory: os.makedirs(directory, exist_ok=True)
     torch.save(checkpoints_state, model_path)
 
 def processing_state(state: np.ndarray | Tensor, normalizer: NormMeanStd | None = None, update: bool = True, device: torch.device = torch.device("cpu")) -> Tensor:
@@ -78,7 +78,7 @@ def processing_state(state: np.ndarray | Tensor, normalizer: NormMeanStd | None 
         state_tensor = normalizer.normalize(state_tensor)
     return state_tensor
 
-def parse_dict_to_tensor(output: dict[str, Tensor], device: torch.device = torch.device("cpu")) -> dict[str, Tensor]:
+def parse_dict_to_tensor(output: dict[str, Any], device: torch.device = torch.device("cpu")) -> dict[str, Tensor]:
     """Convert next_state, reward, terminated, truncated to float32 tensors."""
     keys = ["next_state", "reward", "terminated", "truncated"]
     for k in keys:
@@ -98,7 +98,7 @@ def to_env_action(action, env: Any) -> np.ndarray | Tensor:
     device = getattr(env, "device", "cpu")
     if str(device).startswith("cuda"):
         return action
-    return action.cpu().numpy()
+    return action.detach().cpu().numpy()
 
 def set_seed(seed: int, num_envs: int):
     """Seed all RNGs and return per-env derived seeds."""
@@ -127,10 +127,10 @@ def try_agent(env_eval: Any, agent: BaseAgent, config: TrainConfig, *, normalize
             env_spec = env_spec.envs[0]
 
     env_eval = vectorize_env(env_spec, render_mode = "rgb_array")
-    frames: Any = []
     was_training = agent.training
     agent.eval()
     for i in range(iterations):
+        frames: Any = []
         done_or_trunc = False
         state, _ = env_eval.reset() #type: ignore
         while not done_or_trunc:
@@ -144,7 +144,7 @@ def try_agent(env_eval: Any, agent: BaseAgent, config: TrainConfig, *, normalize
         if gif_path is None:
             gif_path = f"./{config.project_name}_{i}.gif"
         else:
-            gif_path = f"./{gif_path}_{i}.gif"
+            gif_path = f"{gif_path}_{i}.gif"
         imageio.mimsave(gif_path, frames, fps=25)
     env_eval.close()
     if was_training: agent.train()
