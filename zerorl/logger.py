@@ -42,8 +42,8 @@ def create_logger(config: TrainConfig, algo_config: AlgoConfig, *, use_wandb:boo
         clean_metrics: dict[str, float | np.ndarray] = {}
         for k, v in metrics.items():
             if isinstance(v, Tensor):
-                if v.numel != 1: raise ValueError(f"Mtric '{k}' must be scalar, got shape {tuple(v.shape)}")
-                clean_metrics[k] = v.detach.item()
+                if v.numel() != 1: raise ValueError(f"Mtric '{k}' must be scalar, got shape {tuple(v.shape)}")
+                clean_metrics[k] = v.detach().item()
             else:
                 clean_metrics[k] = float(v)
 
