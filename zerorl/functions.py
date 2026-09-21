@@ -78,7 +78,7 @@ def processing_state(state: np.ndarray | Tensor, normalizer: NormMeanStd | None 
         state_tensor = normalizer.normalize(state_tensor)
     return state_tensor
 
-def parse_dict_to_tensor(output: dict[str, Any], device: torch.device = torch.device("cpu")) -> dict[str, Tensor]:
+def parse_dict_to_tensor(output: dict[str, Any], device: torch.device = torch.device("cpu")) -> dict[str, Any]:
     """Convert next_state, reward, terminated, truncated to float32 tensors."""
     keys = ["next_state", "reward", "terminated", "truncated"]
     for k in keys:
@@ -142,10 +142,10 @@ def try_agent(env_eval: Any, agent: BaseAgent, config: TrainConfig, *, normalize
             state = outputs["next_state"]
 
         if gif_path is None:
-            gif_path = f"./{config.project_name}_{i}.gif"
+            output_path = f"./{config.project_name}_{i}.gif"
         else:
-            gif_path = f"{gif_path}_{i}.gif"
-        imageio.mimsave(gif_path, frames, fps=25)
+            output_path = f"{gif_path}_{i}.gif"
+        imageio.mimsave(output_path, frames, fps=25)
     env_eval.close()
     if was_training: agent.train()
 
