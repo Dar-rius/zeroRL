@@ -76,8 +76,10 @@ class TestPpoLoss:
         old_values = torch.zeros(16, device=device)
         advantage = torch.randn(16, device=device)
         return_ = torch.randn(16, device=device)
-        result = ppo_loss(agent, params, buffers, state, action, log_prob, old_values,
-                         advantage, return_, cfg.ent_coef, cfg.value_coef, cfg.clip_eps, False)
+        idx = torch.arange(16, device=device)
+        data = {"state": state, "action": action, "log_prob": log_prob,
+                "value": old_values, "adv_norm": advantage, "return": return_}
+        result = ppo_loss(agent, params, buffers, cfg, data, idx)
         assert "loss" in result
 
 class TestPpoFunction:
@@ -185,8 +187,10 @@ class TestPpoLossInternals:
         params = dict(agent.named_parameters())
         buffers = dict(agent.named_buffers())
         old_values = torch.zeros(16, device=device)
-        result = ppo_loss(agent, params, buffers, state, action, old_log_prob, old_values,
-                         advantage, return_, cfg.ent_coef, cfg.value_coef, cfg.clip_eps, False)
+        idx = torch.arange(16, device=device)
+        data = {"state": state, "action": action, "log_prob": old_log_prob,
+                "value": old_values, "adv_norm": advantage, "return": return_}
+        result = ppo_loss(agent, params, buffers, cfg, data, idx)
         ratio = torch.exp(new_log_prob - old_log_prob)
         surr1 = ratio * advantage
         surr2 = torch.clamp(ratio, 1.0 - 0.2, 1.0 + 0.2) * advantage
@@ -206,8 +210,10 @@ class TestPpoLossInternals:
         cfg = AlgoConfig()
         params = dict(agent.named_parameters())
         buffers = dict(agent.named_buffers())
-        result = ppo_loss(agent, params, buffers, state, action, log_prob, old_values,
-                         advantage, return_, cfg.ent_coef, cfg.value_coef, cfg.clip_eps, False)
+        idx = torch.arange(16, device=device)
+        data = {"state": state, "action": action, "log_prob": log_prob,
+                "value": old_values, "adv_norm": advantage, "return": return_}
+        result = ppo_loss(agent, params, buffers, cfg, data, idx)
         logits, new_values = agent(state)
         expected = 0.5 * nn.functional.mse_loss(new_values.view(-1), return_)
         torch.testing.assert_close(result["value_loss"], expected)
@@ -224,8 +230,10 @@ class TestPpoLossInternals:
         cfg = AlgoConfig()
         params = dict(agent.named_parameters())
         buffers = dict(agent.named_buffers())
-        result = ppo_loss(agent, params, buffers, state, action, log_prob, old_values,
-                         advantage, return_, cfg.ent_coef, cfg.value_coef, cfg.clip_eps, False)
+        idx = torch.arange(16, device=device)
+        data = {"state": state, "action": action, "log_prob": log_prob,
+                "value": old_values, "adv_norm": advantage, "return": return_}
+        result = ppo_loss(agent, params, buffers, cfg, data, idx)
         expected = (result["policy_loss"] + cfg.value_coef * result["value_loss"]
                     - cfg.ent_coef * result["entropy_loss"])
         torch.testing.assert_close(result["loss"], expected)
@@ -244,8 +252,10 @@ class TestPpoLossInternals:
         params = dict(agent.named_parameters())
         buffers = dict(agent.named_buffers())
         old_values = torch.zeros(16, device=device)
-        result = ppo_loss(agent, params, buffers, state, action, new_log_prob, old_values,
-                         advantage, return_, cfg.ent_coef, cfg.value_coef, cfg.clip_eps, False)
+        idx = torch.arange(16, device=device)
+        data = {"state": state, "action": action, "log_prob": new_log_prob,
+                "value": old_values, "adv_norm": advantage, "return": return_}
+        result = ppo_loss(agent, params, buffers, cfg, data, idx)
         torch.testing.assert_close(result["policy_loss"], -advantage.mean())
 
     @pytest.mark.gpu
@@ -262,12 +272,12 @@ class TestPpoLossInternals:
         params = dict(agent.named_parameters())
         buffers = dict(agent.named_buffers())
         cfg = AlgoConfig()
-        old_values = torch.zeros(16, device=device)
+        idx = torch.arange(16, device=device)
+        data = {"state": state, "action": torch.zeros(16, device=device),
+                "log_prob": torch.zeros(16, device=device), "value": torch.zeros(16, device=device),
+                "adv_norm": torch.zeros(16, device=device), "return": torch.zeros(16, device=device)}
         with pytest.raises(AttributeError):
-            ppo_loss(agent, params, buffers, state, torch.zeros(16, device=device),
-                     torch.zeros(16, device=device), old_values,
-                     torch.zeros(16, device=device), torch.zeros(16, device=device),
-                     cfg.ent_coef, cfg.value_coef, cfg.clip_eps, False)
+            ppo_loss(agent, params, buffers, cfg, data, idx)
 
 
 class TestPpoEdgeCases:
