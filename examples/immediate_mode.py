@@ -19,7 +19,7 @@ from zerorl.functions import (processing_state,
 
 cfg = TrainConfig(model_name="Lunar-model", project_name="Lunar-example", num_envs=4)
 cfg.device = torch.device("cpu")
-algo_cfg = AlgoConfig(ent_coef=0.0)
+algo_cfg = AlgoConfig()
 seed = set_seed(42, cfg.num_envs)
 env = vectorize_env("LunarLander-v3", num_envs = cfg.num_envs)
 obs_dim, act_dim, obs_n, act_n, is_discrete = get_obs_act(env)
