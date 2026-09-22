@@ -63,7 +63,7 @@ class Agent(BaseAgent):
 
 
 # 3. Configure and train
-config = TrainConfig(project_name="bipedal_example", model_name="agent_bipedal", timestamp=2_000_000, num_envs=4, profile=True)
+config = TrainConfig(project_name="bipedal_example", model_name="agent_bipedal", timestamp=1_000_000, num_envs=4, profile=True)
 config.device = torch.device("cpu")
 algo_config = AlgoConfig()
 env = get_env("BipedalWalker-v3", config.num_envs)
@@ -86,4 +86,4 @@ def update_weights(agent, buffer, scheduler, optimizer, last_output, algo_config
 
 trainer = BaseTrain(agent, env, buffer, update_weights, config, algo_config, render_mode="human")
 trainer.train(use_wandb=True)
-trainer.test(iterations=2)
+trainer.try_agent()

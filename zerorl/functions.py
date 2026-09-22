@@ -48,16 +48,16 @@ def vectorize_env(env_spec: str | Callable | BaseEnv, *,  num_envs: int = 1, ren
         return _init
     return gym.vector.SyncVectorEnv([make_env_fn() for _ in range(num_envs)], autoreset_mode=AutoresetMode.SAME_STEP)
 
-def env_step(env: Any, agent: BaseAgent, state_tensor: Tensor) -> dict[str, Any]:
+def env_step(env: Any, agent: BaseAgent, state: Tensor) -> dict[str, Any]:
     """Run one agent-environment step: get_action → env.step → return transition dict."""
     with torch.inference_mode():
-        outputs: dict[str, Tensor] = agent.get_action(state_tensor) #type: ignore[operator]
+        outputs: dict[str, Tensor] = agent.get_action(state) #type: ignore[operator]
 
     action = to_env_action(outputs["action"], env)
     # Gymnasium v1 step() returns: obs, reward, terminated, truncated, info
     # terminated = episode naturally ended; truncated = cut short by time limit
     next_state, reward, terminated, truncated, info = env.step(action)
-    return {"state": state_tensor, "next_state": next_state, "reward": reward, "terminated": terminated, "truncated": truncated, "info": info, **outputs}
+    return {"state": state, "next_state": next_state, "reward": reward, "terminated": terminated, "truncated": truncated, "info": info, **outputs}
 
 def save_checkpoints(agent: BaseAgent, model_path: str, normalizer: NormMeanStd | None = None):
     """Save agent weights and Normalizer state to the path in config.model_path."""
