@@ -74,7 +74,7 @@ class TestHopper2DEnv:
         assert rewards.shape == (2,)
         env.close()
 
-    def test_render_rgb(self) -> None:
+    def test_render_rgb(self, mujoco_gl) -> None:
         env = Hopper2D()
         env.reset(seed=4)
         frame = env.render()

@@ -11,6 +11,7 @@ from gymnasium.vector import SyncVectorEnv
 from zerorl.functions import vectorize_env
 from zerorl.helpers.mujoco import MujocoEnv
 
+
 POINT_MASS_XML = """
 <mujoco model="point_mass">
   <option timestep="0.01"/>
@@ -126,7 +127,7 @@ class TestMujocoEnvApi:
         assert reward == pytest.approx(-1.0)
         env.close()
 
-    def test_render_returns_rgb_frame(self) -> None:
+    def test_render_returns_rgb_frame(self, mujoco_gl) -> None:
         self.env.reset(seed=0)
         frame = self.env.render()
         assert isinstance(frame, np.ndarray)
