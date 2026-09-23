@@ -146,20 +146,18 @@ class BaseTrain:
         for i in range(self.config.rollout_steps):
             state_processed = processing_state(state, self.normalizer, device = self.device)
             outputs = env_step(self.env, self.agent, state_processed)
-            done = outputs["terminated"] | outputs["truncated"]
-            outputs["terminated"] = done
             outputs = parse_dict_to_tensor(outputs, self.device)
             outputs.pop("info")
+            episode_done = (outputs["terminated"] > 0) | (outputs["truncated"] > 0)
             self._hook_env_check_(outputs, i)
             next_state = outputs.pop("next_state")
             self.buffer.insert(**outputs)
             self.current_episode_reward += outputs["reward"]
-            finished = (outputs["terminated"] > 0) | (outputs["truncated"] > 0)
 
-            if finished.any():
-                finished_rewards = self.current_episode_reward[finished]
+            if episode_done.any():
+                finished_rewards = self.current_episode_reward[episode_done]
                 self.episode_rewards.extend(finished_rewards.tolist())
-                self.current_episode_reward[finished] = 0.0
+                self.current_episode_reward[episode_done] = 0.0
 
             state = next_state
 

@@ -1,4 +1,4 @@
-"""Optional torch.compile wrapper. No-ops when no C++ compiler is available."""
+"""Optional torch.compile wrapper. No-ops when no C++ compiler / Triton is available."""
 
 import sys
 import shutil
@@ -17,9 +17,29 @@ def _cxx_compiler_available() -> bool:
             shutil.which("clang++") is not None)
 
 
+def _triton_available() -> bool:
+    try:
+        import triton  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+def _torch_compile_usable() -> bool:
+    """torch.compile CUDA inductor needs Triton; skip when it would crash."""
+    if not _cxx_compiler_available():
+        return False
+    # win32 CPU inductor (MSVC) is unreliable; require CUDA + Triton.
+    if sys.platform == "win32":
+        return bool(torch.cuda.is_available() and _triton_available())
+    if torch.cuda.is_available() and not _triton_available():
+        return False
+    return True
+
+
 def fast_compile(fn: F | None = None,  debug: bool = False, **kwargs) -> F | Callable:
-    """Like torch.compile; no-op when a C++ compiler is not on PATH."""
-    use_compile = _cxx_compiler_available()
+    """Like torch.compile; no-op without a C++ compiler or (on CUDA) without Triton."""
+    use_compile = _torch_compile_usable()
     def wrap(f: F) -> F:
         if not use_compile or debug:
             return f
