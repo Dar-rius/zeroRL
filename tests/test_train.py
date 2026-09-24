@@ -547,9 +547,12 @@ class TestBaseTrainVectorizedRollout:
         env.close()
 
     @pytest.mark.gpu
-    def test_rollout_truncation_records_truncated_and_done(self, tmp_path: Path, device: torch.device) -> None:
-        """Truncated steps are folded into done (done | truncate) and recorded
-        with truncated=1. No separate final_value bootstrap in train.py."""
+    def test_rollout_truncation_records_truncated_not_terminated(self, tmp_path: Path, device: torch.device) -> None:
+        """Time-limit truncation must keep terminated=0 so GAE still bootstraps.
+
+        Episode bookkeeping uses terminated | truncated separately; the buffer
+        stores the true flags from the env.
+        """
         num_envs, obs_dim, act_dim = 2, 4, 2
         rollout_steps = 5
         agent = MockAgent(obs_dim, act_dim)
@@ -564,8 +567,7 @@ class TestBaseTrainVectorizedRollout:
         trainer.rollout_phase()
         data = buf.get_all()
         assert int(data["truncated"].sum().item()) == 1
-        # done = done | truncate, so truncated step also marks done=1
-        assert int(data["terminated"].sum().item()) == 1
+        assert int(data["terminated"].sum().item()) == 0
         env.close()
 
 

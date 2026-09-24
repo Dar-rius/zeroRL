@@ -45,14 +45,13 @@ for step in tqdm(range(cfg.num_update)):
             outputs = agent.get_action(state_processed)
         action  = to_env_action(outputs["action"], env)
         next_state, reward, terminated, truncated, _ = env.step(action)
-        terminated = terminated | truncated
         outputs_final = {"next_state": next_state, "reward": reward,
                    "terminated": terminated, "truncated": truncated, **outputs} 
         outputs_final = parse_dict_to_tensor(outputs_final)
         next_state = outputs_final.pop("next_state")
         buffer.insert(state = state_processed, **outputs_final)
         reward_tensor += outputs_final["reward"]
-        finished = outputs_final["terminated"] > 0
+        finished = (outputs_final["terminated"] > 0) | (outputs_final["truncated"] > 0)
 
         if finished.any():
             episodic_reward.extend(reward_tensor[finished].tolist())

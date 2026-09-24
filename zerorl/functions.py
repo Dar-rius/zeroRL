@@ -49,7 +49,7 @@ def vectorize_env(env_spec: str | Callable | BaseEnv, *,  num_envs: int = 1, ren
     return gym.vector.SyncVectorEnv([make_env_fn() for _ in range(num_envs)], autoreset_mode=AutoresetMode.SAME_STEP)
 
 def env_step(env: Any, agent: BaseAgent, state: Tensor) -> dict[str, Any]:
-    """Run one agent-environment step: get_action → env.step → return transition dict."""
+    """Run one agent-environment step: get_action -> env.step -> return transition dict."""
     with torch.inference_mode():
         outputs: dict[str, Tensor] = agent.get_action(state) #type: ignore[operator]
 
@@ -58,6 +58,16 @@ def env_step(env: Any, agent: BaseAgent, state: Tensor) -> dict[str, Any]:
     # terminated = episode naturally ended; truncated = cut short by time limit
     next_state, reward, terminated, truncated, info = env.step(action)
     return {"state": state, "next_state": next_state, "reward": reward, "terminated": terminated, "truncated": truncated, "info": info, **outputs}
+
+def _deterministic_action(agent: BaseAgent, state: Tensor) -> Tensor:
+    """Greedy action for eval/GIF: argmax (discrete) or Gaussian mean (continuous)."""
+    if not hasattr(agent, "build_distribution"):
+        return agent.get_action(state)["action"]  # type: ignore[operator]
+    out = agent.forward(state)  # type: ignore[operator]
+    logits = out[0] if isinstance(out, tuple) else out
+    if getattr(agent, "is_discrete", False):
+        return torch.argmax(logits, dim=-1)
+    return agent.build_distribution(logits).mean  # type: ignore[operator]
 
 def save_checkpoints(agent: BaseAgent, model_path: str, normalizer: NormMeanStd | None = None):
     """Save agent weights and Normalizer state to the path in config.model_path."""
@@ -111,6 +121,9 @@ def set_seed(seed: int, num_envs: int):
 def try_agent(env_eval: Any, agent: BaseAgent, config: TrainConfig, *, normalizer: NormMeanStd | None = None, iterations: int = 1, gif_path: str | None = None):
     """Evaluate agent and save a GIF of its behavior.
 
+    Uses deterministic actions (Gaussian mean / argmax) and DISABLED autoreset
+    so the last frame is the terminal state, not a fresh reset.
+
     Args:
         env_eval: Environment to evaluate in.
         agent: Trained agent.
@@ -124,28 +137,54 @@ def try_agent(env_eval: Any, agent: BaseAgent, config: TrainConfig, *, normalize
         try:
             env_spec = env_spec.envs[0].spec.id
         except AttributeError:
-            env_spec = env_spec.envs[0]
+            # Fresh class: deepcopy of a closed MuJoCo sub-env is unsafe.
+            env_spec = type(env_spec.envs[0])
 
-    env_eval = vectorize_env(env_spec, render_mode = "rgb_array")
+    def make_env_fn():
+        def _init():
+            if isinstance(env_spec, str):
+                e = gym.make(env_spec, render_mode="rgb_array")
+            elif isinstance(env_spec, type):
+                e = env_spec()
+            elif callable(env_spec):
+                e = env_spec()
+            else:
+                e = copy.deepcopy(env_spec)
+            return e
+        return _init
+
+    env_eval = gym.vector.SyncVectorEnv(
+        [make_env_fn()], autoreset_mode=AutoresetMode.DISABLED
+    )
     was_training = agent.training
     agent.eval()
     for i in range(iterations):
-        frames: Any = []
+        frames: list[Any] = []
         done_or_trunc = False
         state, _ = env_eval.reset() #type: ignore
+        start = env_eval.render()
+        if start is not None:
+            frames.append(start[0])
         while not done_or_trunc:
-            state_tensor = processing_state(state, normalizer, update = False, device = config.device)
-            outputs = env_step(env_eval, agent, state_tensor)
+            state_tensor = processing_state(state, normalizer, update=False, device=config.device)
+            with torch.inference_mode():
+                action = _deterministic_action(agent, state_tensor)
+            action_input = to_env_action(action, env_eval)
+            next_state, _, terminated, truncated, _ = env_eval.step(action_input) #type: ignore
             frame = env_eval.render()
-            if frame is not None: frames.append(frame[0])
-            done_or_trunc = bool(np.any(outputs["terminated"]) or np.any(outputs["truncated"]))
-            state = outputs["next_state"]
+            if frame is not None:
+                frames.append(frame[0])
+            done_or_trunc = bool(np.any(terminated) or np.any(truncated))
+            state = next_state
 
         if gif_path is None:
             output_path = f"./{config.project_name}_{i}.gif"
         else:
             output_path = f"{gif_path}_{i}.gif"
-        imageio.mimsave(output_path, frames, fps=25)
+        if frames:
+            durations = [0.2] * len(frames)
+            durations[-1] = 1.2
+            imageio.mimsave(output_path, frames, duration=durations)
     env_eval.close()
     if was_training: agent.train()
 

@@ -1,4 +1,4 @@
-"""Unit tests for utility functions (zerorl.functions)."""
+﻿"""Unit tests for utility functions (zerorl.functions)."""
 
 import os
 import numpy as np
@@ -31,7 +31,7 @@ def device() -> torch.device:
 
 
 class SimpleAgent(BaseAgent):
-    """Minimal agent满足 BaseAgent contract for testing."""
+    """Minimal agentµ╗íÞÂ│ BaseAgent contract for testing."""
 
     def __init__(self, obs_dim: int = 4, act_dim: int = 2):
         super().__init__()

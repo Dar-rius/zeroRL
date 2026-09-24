@@ -16,3 +16,4 @@ wandb/
 tmp/
 *.png
 *.gif
+docs/mujoco-integration-report.md
