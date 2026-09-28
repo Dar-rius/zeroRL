@@ -10,17 +10,18 @@ Reinforcement learning is demanding. Existing solutions are excellent for standa
 
 **zeroRL takes a different approach.** It's a simple, explicit, and modular architecture designed to reduce the friction between your research idea and its implementation.
 
-The core principle: **If you can write it in PyTorch, you can use it in zeroRL.**
+The core principle: **Stay focus on your pipeline**
 
 The framework allows you to:
 
-- Implement custom algorithms that are not included in the framework
-- Integrate new environments without unnecessary wrappers
-- Replace or modify individual components without rewriting the training pipeline
+- Write your custom pipeline easily with primitives (low level) or use abstraction to get faster (high level)
 - Maintain full control and visibility over the training pipeline
+- Replace or modify individual components without rewriting the training pipeline
+- Implement custom algorithms that are not included in the framework
+- Integrate new environments (Gymnasium and MuJoCo) without unnecessary wrappers
 - Debug and understand what's happening at every step
 
-zeroRL is designed to make reinforcement learning experimentation easier without imposing heavy abstractions or hiding the details that matter.
+zeroRL is designed to make reinforcement learning experimentation easier without imposing heavy abstractions.
   
 ## Installation
 
@@ -36,7 +37,7 @@ or
 pip install zerorl
 ```
 
-The package depends on `torch`, `numpy`, `gymnasium`, `tqdm`, and `imageio`. 
+The package depends on `torch`, `numpy`, `gymnasium`, `mujoco`, `tqdm`, and `imageio`. 
 
 ## Quick Start
 
@@ -70,7 +71,7 @@ trainer = easy_train_ppo("CartPole-v1", config, algo_config)
 
 ## Advanced Usage
 
-For full control over agent, environment, and the training loop:
+For full control over training pipeline (High Level):
 
 ```python
 import torch
@@ -150,38 +151,153 @@ trainer.train(use_wandb=True, model_save=True)
 
 ### Custom Environment
 
-Implement `BaseEnv` to use your own environment with `easy_train_ppo` or `BaseTrain`:
+Implement with `MujocoEnv` to use your own MuJoCo environment with `easy_train_ppo` or `BaseTrain`
+
+MJCF content:
+
+```Python
+REACHER_XML = """
+<mujoco model="reacher2d">
+  <compiler angle="radian"/>
+  <option timestep="0.01" gravity="0 0 0"/>
+  <visual>
+    <headlight diffuse="0.6 0.6 0.6" ambient="0.3 0.3 0.3"/>
+  </visual>
+  <worldbody>
+    <light pos="0 0 2" dir="0 0 -1"/>
+    <geom name="floor" type="plane" size="0.4 0.4 0.05" rgba="0.9 0.9 0.9 1"/>
+    <body name="link1" pos="0 0 0.05">
+      <joint name="shoulder" type="hinge" axis="0 0 1" damping="0.05" limited="true" range="-3.14 3.14"/>
+      <geom type="capsule" fromto="0 0 0 0.12 0 0" size="0.02" rgba="0.2 0.45 0.9 1" mass="0.08"/>
+      <body name="link2" pos="0.12 0 0">
+        <joint name="elbow" type="hinge" axis="0 0 1" damping="0.05" limited="true" range="-2.7 2.7"/>
+        <geom type="capsule" fromto="0 0 0 0.1 0 0" size="0.018" rgba="0.25 0.55 0.95 1" mass="0.06"/>
+        <site name="fingertip" pos="0.1 0 0" size="0.02" rgba="0.1 0.8 0.3 1"/>
+      </body>
+    </body>
+    <body name="target" mocap="true" pos="0.15 0.0 0.05">
+      <geom type="sphere" size="0.025" rgba="0.9 0.15 0.15 1" contype="0" conaffinity="0"/>
+    </body>
+  </worldbody>
+  <actuator>
+    <motor joint="shoulder" ctrlrange="-1 1" gear="1.5"/>
+    <motor joint="elbow" ctrlrange="-1 1" gear="1.2"/>
+  </actuator>
+</mujoco>
+"""
+```
+
+Integrate this MJCF content to your own environment:
 
 ```python
-import numpy as np
-from gymnasium import spaces
-from zerorl.helpers.env import BaseEnv
+class Reacher2D(MujocoEnv):
+    """Planar 2-DOF arm; fingertip must reach and hold a random target."""
 
+    SUCCESS_DIST = 0.028  # overlap nette (somme rayons tip+cible = 0.045)
+    HOLD_STEPS = 5
 
-class GridWorld(BaseEnv):
-    """Simple 4x4 grid world — agent starts at (0,0), goal at (3,3)."""
-
-    def __init__(self):
-        super().__init__()
+    def __init__(self, max_steps: int = 200):
+        self.max_steps = max_steps
+        self._steps = 0
+        self._hold = 0
+        self._prev_dist = 0.0
+        super().__init__(model_xml=REACHER_XML, frame_skip=2)
+        obs = self._get_obs()
         self.observation_space = spaces.Box(
-            low=0.0, high=3.0, shape=(2,), dtype=np.float32
+            low=-np.inf, high=np.inf, shape=obs.shape, dtype=np.float64
         )
-        self.action_space = spaces.Discrete(4)  # up, down, left, right
-        self._pos = None
 
-    def reset(self, *, seed=None, options=None):
-        self._pos = np.array([0, 0], dtype=np.float32)
-        return self._pos.copy(), {}
+    def _tip_pos(self) -> np.ndarray:
+        return np.asarray(self.data.site("fingertip").xpos[:2], dtype=np.float64).copy()
+
+    def _target_pos(self) -> np.ndarray:
+        return self.data.mocap_pos[0, :2].copy()
+
+    def _set_target(self, xy: np.ndarray) -> None:
+        self.data.mocap_pos[0, :2] = xy
+        self.data.mocap_pos[0, 2] = 0.05
+        mujoco.mj_forward(self.model, self.data)
+
+    def reset_model(self) -> np.ndarray:
+        self._steps = 0
+        self._hold = 0
+        qpos = self.init_qpos.copy()
+        qvel = self.init_qvel.copy()
+        qpos[:] = self.np_random.uniform(-0.2, 0.2, size=qpos.shape)
+        qvel[:] = 0.0
+        self.set_state(qpos, qvel)
+
+        for _ in range(100):
+            ang = float(self.np_random.uniform(-np.pi, np.pi))
+            radius = float(self.np_random.uniform(0.10, 0.20))
+            target = np.array([radius * np.cos(ang), radius * np.sin(ang)])
+            self._set_target(target)
+            dist = float(np.linalg.norm(self._tip_pos() - target))
+            if dist >= 0.12:
+                break
+
+        self._prev_dist = float(np.linalg.norm(self._tip_pos() - self._target_pos()))
+        return self._get_obs()
 
     def step(self, action):
-        direction = np.array([[0, 1], [0, -1], [-1, 0], [1, 0]])[action]
-        self._pos = np.clip(self._pos + direction, 0, 3)
-        terminated = np.array_equal(self._pos, [3, 3])
-        reward = 1.0 if terminated else -0.01
-        return self._pos.copy(), reward, terminated, False, {}
+        if isinstance(action, torch.Tensor):
+            action = action.detach().cpu().numpy()
+        action = np.clip(
+            np.asarray(action, dtype=np.float64),
+            self.action_space.low,
+            self.action_space.high,
+        )
+        self._steps += 1
+        return super().step(action)
 
-    def close(self):
-        pass
+    def _get_obs(self) -> np.ndarray:
+        qpos = self.data.qpos.astype(np.float64)
+        qvel = self.data.qvel.astype(np.float64)
+        tip = self._tip_pos()
+        target = self._target_pos()
+        return np.concatenate(
+            [
+                np.cos(qpos),
+                np.sin(qpos),
+                qvel,
+                tip,
+                target,
+                tip - target,
+            ]
+        )
+
+    def _get_reward(self) -> float:
+        dist = float(np.linalg.norm(self._tip_pos() - self._target_pos()))
+        progress = self._prev_dist - dist
+        self._prev_dist = dist
+        ctrl = float(np.square(self.data.ctrl).sum())
+        reward = 2.0 * progress - 0.2 * dist - 0.01 * ctrl
+        if dist < self.SUCCESS_DIST:
+            self._hold += 1
+            reward += 8.0 + 40.0 * (self.SUCCESS_DIST - dist)
+        else:
+            self._hold = 0
+        return reward
+
+    def _is_truncated(self) -> bool:
+        return self._steps >= self.max_steps
+
+    def _is_terminated(self) -> bool:
+        return self._hold >= self.HOLD_STEPS
+
+    def render(self):
+        if self._renderer is None:
+            self._renderer = mujoco.Renderer(self.model, 480, 480)
+        if self._camera is None:
+            self._camera = mujoco.MjvCamera()
+            mujoco.mjv_defaultFreeCamera(self.model, self._camera)
+            self._camera.lookat[:] = [0.0, 0.0, 0.0]
+            self._camera.distance = 0.85
+            self._camera.elevation = -90.0
+            self._camera.azimuth = 0.0
+        self._renderer.update_scene(self.data, camera=self._camera)
+        return np.asarray(self._renderer.render())
+
 ```
 
 Then pass it directly:
@@ -190,11 +306,26 @@ Then pass it directly:
 from zerorl.algorithms.ppo import easy_train_ppo
 from zerorl.config import TrainConfig, AlgoConfig
 
-config = TrainConfig(model_name="gridworld", project_name="gridworld_exp", total_timesteps=500_000)
-algo_config = AlgoConfig()
+config = TrainConfig(
+        model_name=f"Reacher2D-{args.device}",
+        project_name="reacher_mujoco",
+        timestamp=args.timestamp,
+        rollout_steps=512,
+        num_envs=16,
+        normalize=False,
+        profile=True)
 
-trainer = easy_train_ppo(GridWorld(), config, algo_config)
-trainer.train()
+algo_config = AlgoConfig(
+        lr=3e-4,
+        ent_coef=0.0,
+        epochs=10,
+        batch_size=256,
+        gae_lambda=0.95,
+        clip_eps=0.2)
+
+trainer = easy_train_ppo(Reacher2D, config, algo_config, hidden_layer=128)
+trainer.agent.log_std.requires_grad_(False)
+trainer.train(use_wandb=True, save_model=True)
 ```
 
 ### Modular function
@@ -269,6 +400,83 @@ trainer = BaseTrain(
     algo_config=algo_config
 )
 trainer.train()
+```
+
+### Create your own pipeline training
+Implement your own pipeline training without any abstractions (BaseTrain)
+
+```python
+from zerorl.logger import create_logger
+from zerorl.functions import (processing_state,
+                              parse_dict_to_tensor,
+                              to_env_action,
+                              try_agent,
+                              get_obs_act,
+                              vectorize_env,
+                              set_seed)
+
+
+cfg = TrainConfig(model_name="Lunar-model", project_name="Lunar-example", num_envs=4)
+cfg.device = torch.device("cpu")
+algo_cfg = AlgoConfig()
+seed = set_seed(42, cfg.num_envs)
+env = vectorize_env("LunarLander-v3", num_envs = cfg.num_envs)
+obs_dim, act_dim, obs_n, act_n, is_discrete = get_obs_act(env)
+agent = ActorCriticAgent(obs_n, act_n, is_discrete).to(cfg.device)
+buffer = Buffer(capacity = cfg.rollout_steps,
+                num_envs = cfg.num_envs,
+                schema = {"state": obs_dim, "action": act_dim,
+                          "reward": (), "terminated": (), "entropy": (), "value": (),
+                          "return": (), "log_prob": (), "advantage": (), "truncated": ()},
+                device = cfg.device)
+optimizer = optim.Adam(agent.parameters(), lr=algo_cfg.lr, eps=1e-5)
+scheduler = LambdaLR(optimizer, lambda step_: 1.0 - (step_ / cfg.num_update))
+log = create_logger(cfg, algo_cfg, use_tb=True)
+reward_tensor = torch.zeros(cfg.num_envs, device=cfg.device)
+state, _ = env.reset(seed = seed)
+
+for step in tqdm(range(cfg.num_update)):
+    episodic_reward = []
+    metrics = {}
+    for _ in range(cfg.rollout_steps):
+        state_processed = processing_state(state)
+        with torch.inference_mode():
+            outputs = agent.get_action(state_processed)
+        action  = to_env_action(outputs["action"], env)
+        next_state, reward, terminated, truncated, _ = env.step(action)
+        outputs_final = {"next_state": next_state, "reward": reward,
+                   "terminated": terminated, "truncated": truncated, **outputs} 
+        outputs_final = parse_dict_to_tensor(outputs_final)
+        next_state = outputs_final.pop("next_state")
+        buffer.insert(state = state_processed, **outputs_final)
+        reward_tensor += outputs_final["reward"]
+        finished = (outputs_final["terminated"] > 0) | (outputs_final["truncated"] > 0)
+
+        if finished.any():
+            episodic_reward.extend(reward_tensor[finished].tolist())
+            reward_tensor[finished] = 0.0
+        state = next_state
+
+    with torch.inference_mode():
+        state_processed = processing_state(state)
+        last_output = agent.get_action(state_processed)
+
+    data = buffer.get_all()
+    gae_compute(data["reward"], data["value"], last_output["value"], data["terminated"], buffer, algo_cfg)
+    losses = ppo_func(agent, optimizer, buffer, algo_cfg, scheduler)
+    if len(episodic_reward) > 0:
+        recent = episodic_reward[-10:]
+        mean_reward = float(np.mean(recent))
+    else:
+        mean_reward = 0.0
+    metrics = {"train/mean_episodic_reward": mean_reward}
+    for k, v in losses.items(): metrics[f"train/{k}"] = v
+    log(metrics, step)
+    buffer.clear()
+
+env.close()
+log.close()
+try_agent("LunarLander-v3", agent, cfg)
 ```
 
 *Go to the [examples](https://github.com/Dar-rius/zeroRL/tree/main/examples) folder to see some examples of how to use the framework.*
