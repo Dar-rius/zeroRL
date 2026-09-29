@@ -238,10 +238,13 @@ See the examples below for different ways to use zeroRL, from high-level trainin
 
 ## Contributing
 
-zeroRL is actively developed with a focus on modularity and research-grade flexibility, you take a look at our [roadmap](https://github.com/Dar-rius/zeroRL/issues/43). 
-Contributions are welcome in the following areas:
+zeroRL is actively developed with a focus on modularity and research-grade flexibility.
 
-To propose a feature, report a bug, or discuss an idea, please [open an issue](https://github.com/Dar-rius/zeroRL/issues). Pull Requests are encouraged.
+Take a look at the [roadmap](https://github.com/Dar-rius/zeroRL/issues/43) for planned features and open tasks. 
+
+To propose a feature, report a bug, or discuss an idea, please [open an issue](https://github.com/Dar-rius/zeroRL/issues). 
+
+Pull Requests are welcome.
 
 ## License
 
