@@ -116,7 +116,7 @@ See [examples/bipedal.py](https://github.com/Dar-rius/zeroRL/blob/main/examples/
 
 ### Low-level — build the training loop yourself
 
-Use zeroRL primitives when the training loop itself is part of the experiment:
+Use zeroRL primitives when the training loop itself is part of the experiment. An abridged training loop looks like this:
 
 ```python
 from zerorl.logger import create_logger
@@ -225,16 +225,16 @@ train = TrainConfig(
 
 See the examples below for different ways to use zeroRL, from high-level training APIs to fully customized training loops.
 
-| Examples | Contents |
+| Example | Description |
 | --- | --- |
-| [Bipedal (gymnasium)](https://github.com/Dar-rius/zeroRL/blob/main/examples/bipedal.py) | Train a custom agent with a custom buffer and PPO update function |
-| [Hopper (mujoco)](https://github.com/Dar-rius/zeroRL/blob/main/examples/hopper_mujoco_immediate.py) | Build a custom mujoco environment and training loop |
-| [hopper (gymnasium)](https://github.com/Dar-rius/zeroRL/blob/main/examples/hopper_v5_baseline.py) | Train a hopper quickly with `easy_train_ppo` |
-| [Humanoid Standup (gymnasium)](https://github.com/Dar-rius/zeroRL/blob/main/examples/humanoid_standup.py) | Train  HumanoidStandup agent with `easy_train_ppo` |
-| [Immediate Mode](https://github.com/Dar-rius/zeroRL/blob/main/examples/immediate_mode.py) | Build a fully customized training lopp with zeroRL primitives |
-| [Reinforce](https://github.com/Dar-rius/zeroRL/blob/main/examples/reinforce.py) | Implement Reinforce and plug it into BaseTrain |
-| [Reacher (mujoco)](https://github.com/Dar-rius/zeroRL/blob/main/examples/reacher_mujoco.py) | Build a custom Reacher environment and train it with `easy_train_ppo` |
-| [Point Mass (mujoco)](https://github.com/Dar-rius/zeroRL/blob/main/examples/point_mass.py) | Build a custom a Point Mass environment and train it with `easy_train_ppo` |
+| [Bipedal (Gymnasium)](https://github.com/Dar-rius/zeroRL/blob/main/examples/bipedal.py) | Train a custom agent with a custom buffer and PPO update function |
+| [Hopper (MuJoCo)](https://github.com/Dar-rius/zeroRL/blob/main/examples/hopper_mujoco_immediate.py) | Build a custom MuJoCo environment and training loop |
+| [Hopper (Gymnasium)](https://github.com/Dar-rius/zeroRL/blob/main/examples/hopper_v5_baseline.py) | Train a Hopper agent quickly with `easy_train_ppo` |
+| [Humanoid Standup (Gymnasium)](https://github.com/Dar-rius/zeroRL/blob/main/examples/humanoid_standup.py) | Train a HumanoidStandup agent with `easy_train_ppo` |
+| [Immediate Mode](https://github.com/Dar-rius/zeroRL/blob/main/examples/immediate_mode.py) | Build a fully customized training loop with zeroRL primitives |
+| [REINFORCE](https://github.com/Dar-rius/zeroRL/blob/main/examples/reinforce.py) | Implement REINFORCE and plug it into `BaseTrain` |
+| [Reacher (MuJoCo)](https://github.com/Dar-rius/zeroRL/blob/main/examples/reacher_mujoco.py) | Build a custom Reacher environment and train it with `easy_train_ppo` |
+| [Point Mass (MuJoCo)](https://github.com/Dar-rius/zeroRL/blob/main/examples/point_mass.py) | Build a custom Point Mass environment and train it with `easy_train_ppo` |
 
 ## Contributing
 
@@ -244,7 +244,7 @@ Take a look at the [roadmap](https://github.com/Dar-rius/zeroRL/issues/43) for p
 
 To propose a feature, report a bug, or discuss an idea, please [open an issue](https://github.com/Dar-rius/zeroRL/issues). 
 
-Pull Requests are welcome.
+Pull requests are welcome.
 
 ## License
 
