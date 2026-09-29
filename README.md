@@ -61,7 +61,7 @@ algo_config = AlgoConfig(ent_coef=0.0)
 
 trainer = easy_train_ppo("Pendulum-v1", config, algo_config)
 trainer.train(use_tb=True)
-trainer.test()
+trainer.try_agent()
 ```
 
 This creates an `ActorCriticAgent`, vectorized environments, a rollout buffer, and a PPO training pipeline, with TensorBoard or W&B tracking wired automatically.
@@ -85,7 +85,7 @@ Use `BaseTrain` when you want to provide your own agent, environment, buffer, RL
 
 ```python
 # Set up environment and buffer
-config = TrainConfig(project_name="cartpole_example", model_name="agent", total_timesteps=1_000_000, num_envs=2)
+config = TrainConfig(project_name="cartpole_example", model_name="agent", timestamp=1_000_000, num_envs=2)
 algo_config = AlgoConfig()
 env = get_env("CartPole-v1", config.num_envs)
 obs_shape, act_shape, obs_n, act_n, _ = get_obs_act(env)
@@ -109,7 +109,7 @@ def update_weights(agent, buffer, scheduler, optimizer, last_output, algo_config
 
 # Train
 trainer = BaseTrain(agent, env, buffer, update_weights, config, algo_config)
-trainer.train(use_wandb=True, model_save=True)
+trainer.train(use_wandb=True, save_model=True)
 ```
 
 See [examples/bipedal.py](https://github.com/Dar-rius/zeroRL/blob/main/examples/bipedal.py) and [examples/reinforce.py](https://github.com/Dar-rius/zeroRL/blob/main/examples/reinforce.py) for complete examples.
@@ -209,7 +209,7 @@ train = TrainConfig(
     model_name="my_agent",                 # Required, used to save model in a specific path
     project_name="my_experiment",          # Required, used for wandb/tensorboard
     model_save_path=".checkpoints",        # Default
-    total_timesteps=1_000_000,             # Total training steps (renamed from 'timestamp' for clarity)
+    timestamp=1_000_000,                   # Total training steps (renamed from 'timestamp' for clarity)
     rollout_steps=2048,                    # Steps per rollout
     num_envs=1,                            # Parallel environments
     normalize=False,                       # Normalize observations of environment
