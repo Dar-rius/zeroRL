@@ -5,23 +5,28 @@
 <div align="center">
   <h1> zeroRL </h1>
 </div>
+   
+Reinforcement learning research often requires modifying the training pipeline:
+changing rollout collection, experimenting with new losses, introducing custom
+buffers, or integrating non-standard environments.
 
-Reinforcement learning is demanding. Existing solutions are excellent for standard baselines, but when your research requires custom algorithms, novel buffer structures, or specific multi-agent setups, you often end up fighting the framework instead of focusing on the science.
+Many RL frameworks optimize for standard workflows. zeroRL instead focuses on
+giving researchers control over how experiments are built.
 
-**zeroRL takes a different approach.** It's a simple, explicit, and modular architecture designed to reduce the friction between your research idea and its implementation.
+**zeroRL is a modular PyTorch reinforcement learning framework that lets you
+work at the level of abstraction your experiment requires.**
 
-The core principle: **Stay focus on your pipeline**
+You can:
 
-The framework allows you to:
+- Train a RL agent quickly with a high-level API.
+- Customize agents, environments, buffers, and update functions through `BaseTrain`.
+- Build complete training loops from low-level zeroRL primitives.
+- Integrate Gymnasium environments and custom MuJoCo simulations.
+- Keep the training pipeline explicit, inspectable, and easy to modify.
 
-- Write your custom pipeline easily with primitives (low level) or use abstraction to get faster (high level)
-- Maintain full control and visibility over the training pipeline
-- Replace or modify individual components without rewriting the training pipeline
-- Implement custom algorithms that are not included in the framework
-- Integrate new environments (Gymnasium and MuJoCo) without unnecessary wrappers
-- Debug and understand what's happening at every step
+The core principle:
 
-zeroRL is designed to make reinforcement learning experimentation easier without imposing heavy abstractions.
+> **Stay close to your training pipeline.**
   
 ## Installation
 
@@ -39,7 +44,11 @@ pip install zerorl
 
 The package depends on `torch`, `numpy`, `gymnasium`, `mujoco`, `tqdm`, and `imageio`. 
 
-## Quick Start
+## Choose Your Level of Control
+
+zeroRL exposes the same training stack at different levels of abstraction.
+
+### High-level — train quickly
 
 The fastest way to train an agent — one function call:
 
@@ -68,10 +77,7 @@ trainer = easy_train_ppo(my_env, config, algo_config)
 config.num_envs = 4
 trainer = easy_train_ppo("CartPole-v1", config, algo_config)
 ```
-
-## Advanced Usage
-
-For full control over training pipeline (High Level):
+### Mid-level — customize the experiment
 
 ```python
 import torch
@@ -148,6 +154,67 @@ def update_weights(agent, buffer, scheduler, optimizer, last_output, algo_config
 trainer = BaseTrain(agent, env, buffer, update_weights, config, algo_config)
 trainer.train(use_wandb=True, model_save=True)
 ```
+
+## What's Included
+
+zeroRL provides a minimal set of composable components, each designed to be transparent, extensible, and easy to understand.
+
+| Component | Description |
+| --- | --- |
+| `BaseAgent` | Plain `nn.Module` base class that allows you to define `get_action()` and `build_distribution()` in pure PyTorch — no custom abstractions to learn. |
+| `BaseEnv` | Abstract Gymnasium environment where you implement `reset()`, `step()`, and `close()` for zero-friction integration with the ecosystem. |
+| `BaseTrain` | Transparent training orchestrator handling rollout collection, observation normalization, weight updates, and profiling, keeping everything visible and debuggable. |
+| `Buffer` | Dictionary-like tensor container inspired by TorchDict, allowing you to store and manipulate trajectories with a clean, flexible interface. |
+| `AlgoConfig` | Centralized hyperparameters (`lr`, `gamma`, `gae_lambda`, `clip_eps`, `ent_coef`, `value_coef`, `batch_size`, `epochs`, `tau`) that are mutable at runtime for fast experimentation. |
+| `TrainConfig` | Training settings with auto-computed `model_path`, `num_update`, and device detection, providing sensible defaults while remaining easy to override. |
+| `easy_train_ppo` | One-call setup that wires agent, env, and buffer into a ready-to-train `BaseTrain` — perfect for baselines, trivial to extend. |
+| `ActorCriticAgent` | Built-in agent with orthogonal initialization, supporting both discrete and continuous action spaces out of the box. |
+
+| Algorithm | Status |
+| --- | --- |
+| **PPO** | ✅ Implemented & Tested |
+| **SAC** | 🚧 Planned / Contributions Welcome |
+
+*These algorithms are the next priorities on our [roadmap](https://github.com/Dar-rius/zeroRL/issues/43). If you are familiar with any of these implementations, we would be thrilled to welcome your PRs to integrate them!*
+
+## Configuration
+
+```python
+from zerorl.config import AlgoConfig, TrainConfig
+import torch
+
+algo = AlgoConfig(
+    lr=3e-4,          
+    gamma=0.99,       
+    gae_lambda=0.95,  
+    clip_eps=0.2,     
+    ent_coef=0.01,    
+    value_coef=0.5,   
+    batch_size=64,    
+    epochs=10,       
+    tau=0.005
+)
+
+train = TrainConfig(
+    model_name="my_agent",                 # Required, used to save model in a specific path
+    project_name="my_experiment",          # Required, used for wandb/tensorboard
+    model_save_path=".checkpoints",        # Default
+    total_timesteps=1_000_000,             # Total training steps (renamed from 'timestamp' for clarity)
+    rollout_steps=2048,                    # Steps per rollout
+    num_envs=1,                            # Parallel environments
+    normalize=False,                       # Normalize observations of environment
+    profile=False,                         # Profile steps of training
+    debug=False,                           # Enable training-pipeline validation and anomaly detection
+    device=torch.device("cuda"),           # Tensor device, checks if the device has a GPU 
+    num_update=1_000_000 // (2048 * 1),    # Number of weight updates (total_timesteps // (rollout_steps * num_envs))
+    model_path=".checkpoints/my_agent.pt"  # Path for saving agent weights 
+)
+```
+
+## Advanced Usage
+
+For full control over training pipeline (High Level):
+
 
 ### Custom Environment
 
@@ -480,62 +547,6 @@ try_agent("LunarLander-v3", agent, cfg)
 ```
 
 *Go to the [examples](https://github.com/Dar-rius/zeroRL/tree/main/examples) folder to see some examples of how to use the framework.*
-
-## What's Included
-
-zeroRL provides a minimal set of composable components, each designed to be transparent, extensible, and easy to understand.
-
-| Component | Description |
-| --- | --- |
-| `BaseAgent` | Plain `nn.Module` base class that allows you to define `get_action()` and `build_distribution()` in pure PyTorch — no custom abstractions to learn. |
-| `BaseEnv` | Abstract Gymnasium environment where you implement `reset()`, `step()`, and `close()` for zero-friction integration with the ecosystem. |
-| `BaseTrain` | Transparent training orchestrator handling rollout collection, observation normalization, weight updates, and profiling, keeping everything visible and debuggable. |
-| `Buffer` | Dictionary-like tensor container inspired by TorchDict, allowing you to store and manipulate trajectories with a clean, flexible interface. |
-| `AlgoConfig` | Centralized hyperparameters (`lr`, `gamma`, `gae_lambda`, `clip_eps`, `ent_coef`, `value_coef`, `batch_size`, `epochs`, `tau`) that are mutable at runtime for fast experimentation. |
-| `TrainConfig` | Training settings with auto-computed `model_path`, `num_update`, and device detection, providing sensible defaults while remaining easy to override. |
-| `easy_train_ppo` | One-call setup that wires agent, env, and buffer into a ready-to-train `BaseTrain` — perfect for baselines, trivial to extend. |
-| `ActorCriticAgent` | Built-in agent with orthogonal initialization, supporting both discrete and continuous action spaces out of the box. |
-
-| Algorithm | Status |
-| --- | --- |
-| **PPO** | ✅ Implemented & Tested |
-| **SAC, DQN, PPO Recurrent, DDPG** | 🚧 Planned / Contributions Welcome |
-
-*These algorithms are the next priorities on our [roadmap](https://github.com/Dar-rius/zeroRL/issues/43). If you are familiar with any of these implementations, we would be thrilled to welcome your PRs to integrate them!*
-
-## Configuration
-
-```python
-from zerorl.config import AlgoConfig, TrainConfig
-import torch
-
-algo = AlgoConfig(
-    lr=3e-4,          
-    gamma=0.99,       
-    gae_lambda=0.95,  
-    clip_eps=0.2,     
-    ent_coef=0.01,    
-    value_coef=0.5,   
-    batch_size=64,    
-    epochs=10,       
-    tau=0.005
-)
-
-train = TrainConfig(
-    model_name="my_agent",                 # Required, used to save model in a specific path
-    project_name="my_experiment",          # Required, used for wandb/tensorboard
-    model_save_path=".checkpoints",        # Default
-    total_timesteps=1_000_000,             # Total training steps (renamed from 'timestamp' for clarity)
-    rollout_steps=2048,                    # Steps per rollout
-    num_envs=1,                            # Parallel environments
-    normalize=False,                       # Normalize observations of environment
-    profile=False,                         # Profile steps of training
-    debug=False,                           # Enable training-pipeline validation and anomaly detection
-    device=torch.device("cuda"),           # Tensor device, checks if the device has a GPU 
-    num_update=1_000_000 // (2048 * 1),    # Number of weight updates (total_timesteps // (rollout_steps * num_envs))
-    model_path=".checkpoints/my_agent.pt"  # Path for saving agent weights 
-)
-```
 
 ## Contributing
 
