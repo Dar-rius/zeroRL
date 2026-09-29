@@ -5,40 +5,50 @@
 <div align="center">
   <h1> zeroRL </h1>
 </div>
+   
+Reinforcement learning research often requires modifying the training pipeline:
+changing rollout collection, experimenting with new losses, introducing custom
+buffers and RL algorithms or integrating non-standard environments.
 
-Reinforcement learning is demanding. Existing solutions are excellent for standard baselines, but when your research requires custom algorithms, novel buffer structures, or specific multi-agent setups, you often end up fighting the framework instead of focusing on the science.
+Many RL frameworks optimize for standard workflows. zeroRL instead focuses on
+giving researchers control over how experiments are built.
 
-**zeroRL takes a different approach.** It's a simple, explicit, and modular architecture designed to reduce the friction between your research idea and its implementation.
+**zeroRL is a modular PyTorch reinforcement learning framework that lets you
+work at the level of abstraction your experiment requires.**
 
-The core principle: **If you can write it in PyTorch, you can use it in zeroRL.**
+You can:
 
-The framework allows you to:
+- Train RL agents quickly with a high-level API.
+- Customize agents, environments, buffers, algorithms, and update functions through `BaseTrain`.
+- Build complete training loops from low-level zeroRL primitives.
+- Integrate Gymnasium environments and custom MuJoCo simulations.
+- Keep the training pipeline explicit, inspectable, and easy to modify.
 
-- Implement custom algorithms that are not included in the framework
-- Integrate new environments without unnecessary wrappers
-- Replace or modify individual components without rewriting the training pipeline
-- Maintain full control and visibility over the training pipeline
-- Debug and understand what's happening at every step
+The core principle:
 
-zeroRL is designed to make reinforcement learning experimentation easier without imposing heavy abstractions or hiding the details that matter.
+> **Stay close to your training pipeline.**
   
 ## Installation
 
 Before installing zeroRL, ensure Python `3.11+` is available.
 
-Install zeroRL with uv or pip: 
+Install zeroRL with `uv` or `pip`: 
 
 ```bash
+# With uv
 uv pip install zerorl
 
-or 
-
+# With pip
 pip install zerorl
 ```
 
-The package depends on `torch`, `numpy`, `gymnasium`, `tqdm`, and `imageio`. 
+The package depends on `torch`, `numpy`, `gymnasium`, `mujoco`, `tqdm`, and `imageio`. 
 
-## Quick Start
+## Choose Your Level of Control
+
+zeroRL exposes the same training stack at different levels of abstraction.
+
+### High-level — train quickly
 
 The fastest way to train an agent — one function call:
 
@@ -46,7 +56,7 @@ The fastest way to train an agent — one function call:
 from zerorl.algorithms.ppo import easy_train_ppo
 from zerorl.config import TrainConfig, AlgoConfig
 
-config = TrainConfig(model_name="Pendulum", project_name="my_experiment")
+config = TrainConfig(model_name="pendulum_agent", project_name="my_experiment")
 algo_config = AlgoConfig(ent_coef=0.0)
 
 trainer = easy_train_ppo("Pendulum-v1", config, algo_config)
@@ -54,7 +64,9 @@ trainer.train(use_tb=True)
 trainer.test()
 ```
 
-This creates an `ActorCriticAgent`, vectorized environments, a rollout buffer, and runs PPO — all wired together automatically. Override any component:
+This creates an `ActorCriticAgent`, vectorized environments, a rollout buffer, and a PPO training pipeline, with TensorBoard or W&B tracking wired automatically.
+
+Override any component:
 
 ```python
 # Custom agent (BaseAgent subclass)
@@ -67,233 +79,113 @@ trainer = easy_train_ppo(my_env, config, algo_config)
 config.num_envs = 4
 trainer = easy_train_ppo("CartPole-v1", config, algo_config)
 ```
+### Mid-level — customize the experiment
 
-## Advanced Usage
-
-For full control over agent, environment, and the training loop:
+Use `BaseTrain` when you want to provide your own agent, environment, buffer, RL algorithm, or optimization logic while letting zeroRL handle rollout orchestration.
 
 ```python
-import torch
-import torch.nn as nn
-import numpy as np
-from zerorl.helpers.agent import BaseAgent
-from zerorl.train import BaseTrain
-from zerorl.buffer import Buffer
-from zerorl.config import TrainConfig, AlgoConfig
-from zerorl.algorithms.ppo import gae_compute, ppo_func
-from zerorl.helpers.factory import get_env
-from zerorl.functions import get_obs_act
-
-
-# 1. Define your agent
-class Agent(BaseAgent):
-    def __init__(self, obs_dim, act_dim):
-        super().__init__()
-        self.actor = nn.Sequential(
-            nn.Linear(obs_dim, 64), nn.Tanh(),
-            nn.Linear(64, 64), nn.Tanh(),
-            nn.Linear(64, act_dim),
-        )
-        self.critic = nn.Sequential(
-            nn.Linear(obs_dim, 64), nn.Tanh(),
-            nn.Linear(64, 64), nn.Tanh(),
-            nn.Linear(64, 1),
-        )
-
-    def forward(self, state):
-        return self.actor(state), self.critic(state)
-
-    def build_distribution(self, logits):
-        return torch.distributions.Categorical(logits=logits)
-
-    def get_action(self, state, action=None):
-        logits, value = self.forward(state)
-        dist = self.build_distribution(logits)
-        if action is None:
-            action = dist.sample()
-        # Note: eval_action must be imported or defined in your module
-        log_prob, entropy = eval_action(dist, action)
-        return {"action": action, "log_prob": log_prob, "entropy": entropy, "value": value}
-
-
-# 2. Set up environment and buffer
+# Set up environment and buffer
 config = TrainConfig(project_name="cartpole_example", model_name="agent", total_timesteps=1_000_000, num_envs=2)
 algo_config = AlgoConfig()
-
 env = get_env("CartPole-v1", config.num_envs)
 obs_shape, act_shape, obs_n, act_n, _ = get_obs_act(env)
-
 agent = Agent(obs_n, act_n)
 buffer = Buffer(
-    data={
-        "state": obs_shape, "action": act_shape,
-        "reward": (), "done": (), "truncated": (),
-        "entropy": (), "value": (), "return": (),
-        "log_prob": (), "advantage": () 
-    },
-    config=config,
-)
+        capacity=config.rollout_steps,
+        num_envs=config.num_envs,
+        schema={
+              "state": obs_shape, "action": act_shape,
+              "reward": (), "terminated": (), "truncated": (),
+              "entropy": (), "value": (), "return": (),
+              "log_prob": (), "advantage": () 
+          },
+        device=config.device)
 
-
-# 3. Define the update weights function
+# Define the update weights function
 def update_weights(agent, buffer, scheduler, optimizer, last_output, algo_config):
     all_data = buffer.get_all()
-    gae_compute(all_data["reward"], all_data["value"], last_output["value"],
-                all_data["done"], buffer, algo_config)
+    gae_compute(all_data["reward"], all_data["value"], last_output["value"], all_data["terminated"], buffer, algo_config)
     return ppo_func(agent, optimizer, buffer, algo_config, scheduler, device=agent.device)
 
-
-# 4. Train
+# Train
 trainer = BaseTrain(agent, env, buffer, update_weights, config, algo_config)
 trainer.train(use_wandb=True, model_save=True)
 ```
 
-### Custom Environment
+See [examples/bipedal.py](https://github.com/Dar-rius/zeroRL/blob/main/examples/bipedal.py) and [examples/reinforce.py](https://github.com/Dar-rius/zeroRL/blob/main/examples/reinforce.py) for complete examples.
 
-Implement `BaseEnv` to use your own environment with `easy_train_ppo` or `BaseTrain`:
+### Low-level — build the training loop yourself
 
-```python
-import numpy as np
-from gymnasium import spaces
-from zerorl.helpers.env import BaseEnv
-
-
-class GridWorld(BaseEnv):
-    """Simple 4x4 grid world — agent starts at (0,0), goal at (3,3)."""
-
-    def __init__(self):
-        super().__init__()
-        self.observation_space = spaces.Box(
-            low=0.0, high=3.0, shape=(2,), dtype=np.float32
-        )
-        self.action_space = spaces.Discrete(4)  # up, down, left, right
-        self._pos = None
-
-    def reset(self, *, seed=None, options=None):
-        self._pos = np.array([0, 0], dtype=np.float32)
-        return self._pos.copy(), {}
-
-    def step(self, action):
-        direction = np.array([[0, 1], [0, -1], [-1, 0], [1, 0]])[action]
-        self._pos = np.clip(self._pos + direction, 0, 3)
-        terminated = np.array_equal(self._pos, [3, 3])
-        reward = 1.0 if terminated else -0.01
-        return self._pos.copy(), reward, terminated, False, {}
-
-    def close(self):
-        pass
-```
-
-Then pass it directly:
+Use zeroRL primitives when the training loop itself is part of the experiment. An abridged training loop looks like this:
 
 ```python
-from zerorl.algorithms.ppo import easy_train_ppo
-from zerorl.config import TrainConfig, AlgoConfig
+from zerorl.logger import create_logger
+from zerorl.functions import (processing_state, parse_dict_to_tensor, to_env_action, try_agent, get_obs_act, vectorize_env, set_seed)
 
-config = TrainConfig(model_name="gridworld", project_name="gridworld_exp", total_timesteps=500_000)
-algo_config = AlgoConfig()
+cfg = TrainConfig(model_name="Lunar-model", project_name="Lunar-example", num_envs=4)
+algo_cfg = AlgoConfig()
+seed = set_seed(42, cfg.num_envs)
+env = vectorize_env("LunarLander-v3", num_envs = cfg.num_envs)
+obs_dim, act_dim, obs_n, act_n, is_discrete = get_obs_act(env)
+agent = ActorCriticAgent(obs_n, act_n, is_discrete).to(cfg.device)
+buffer = Buffer(capacity = cfg.rollout_steps,
+                num_envs = cfg.num_envs,
+                schema = {"state": obs_dim, "action": act_dim,
+                          "reward": (), "terminated": (), "entropy": (), "value": (),
+                          "return": (), "log_prob": (), "advantage": (), "truncated": ()},
+                device = cfg.device)
+log = create_logger(cfg, algo_cfg, use_tb=True)
+state, _ = env.reset(seed = seed)
 
-trainer = easy_train_ppo(GridWorld(), config, algo_config)
-trainer.train()
+for step in tqdm(range(cfg.num_update)):
+    metrics = {}
+    for _ in range(cfg.rollout_steps):
+        state_processed = processing_state(state)
+        with torch.inference_mode():
+            outputs = agent.get_action(state_processed)
+        action = to_env_action(outputs["action"], env)
+        next_state, reward, terminated, truncated, _ = env.step(action)
+        outputs_final = {"next_state": next_state, "reward": reward,
+                   "terminated": terminated, "truncated": truncated, **outputs} 
+        outputs_final = parse_dict_to_tensor(outputs_final)
+        next_state = outputs_final.pop("next_state")
+        buffer.insert(state = state_processed, **outputs_final)
+         ...
+
+    metrics = {"train/mean_episodic_reward": mean_reward}
+    for k, v in losses.items(): metrics[f"train/{k}"] = v
+    log(metrics, step)
+    buffer.clear()
+
+env.close()
+log.close()
+try_agent("LunarLander-v3", agent, cfg)
 ```
 
-### Modular function
+At this level, zeroRL provides reusable building blocks without owning the training loop. You decide how transitions are collected, processed, stored, optimized, and logged.
 
-All RL algorithms are modular functions where you can change some components:
+## Core Building Blocks
 
-```python
-from torch import Tensor
-from zerorl.algorithms.ppo import ppo_func, gae_compute
-from zerorl.helpers.agent import BaseAgent # Fixed import path
+zeroRL provides a small set of composable components designed to remain explicit, extensible, and easy to inspect.
 
-def custom_ppo_loss(agent: BaseAgent,
-                    params: dict,
-                    buffers: dict,
-                    states: Tensor,
-                    actions: Tensor,
-                    old_log_prob: Tensor,
-                    old_values: Tensor,
-                    advantages: Tensor,
-                    returns: Tensor,
-                    ent_coef: float,
-                    value_coef: float,
-                    clip_eps: float,
-                    clip_vf: float,
-                    ) -> dict[str, Tensor]:
-    # Write your own PPO loss here
-    ...
-
-def update_weights(agent, buffer, scheduler, optimizer, last_output, algo_config):
-    all_data = buffer.get_all()
-    gae_compute(all_data["reward"], all_data["value"], last_output["value"],
-                all_data["done"], buffer, algo_config)
-    return ppo_func(agent, optimizer, buffer, algo_config, scheduler, ppo_loss_func=custom_ppo_loss, device=agent.device)
-```
-
-### Implement your own algorithm
-
-```python
-# This is an excerpt from examples/reinforce.py
-
-import torch
-from zerorl.train import BaseTrain
-
-# Define your pure PyTorch update function
-def reinforce_update(agent, buffer, optimizer, algo_config, scheduler=None, last_output=None):
-    data = buffer.get_all(reshape=True)
-    rewards = data["reward"]
-    total_size = rewards.shape[0]
-    dones = data["done"]
-    returns = torch.empty_like(rewards)
-    mask = 1.0 - dones
-    R = 0.0
-    for step in reversed(range(total_size)):
-        R = rewards[step] + algo_config.gamma * mask[step] * R 
-        returns[step] = R
-    
-    global_losses = agent.get_action(data["state"], data["action"])
-    loss = -(global_losses["log_prob"] * returns).mean()
-    optimizer.zero_grad()
-    loss.backward()
-    torch.nn.utils.clip_grad_norm_(agent.parameters(), 0.5) # Max grad norm
-    optimizer.step()
-    return {"loss": loss.detach()}
-
-# Plug it in. BaseTrain handles rollouts.
-trainer = BaseTrain(
-    agent=agent, 
-    env=env, 
-    buffer=buffer, 
-    update_weights=reinforce_update, 
-    config=config, 
-    algo_config=algo_config
-)
-trainer.train()
-```
-
-*Go to the [examples](https://github.com/Dar-rius/zeroRL/tree/main/examples) folder to see some examples of how to use the framework.*
-
-## What's Included
-
-zeroRL provides a minimal set of composable components, each designed to be transparent, extensible, and easy to understand.
-
-| Component | Description |
-| --- | --- |
-| `BaseAgent` | Plain `nn.Module` base class that allows you to define `get_action()` and `build_distribution()` in pure PyTorch — no custom abstractions to learn. |
-| `BaseEnv` | Abstract Gymnasium environment where you implement `reset()`, `step()`, and `close()` for zero-friction integration with the ecosystem. |
-| `BaseTrain` | Transparent training orchestrator handling rollout collection, observation normalization, weight updates, and profiling, keeping everything visible and debuggable. |
-| `Buffer` | Dictionary-like tensor container inspired by TorchDict, allowing you to store and manipulate trajectories with a clean, flexible interface. |
-| `AlgoConfig` | Centralized hyperparameters (`lr`, `gamma`, `gae_lambda`, `clip_eps`, `ent_coef`, `value_coef`, `batch_size`, `epochs`, `tau`) that are mutable at runtime for fast experimentation. |
-| `TrainConfig` | Training settings with auto-computed `model_path`, `num_update`, and device detection, providing sensible defaults while remaining easy to override. |
-| `easy_train_ppo` | One-call setup that wires agent, env, and buffer into a ready-to-train `BaseTrain` — perfect for baselines, trivial to extend. |
-| `ActorCriticAgent` | Built-in agent with orthogonal initialization, supporting both discrete and continuous action spaces out of the box. |
+| Layer | Components | Purpose |
+| --- | --- | --- |
+| High-level API | `easy_train_ppo` | Build and train a standard PPO experiment quickly |
+| Training orchestration | `BaseTrain` | Manage rollout collection while keeping components replaceable |
+| Agents | `BaseAgent`, `ActorCriticAgent`, `PolicyAgent` | Define agent architectures in PyTorch |
+| Storage | `Buffer` | Pre-allocated trajectory storage with a customizable schema |
+| Normalization | `NormMeanStd` | Normalize observations using running statistics |
+| Algorithms | `ppo_func`, `gae_compute` | Reusable optimization and return-estimation primitives |
+| Environment | `BaseEnv`, `MujocoEnv`, `vectorize_env` | Gymnasium and custom MuJoCo integration |
+| Pipeline primitives | `processing_state`, `to_env_action`, `parse_dict_to_tensor`, `env_step`, ... | Assemble custom training loops |
+| Experiment tools | logging, profiling, debugging | Observe and validate experiments |
 
 | Algorithm | Status |
 | --- | --- |
 | **PPO** | ✅ Implemented & Tested |
-| **SAC, DQN, PPO Recurrent, DDPG** | 🚧 Planned / Contributions Welcome |
+| **SAC** | 🚧 Planned / Contributions Welcome |
 
-*These algorithms are the next priorities on our [roadmap](https://github.com/Dar-rius/zeroRL/issues/43). If you are familiar with any of these implementations, we would be thrilled to welcome your PRs to integrate them!*
+*See the [roadmap](https://github.com/Dar-rius/zeroRL/issues/43) for planned algorithms and upcoming features. Contributions are welcome.*
 
 ## Configuration
 
@@ -329,12 +221,30 @@ train = TrainConfig(
 )
 ```
 
+## Examples
+
+See the examples below for different ways to use zeroRL, from high-level training APIs to fully customized training loops.
+
+| Example | Description |
+| --- | --- |
+| [Bipedal (Gymnasium)](https://github.com/Dar-rius/zeroRL/blob/main/examples/bipedal.py) | Train a custom agent with a custom buffer and PPO update function |
+| [Hopper (MuJoCo)](https://github.com/Dar-rius/zeroRL/blob/main/examples/hopper_mujoco_immediate.py) | Build a custom MuJoCo environment and training loop |
+| [Hopper (Gymnasium)](https://github.com/Dar-rius/zeroRL/blob/main/examples/hopper_v5_baseline.py) | Train a Hopper agent quickly with `easy_train_ppo` |
+| [Humanoid Standup (Gymnasium)](https://github.com/Dar-rius/zeroRL/blob/main/examples/humanoid_standup.py) | Train a HumanoidStandup agent with `easy_train_ppo` |
+| [Immediate Mode](https://github.com/Dar-rius/zeroRL/blob/main/examples/immediate_mode.py) | Build a fully customized training loop with zeroRL primitives |
+| [REINFORCE](https://github.com/Dar-rius/zeroRL/blob/main/examples/reinforce.py) | Implement REINFORCE and plug it into `BaseTrain` |
+| [Reacher (MuJoCo)](https://github.com/Dar-rius/zeroRL/blob/main/examples/reacher_mujoco.py) | Build a custom Reacher environment and train it with `easy_train_ppo` |
+| [Point Mass (MuJoCo)](https://github.com/Dar-rius/zeroRL/blob/main/examples/point_mass.py) | Build a custom Point Mass environment and train it with `easy_train_ppo` |
+
 ## Contributing
 
-zeroRL is actively developed with a focus on modularity and research-grade flexibility, you take a look at our [roadmap](https://github.com/Dar-rius/zeroRL/issues/43). 
-Contributions are welcome in the following areas:
+zeroRL is actively developed with a focus on modularity and research-grade flexibility.
 
-To propose a feature, report a bug, or discuss an idea, please [open an issue](https://github.com/Dar-rius/zeroRL/issues). Pull Requests are encouraged.
+Take a look at the [roadmap](https://github.com/Dar-rius/zeroRL/issues/43) for planned features and open tasks. 
+
+To propose a feature, report a bug, or discuss an idea, please [open an issue](https://github.com/Dar-rius/zeroRL/issues). 
+
+Pull requests are welcome.
 
 ## License
 
