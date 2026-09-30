@@ -50,7 +50,7 @@ zeroRL exposes the same training stack at different levels of abstraction.
 
 ### High-level — train quickly
 
-The fastest way to train an agent — one function call:
+The fastest way to train an agent, one function call:
 
 ```python
 from zerorl.algorithms.ppo import easy_train_ppo
@@ -214,7 +214,7 @@ train = TrainConfig(
     num_envs=1,                            # Parallel environments
     normalize=False,                       # Normalize observations of environment
     profile=False,                         # Profile steps of training
-    debug=False,                           # Enable training-pipeline validation and anomaly detection
+    debug=False,                           # Enable training pipeline validation and anomaly detection
     device=torch.device("cuda"),           # Tensor device, checks if the device has a GPU 
     num_update=1_000_000 // (2048 * 1),    # Number of weight updates (total_timesteps // (rollout_steps * num_envs))
     model_path=".checkpoints/my_agent.pt"  # Path for saving agent weights 
