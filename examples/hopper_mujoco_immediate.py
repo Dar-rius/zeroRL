@@ -332,7 +332,6 @@ def run_immediate(
         normalize=True,
         profile=True,
     )
-    cfg.device = torch.device(device)
     algo_cfg = AlgoConfig(
         lr=3e-4,
         ent_coef=0.0,

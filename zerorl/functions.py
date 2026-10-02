@@ -6,6 +6,8 @@ and action conversion.
 """
 
 import os
+os.environ["MUJOCO_GL"] = "egl"
+os.environ["PYOPENGL_PLATFORM"] = "egl"
 import copy
 import random
 import gymnasium as gym
