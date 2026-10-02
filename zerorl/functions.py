@@ -6,8 +6,7 @@ and action conversion.
 """
 
 import os
-os.environ["MUJOCO_GL"] = "egl"
-os.environ["PYOPENGL_PLATFORM"] = "egl"
+
 import copy
 import random
 import gymnasium as gym
@@ -134,6 +133,9 @@ def try_agent(env_eval: Any, agent: BaseAgent, config: TrainConfig, *, normalize
         iterations: Number of evaluation episodes.
         gif_path: Output GIF path (default: ./{project_name}_{i}.gif).
     """
+    if torch.cuda.is_available():
+        os.environ["MUJOCO_GL"] = "egl"
+        os.environ["PYOPENGL_PLATFORM"] = "egl"
     env_spec = env_eval
     if isinstance(env_spec, gym.vector.VectorEnv):
         try:
