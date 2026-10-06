@@ -424,6 +424,7 @@ def run_immediate(
             data["value"],
             last_output["value"],
             data["terminated"],
+            data["truncated"],
             buffer,
             algo_cfg,
         )

@@ -63,7 +63,7 @@ for step in tqdm(range(cfg.num_update)):
         last_output = agent.get_action(state_processed)
 
     data = buffer.get_all()
-    gae_compute(data["reward"], data["value"], last_output["value"], data["terminated"], buffer, algo_cfg)
+    gae_compute(data["reward"], data["value"], last_output["value"], data["terminated"], data["truncated"], buffer, algo_cfg)
     losses = ppo_func(agent, optimizer, buffer, algo_cfg, scheduler)
     if len(episodic_reward) > 0:
         recent = episodic_reward[-10:]

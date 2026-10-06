@@ -21,7 +21,7 @@ from zerorl.errors import assert_agent_contract
 
 
 def gae_compute(rewards: Tensor, values: Tensor, last_value: Tensor,
-            dones: Tensor, buffer:Buffer, algo_config: AlgoConfig):
+                terminated: Tensor, truncated: Tensor, buffer:Buffer, algo_config: AlgoConfig):
     """Compute Generalized Advantage Estimation.
 
     Works backwards through the trajectory, accumulating TD errors
@@ -32,20 +32,21 @@ def gae_compute(rewards: Tensor, values: Tensor, last_value: Tensor,
         rewards: Rewards for each timestep, shape (T, num_envs).
         values: Value estimates for each timestep, shape (T, num_envs).
         last_value: Bootstrap value for the state after the last step, shape (num_envs,).
-        dones: Episode termination flags, shape (T, num_envs). 1.0 = done.
+        terminated: Episode termination flags, shape (T, num_envs). 1.0 = done.
         buffer: Buffer to write "advantage" and "return" into.
         algo_config: Algorithm configuration (gamma, gae_lambda).
     """
     num_envs = rewards.shape[1]
     gae = torch.zeros(num_envs, dtype=torch.float32, device=rewards.device)
     # Mask: 0.0 at episode boundaries (no bootstrapping across episodes)
-    mask = 1.0 - dones
+    mask_bootstrap = 1.0 - terminated
+    mask_trace = 1.0 - (terminated.bool() | truncated.bool()).float()
     next_values = torch.cat((values[1:], last_value.unsqueeze(0)), 0)
     total_size = rewards.shape[0]
-    delta = rewards + algo_config.gamma * next_values * mask - values
+    delta = rewards + algo_config.gamma * next_values * mask_bootstrap - values
     advantages = torch.empty_like(delta)
     for step in reversed(range(total_size)):
-        gae = delta[step] + algo_config.gamma * algo_config.gae_lambda * mask[step] * gae
+        gae = delta[step] + algo_config.gamma * algo_config.gae_lambda * mask_trace[step] * gae
         advantages[step] = gae
     returns = advantages + values
     buffer.data["advantage"][:buffer.size] = advantages
