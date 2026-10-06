@@ -47,9 +47,9 @@ class BaseTrain:
                  update_weights: Callable,
                  config: TrainConfig,
                  algo_config: AlgoConfig,
+                 seeds: list[int] | None = None,
                  optimizer: optim.Optimizer | None = None,
                  schedule_func: Callable[[int], float] | None = None,
-                 seed: list[int] | None = None,
                  render_mode: str | None = None,
                  require_buffer_size: int = 10):
         """Initialize the training loop.
@@ -99,7 +99,7 @@ class BaseTrain:
 
         if schedule_func is None: schedule_func = lambda current_step: 1.0 - (current_step / self.config.num_update)
         self.scheduler = LambdaLR(self.optimizer, schedule_func)
-        self.seed = set_seed(22, self.num_envs) if seed is None else seed
+        self.seeds = set_seed(22, self.num_envs) if seeds is None else seeds
         self.require_buffer_size = require_buffer_size
         self.normalizer = NormMeanStd(obs_shape, config.device) if self.config.normalize else None
         self.current_episode_reward: Tensor | None = None
@@ -193,7 +193,7 @@ class BaseTrain:
         is_cuda = True if str(self.device).startswith("cuda") else False
         profiler = PhaseProfiler(self.config, is_cuda = is_cuda)
         log = create_logger(self.config, self.algo_config, use_wandb=use_wandb, use_tb=use_tb)
-        state, _ = self.env.reset(seed = self.seed)
+        state, _ = self.env.reset(seed = self.seeds)
         self.state = torch.as_tensor(state, dtype=torch.float32, device=self.config.device)
 
         for step in tqdm(range(self.config.num_update)):

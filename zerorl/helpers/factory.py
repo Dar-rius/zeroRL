@@ -140,21 +140,23 @@ class ActorCriticAgent(BaseAgent):
         if not is_discrete:
             self.log_std = nn.Parameter(torch.zeros(output_dim))
 
-        self.apply(self._orthogonal_init)
+        self._orthogonal_init()
 
 
-    def _orthogonal_init(self, module: nn.Module):
+    def _init_layer(self, layer: nn.Linear, gain: float):
+        nn.init.orthogonal_(layer.weight, gain=gain)
+        if layer.bias is not None: nn.init.constant_(layer.bias, 0.0)
+
+    def _orthogonal_init(self):
         """Apply orthogonal weight initialization with gain based on layer role."""
-        if isinstance(module, nn.Linear):
-            if module.out_features == self.hidden_dim:
-                nn.init.orthogonal_(module.weight, gain=np.sqrt(2))
-            elif module.out_features == 1:
-                nn.init.orthogonal_(module.weight, gain=1.0)
-            else:
-                nn.init.orthogonal_(module.weight, gain=0.01)
-                
-            if module.bias is not None:
-                nn.init.constant_(module.bias, 0.0)
+        # Hidden layers
+        for layer in self.extract_layer:
+            if isinstance(layer, nn.Linear):
+                self._init_layer(layer, gain=np.sqrt(2))
+        # Actor output
+        self._init_layer(self.actor, gain=0.01)
+        # Critic output
+        self._init_layer(self.critic, gain=1.0)
 
     def forward(self, state: Tensor):
         """Forward pass returning (logits, value)."""
@@ -214,19 +216,21 @@ class PolicyAgent(BaseAgent):
         if not is_discrete:
             self.log_std = nn.Parameter(torch.zeros(output_dim))
 
-        self.apply(self._orthogonal_init)
+        self._orthogonal_init()
 
 
-    def _orthogonal_init(self, module: nn.Module):
+    def _init_layer(self, layer: nn.Linear, gain: float):
+        nn.init.orthogonal_(layer.weight, gain=gain)
+        if layer.bias is not None: nn.init.constant_(layer.bias, 0.0)
+
+    def _orthogonal_init(self):
         """Apply orthogonal weight initialization with gain based on layer role."""
-        if isinstance(module, nn.Linear):
-            if module.out_features == self.hidden_dim:
-                nn.init.orthogonal_(module.weight, gain=np.sqrt(2))
-            else:
-                nn.init.orthogonal_(module.weight, gain=0.01)
-                
-            if module.bias is not None:
-                nn.init.constant_(module.bias, 0.0)
+        # Hidden layers
+        for layer in self.extract_layer:
+            if isinstance(layer, nn.Linear):
+                self._init_layer(layer, gain=np.sqrt(2))
+        # Actor output
+        self._init_layer(self.actor, gain=0.01)
 
     def forward(self, state: Tensor):
         """Forward pass returning logits."""
