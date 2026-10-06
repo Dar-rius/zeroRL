@@ -6,7 +6,7 @@ and action conversion.
 """
 
 import os
-
+import sys
 import copy
 import random
 import gymnasium as gym
@@ -188,9 +188,10 @@ def try_agent(env_eval: Any, agent: BaseAgent, config: TrainConfig, *, normalize
         if frames:
             durations = [0.2] * len(frames)
             durations[-1] = 1.2
-            imageio.mimsave(output_path, frames, duration=durations)
+            imageio.mimsave(output_path, frames, duration=durations, fps=25)
     env_eval.close()
     if was_training: agent.train()
+    sys.stderr.write(f"gif is saved in {output_path}")
 
 def get_obs_act(env: SyncVectorEnv) -> Any:
     """Extract observation and action spaces from a vectorized environment.
