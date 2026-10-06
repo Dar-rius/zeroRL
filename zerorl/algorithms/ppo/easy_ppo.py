@@ -12,7 +12,7 @@ from zerorl.algorithms.ppo import ppo_func, gae_compute
 from zerorl.config import TrainConfig, AlgoConfig
 from zerorl.helpers.agent import BaseAgent
 from zerorl.helpers.env import BaseEnv
-from zerorl.functions import get_obs_act
+from zerorl.functions import get_obs_act, set_seed
 
 def easy_train_ppo(env_spec: str | Callable | BaseEnv, 
                     config: TrainConfig,
@@ -20,11 +20,10 @@ def easy_train_ppo(env_spec: str | Callable | BaseEnv,
                     *,
                     base_agent: BaseAgent | None = None,
                     hidden_layer: int = 64,
+                    seed: int = 22,
                     optimizer: optim.Optimizer | None = None,
                     schedule_func: Callable[[int], float] | None = None,
-                    seed: int = 22,
-                    render_mode: str | None = None,
-                   ):
+                    render_mode: str | None = None):
     """Create and return a BaseTrain instance with PPO wiring.
 
     Automatically builds the environment, agent, buffer, and update function.
@@ -42,6 +41,7 @@ def easy_train_ppo(env_spec: str | Callable | BaseEnv,
     Returns:
         BaseTrain instance ready for .train() or .test().
     """
+    seeds = set_seed(seed, algo_config.num_envs)
     env = get_env(env_spec, config.num_envs, render_mode)
     obs_dim, act_dim, n_obs, n_act, is_discrete = get_obs_act(env)
 
@@ -67,7 +67,6 @@ def easy_train_ppo(env_spec: str | Callable | BaseEnv,
             algo_config = algo_config,
             optimizer = optimizer,
             schedule_func = schedule_func,
-            seed = seed,
             render_mode = render_mode,
             )
     return train

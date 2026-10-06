@@ -49,7 +49,7 @@ class BaseTrain:
                  algo_config: AlgoConfig,
                  optimizer: optim.Optimizer | None = None,
                  schedule_func: Callable[[int], float] | None = None,
-                 seed: int = 22,
+                 seed: list[int] | None = None,
                  render_mode: str | None = None,
                  require_buffer_size: int = 10):
         """Initialize the training loop.
@@ -99,7 +99,7 @@ class BaseTrain:
 
         if schedule_func is None: schedule_func = lambda current_step: 1.0 - (current_step / self.config.num_update)
         self.scheduler = LambdaLR(self.optimizer, schedule_func)
-        self.seed = set_seed(seed, self.num_envs)
+        self.seed = set_seed(22, self.num_envs) if seed is None else seed
         self.require_buffer_size = require_buffer_size
         self.normalizer = NormMeanStd(obs_shape, config.device) if self.config.normalize else None
         self.current_episode_reward: Tensor | None = None
