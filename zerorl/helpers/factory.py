@@ -130,8 +130,7 @@ class ActorCriticAgent(BaseAgent):
                 nn.Linear(self.input_dim, self.hidden_dim),
                 nn.Tanh(),
                 nn.Linear(self.hidden_dim, self.hidden_dim),
-                nn.Tanh()
-                )
+                nn.Tanh())
         # Actor
         self.actor = nn.Linear(self.hidden_dim, self.output_dim)
         # Critic
@@ -167,12 +166,11 @@ class ActorCriticAgent(BaseAgent):
 
     def build_distribution(self, logits: torch.Tensor):
         """Build a torch distribution from logits (Categorical or Normal)."""
-        if self.is_discrete:
-            return torch.distributions.Categorical(logits=logits)
+        if self.is_discrete: return torch.distributions.Categorical(logits=logits)
         log_std_clamped = torch.clamp(self.log_std, min=-3.0, max=1.0)
         std = log_std_clamped.exp().expand_as(logits)
         return torch.distributions.Normal(logits, std)
-    
+
     def get_action(self, state: torch.Tensor, action: torch.Tensor | None = None):
         """Sample or evaluate an action, returning action, log_prob, entropy, value."""
         logits, value = self.forward(state)

@@ -40,7 +40,6 @@ class BaseAgent(nn.Module):
         """Initialize the base agent."""
         super().__init__()
 
-
     @property
     def device(self) -> torch.device:
         """Return the device where the model runs."""

@@ -54,13 +54,19 @@ def env_step(env: Any, agent: BaseAgent, state: Tensor) -> dict[str, Any]:
     with torch.inference_mode():
         outputs: dict[str, Tensor] = agent.get_action(state) #type: ignore[operator]
 
+    action_space = actions_limits(env, agent)
     action = to_env_action(outputs["action"], env)
+    if action_space is not None:
+        if isinstance(action, np.ndarray):
+            action = np.clip(action, *action_space)
+        else:
+            action = torch.clamp(action, *action_space)
     # Gymnasium v1 step() returns: obs, reward, terminated, truncated, info
     # terminated = episode naturally ended; truncated = cut short by time limit
     next_state, reward, terminated, truncated, info = env.step(action)
     return {"state": state, "next_state": next_state, "reward": reward, "terminated": terminated, "truncated": truncated, "info": info, **outputs}
 
-def _deterministic_action(agent: BaseAgent, state: Tensor) -> Tensor:
+def deterministic_action(agent: BaseAgent, state: Tensor) -> Tensor:
     """Greedy action for eval/GIF: argmax (discrete) or Gaussian mean (continuous)."""
     if not hasattr(agent, "build_distribution"):
         return agent.get_action(state)["action"]  # type: ignore[operator]
@@ -104,11 +110,10 @@ def parse_to_tensor(value: int | float, device: torch.device = torch.device("cpu
     if output.dim() == 0: output = output.unsqueeze(0)
     return output
 
-def to_env_action(action, env: Any) -> np.ndarray | Tensor:
+def to_env_action(action: Tensor, env: Any) -> np.ndarray | Tensor:
     """Convert action to numpy on CPU, or keep as-is if env is on CUDA."""
     device = getattr(env, "device", "cpu")
-    if str(device).startswith("cuda"):
-        return action
+    if str(device).startswith("cuda"): return action
     return action.detach().cpu().numpy()
 
 def set_seed(seed: int, num_envs: int):
@@ -172,7 +177,7 @@ def try_agent(env_eval: Any, agent: BaseAgent, config: TrainConfig, *, normalize
         while not done_or_trunc:
             state_tensor = processing_state(state, normalizer, update=False, device=config.device)
             with torch.inference_mode():
-                action = _deterministic_action(agent, state_tensor)
+                action = deterministic_action(agent, state_tensor)
             action_input = to_env_action(action, env_eval)
             next_state, _, terminated, truncated, _ = env_eval.step(action_input) #type: ignore
             frame = env_eval.render()
@@ -225,6 +230,15 @@ def get_obs_act(env: SyncVectorEnv) -> Any:
     else:
         obs_n = obs_dim.shape[-1] #type: ignore
     return (obs_dim.shape, act_dim.shape, obs_n, act_n, is_discrete)
+
+def actions_limits(env: SyncVectorEnv, agent: BaseAgent) -> tuple[float, float] | None:
+    is_discrete = hasattr(agent, "is_discrete")
+    if not is_discrete:
+        action_space = env.action_space
+        high = action_space.high
+        low = action_space.low
+        return (high, low)
+    return None
 
 def get_buffer_params_model(model: BaseAgent) -> tuple[dict[str, Parameter], dict[str, Tensor]]:
     """Extract named parameters and buffers from a model.

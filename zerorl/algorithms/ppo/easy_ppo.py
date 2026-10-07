@@ -41,7 +41,7 @@ def easy_train_ppo(env_spec: str | Callable | BaseEnv,
     Returns:
         BaseTrain instance ready for .train() or .test().
     """
-    seeds = set_seed(seed, algo_config.num_envs)
+    seeds = set_seed(seed, config.num_envs)
     env = get_env(env_spec, config.num_envs, render_mode)
     obs_dim, act_dim, n_obs, n_act, is_discrete = get_obs_act(env)
 
@@ -65,8 +65,8 @@ def easy_train_ppo(env_spec: str | Callable | BaseEnv,
             update_weights = easy_update_weights,
             config = config,
             algo_config = algo_config,
+            seeds = seeds,
             optimizer = optimizer,
             schedule_func = schedule_func,
-            render_mode = render_mode,
-            )
+            render_mode = render_mode)
     return train
