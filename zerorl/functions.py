@@ -104,7 +104,7 @@ def parse_dict_to_tensor(output: dict[str, Any], device: torch.device = torch.de
         if output[k].dim() == 0: output[k] = output[k].unsqueeze(0)
     return output
 
-def parse_to_tensor(value: int | float, device: torch.device = torch.device("cpu")) -> Tensor:
+def parse_to_tensor(value: int | float | np.ndarray, device: torch.device = torch.device("cpu")) -> Tensor:
     """Convert a scalar to a 1-D float32 tensor."""
     output = torch.as_tensor(value, dtype=torch.float32, device=device)
     if output.dim() == 0: output = output.unsqueeze(0)
@@ -115,6 +115,13 @@ def to_env_action(action: Tensor, env: Any) -> np.ndarray | Tensor:
     device = getattr(env, "device", "cpu")
     if str(device).startswith("cuda"): return action
     return action.detach().cpu().numpy()
+
+def get_last_obs(info: dict, num_envs: int, obs_dim: tuple, device: torch.device) -> Tensor | None:
+    final_obs = info.get("final_observation", None)
+    if final_obs is None: return None
+    obs_stacked = np.stack([final_obs[i] if final_obs[i] is not None
+        else np.zeros(obs_dim, dtype=np.float32) for i in range(num_envs)])
+    return parse_to_tensor(obs_stacked, device)
 
 def set_seed(seed: int, num_envs: int):
     """Seed all RNGs and return per-env derived seeds."""
@@ -237,7 +244,7 @@ def actions_limits(env: SyncVectorEnv, agent: BaseAgent) -> tuple[float, float] 
         action_space = env.action_space
         high = action_space.high
         low = action_space.low
-        return (high, low)
+        return (low, high)
     return None
 
 def get_buffer_params_model(model: BaseAgent) -> tuple[dict[str, Parameter], dict[str, Tensor]]:

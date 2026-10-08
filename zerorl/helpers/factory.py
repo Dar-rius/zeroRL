@@ -47,9 +47,9 @@ def get_actor_critic_buffer(state_space: tuple,
     """
     buffer = Buffer(capacity = capacity,
                     num_envs = num_envs,
-                    schema = {"state": state_space, "action": action_space,
-                                "reward": (), "terminated": (), "truncated": (), "entropy": (),
-                                "value": (), "return": (), "log_prob": (), "advantage": ()},
+                    schema = {"state": state_space, "action": action_space, "reward": ()
+                              , "terminated": (), "truncated": (), "entropy": (), "value": (),
+                              "final_value": (), "return": (), "log_prob": (), "advantage": ()},
                     device = device)
     return buffer
 

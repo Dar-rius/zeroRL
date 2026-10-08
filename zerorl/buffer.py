@@ -73,9 +73,7 @@ class Buffer:
                 self.data[name][self.slice] = val
             else:
                 raise KeyBufferError(name, kwargs)
-
         self.slice += 1
-
 
     def get_all(self, reshape: bool = False) -> dict[str, torch.Tensor]:
         """Return all inserted data as a dict of sliced tensors."""
