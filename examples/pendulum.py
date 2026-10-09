@@ -9,7 +9,7 @@ config = TrainConfig(
     num_envs = 4
 )
 config.device = torch.device("cpu")
-algo_config = AlgoConfig(coef_ent=0.0)
+algo_config = AlgoConfig(ent_coef=0.0)
 
 trainer = easy_train_ppo("Pendulum-v1", config, algo_config)
 trainer.train(use_wandb=True)

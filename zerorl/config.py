@@ -48,7 +48,7 @@ class TrainConfig:
     def model_path(self): return f"{self.model_save_path}/{self.model_name}.pt"
 
 
-@dataclass(init=False)
+@dataclass
 class AlgoConfig:
     """Mutable algorithm hyperparameters for PPO and off-policy methods.
 
