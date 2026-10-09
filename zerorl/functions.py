@@ -238,13 +238,10 @@ def get_obs_act(env: SyncVectorEnv) -> Any:
         obs_n = obs_dim.shape[-1] #type: ignore
     return (obs_dim.shape, act_dim.shape, obs_n, act_n, is_discrete)
 
-def actions_limits(env: SyncVectorEnv, agent: BaseAgent) -> tuple[float, float] | None:
-    is_discrete = hasattr(agent, "is_discrete")
-    if not is_discrete:
-        action_space = env.action_space
-        high = action_space.high
-        low = action_space.low
-        return (low, high)
+def actions_limits(env: SyncVectorEnv, agent: BaseAgent) -> tuple[Any, Any] | None:
+    act_space = getattr(env, "single_action_space", env.action_space)
+    if isinstance(act_space, spaces.Box):
+        return (act_space.low, act_space.high)
     return None
 
 def get_buffer_params_model(model: BaseAgent) -> tuple[dict[str, Parameter], dict[str, Tensor]]:

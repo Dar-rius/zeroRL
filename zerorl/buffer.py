@@ -37,6 +37,7 @@ class Buffer:
             schema: Dict mapping field names to shape tuples (e.g. {"state": (4,), "action": ()}).
             device: Torch device to allocate tensors on.
         """
+        self.required_keys = {"state", "action", "reward", "done"}
         self.step = capacity
         self.num_envs = num_envs
         self.device_ = device
@@ -68,6 +69,11 @@ class Buffer:
         """
         if self.slice >= self.step:
             raise ValueError(f"Buffer is full (size={self.step}). Cannot insert more data.")
+
+        missing_keys = self.required_keys - kwargs.keys()
+        if missing_keys:
+            raise ValueError(f"Missing required keys for buffer insertion: {missing_keys}")
+
         for name, val in kwargs.items():
             if name in self.data:
                 self.data[name][self.slice] = val

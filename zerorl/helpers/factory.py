@@ -100,7 +100,7 @@ def get_replay_buffer(state_space: tuple,
     buffer = Buffer(capacity = capacity,
                     num_envs = num_envs,
                     schema = {"state": state_space, "action": action_space,
-                            "reward": (), "terminated": (), "next_state": (), "truncated": ()},
+                            "reward": (), "terminated": (), "next_state": state_space, "truncated": ()},
                     device = device)
     return buffer
 
