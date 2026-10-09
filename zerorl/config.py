@@ -35,18 +35,20 @@ class TrainConfig:
     debug: bool = False
 
     device: torch.device = field(init=False)
-    num_update: int = field(init=False)
-    model_path: str = field(init=False)
 
     def __post_init__(self) -> None:
         self.device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.model_path = f"{self.model_save_path}/{self.model_name}.pt"
-        self.num_update = self.timestamp // (self.rollout_steps * self.num_envs)
         if self.num_update <= 0:
             raise ValueError(f"num_update must be greater than 0, got {self.num_update}")
 
+    @property
+    def num_update(self): return self.timestamp // (self.rollout_steps * self.num_envs)
 
-@dataclass(init=False)
+    @property
+    def model_path(self): return f"{self.model_save_path}/{self.model_name}.pt"
+
+
+@dataclass
 class AlgoConfig:
     """Mutable algorithm hyperparameters for PPO and off-policy methods.
 
@@ -75,13 +77,6 @@ class AlgoConfig:
 
     # For off-policy
     tau: float = 0.005
-
-    def __init__(self, **kwargs):
-        for key in self.__annotations__:
-            setattr(self, key, getattr(self.__class__, key, None))
-
-        for key, value in kwargs.items():
-            setattr(self, key, value)
 
     def to_dict(self) -> dict:
         """Return all hyperparameters as a dictionary."""

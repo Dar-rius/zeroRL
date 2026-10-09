@@ -53,7 +53,7 @@ class TestGetActorCriticBuffer:
         buf = get_actor_critic_buffer((4,), (2,), tmp_config.rollout_steps, tmp_config.num_envs, tmp_config.device)
         expected_keys = {"state", "action", "reward", "terminated", "entropy",
                          "value", "return", "log_prob", "advantage",
-                         "truncated"}
+                         "truncated", "final_value"}
         assert set(buf.data.keys()) == expected_keys
 
     def test_buffer_shapes(self, tmp_config) -> None:
@@ -114,7 +114,7 @@ class TestGetReplayBuffer:
     def test_has_next_state(self, tmp_config) -> None:
         buf = get_replay_buffer((4,), (), tmp_config.rollout_steps, tmp_config.num_envs, tmp_config.device)
         assert "next_state" in buf.data
-        assert buf.data["next_state"].shape == (8, 1)
+        assert buf.data["next_state"].shape == (8, 1, 4)
 
 
 class TestPolicyAgent:

@@ -6,7 +6,7 @@ and action conversion.
 """
 
 import os
-
+import sys
 import copy
 import random
 import gymnasium as gym
@@ -54,13 +54,19 @@ def env_step(env: Any, agent: BaseAgent, state: Tensor) -> dict[str, Any]:
     with torch.inference_mode():
         outputs: dict[str, Tensor] = agent.get_action(state) #type: ignore[operator]
 
+    action_space = actions_limits(env, agent)
     action = to_env_action(outputs["action"], env)
+    if action_space is not None:
+        if isinstance(action, np.ndarray):
+            action = np.clip(action, *action_space)
+        else:
+            action = torch.clamp(action, *action_space)
     # Gymnasium v1 step() returns: obs, reward, terminated, truncated, info
     # terminated = episode naturally ended; truncated = cut short by time limit
     next_state, reward, terminated, truncated, info = env.step(action)
     return {"state": state, "next_state": next_state, "reward": reward, "terminated": terminated, "truncated": truncated, "info": info, **outputs}
 
-def _deterministic_action(agent: BaseAgent, state: Tensor) -> Tensor:
+def deterministic_action(agent: BaseAgent, state: Tensor) -> Tensor:
     """Greedy action for eval/GIF: argmax (discrete) or Gaussian mean (continuous)."""
     if not hasattr(agent, "build_distribution"):
         return agent.get_action(state)["action"]  # type: ignore[operator]
@@ -98,18 +104,24 @@ def parse_dict_to_tensor(output: dict[str, Any], device: torch.device = torch.de
         if output[k].dim() == 0: output[k] = output[k].unsqueeze(0)
     return output
 
-def parse_to_tensor(value: int | float, device: torch.device = torch.device("cpu")) -> Tensor:
+def parse_to_tensor(value: int | float | np.ndarray, device: torch.device = torch.device("cpu")) -> Tensor:
     """Convert a scalar to a 1-D float32 tensor."""
     output = torch.as_tensor(value, dtype=torch.float32, device=device)
     if output.dim() == 0: output = output.unsqueeze(0)
     return output
 
-def to_env_action(action, env: Any) -> np.ndarray | Tensor:
+def to_env_action(action: Tensor, env: Any) -> np.ndarray | Tensor:
     """Convert action to numpy on CPU, or keep as-is if env is on CUDA."""
     device = getattr(env, "device", "cpu")
-    if str(device).startswith("cuda"):
-        return action
+    if str(device).startswith("cuda"): return action
     return action.detach().cpu().numpy()
+
+def get_last_obs(info: dict, num_envs: int, obs_dim: tuple, device: torch.device) -> Tensor | None:
+    final_obs = info.get("final_observation", None)
+    if final_obs is None: return None
+    obs_stacked = np.stack([final_obs[i] if final_obs[i] is not None
+        else np.zeros(obs_dim, dtype=np.float32) for i in range(num_envs)])
+    return parse_to_tensor(obs_stacked, device)
 
 def set_seed(seed: int, num_envs: int):
     """Seed all RNGs and return per-env derived seeds."""
@@ -172,7 +184,7 @@ def try_agent(env_eval: Any, agent: BaseAgent, config: TrainConfig, *, normalize
         while not done_or_trunc:
             state_tensor = processing_state(state, normalizer, update=False, device=config.device)
             with torch.inference_mode():
-                action = _deterministic_action(agent, state_tensor)
+                action = deterministic_action(agent, state_tensor)
             action_input = to_env_action(action, env_eval)
             next_state, _, terminated, truncated, _ = env_eval.step(action_input) #type: ignore
             frame = env_eval.render()
@@ -188,9 +200,10 @@ def try_agent(env_eval: Any, agent: BaseAgent, config: TrainConfig, *, normalize
         if frames:
             durations = [0.2] * len(frames)
             durations[-1] = 1.2
-            imageio.mimsave(output_path, frames, duration=durations)
+            imageio.mimsave(output_path, frames, duration=durations, fps=25)
     env_eval.close()
     if was_training: agent.train()
+    sys.stderr.write(f"gif is saved in {output_path}")
 
 def get_obs_act(env: SyncVectorEnv) -> Any:
     """Extract observation and action spaces from a vectorized environment.
@@ -224,6 +237,12 @@ def get_obs_act(env: SyncVectorEnv) -> Any:
     else:
         obs_n = obs_dim.shape[-1] #type: ignore
     return (obs_dim.shape, act_dim.shape, obs_n, act_n, is_discrete)
+
+def actions_limits(env: SyncVectorEnv, agent: BaseAgent) -> tuple[Any, Any] | None:
+    act_space = getattr(env, "single_action_space", env.action_space)
+    if isinstance(act_space, spaces.Box):
+        return (act_space.low, act_space.high)
+    return None
 
 def get_buffer_params_model(model: BaseAgent) -> tuple[dict[str, Parameter], dict[str, Tensor]]:
     """Extract named parameters and buffers from a model.

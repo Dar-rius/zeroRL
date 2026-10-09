@@ -77,7 +77,6 @@ def _mock_update_weights(
     buffer: Buffer,
     scheduler: LambdaLR,
     optimizer: torch.optim.Optimizer,
-    last_output: dict[str, torch.Tensor],
     algo_config: AlgoConfig | None,
 ) -> dict[str, torch.Tensor]:
     """Mock update_weights callable for testing."""
@@ -157,6 +156,7 @@ class TestBaseTrainRollout:
                 "entropy": (),
                 "value": (),
                 "truncated": (),
+                "final_value": (),
             },
             device=cfg.device,
         )
@@ -167,15 +167,16 @@ class TestBaseTrainRollout:
         trainer.state = torch.as_tensor(state, dtype=torch.float32, device=device)
         if trainer.state.dim() == 1:
             trainer.state = trainer.state.unsqueeze(0)
-        last_output = trainer.rollout_phase()
+        result = trainer.rollout_phase()
 
         assert buf.size == rollout_steps
-        assert last_output is not None
-        assert "action" in last_output
-        assert "log_prob" in last_output
-        assert "entropy" in last_output
-        assert "value" in last_output
-        assert last_output["value"].shape[0] == 1
+        assert result is None
+        data = buf.get_all()
+        assert "action" in data
+        assert "log_prob" in data
+        assert "entropy" in data
+        assert "value" in data
+        assert "final_value" in data
         env.close()
 
 
@@ -265,7 +266,7 @@ class _SeedPacedEnv(BaseEnv):
 
 
 def _make_counting_update_weights(counter: list[int]):
-    def _update(agent, buffer, scheduler, optimizer, last_output, algo_config):
+    def _update(agent, buffer, scheduler, optimizer, algo_config):
         counter.append(len(counter))
         return {"loss": torch.tensor(0.0, device=next(agent.parameters()).device)}
     return _update
@@ -282,8 +283,7 @@ class TestBaseTrainTrain:
         cfg.rollout_steps = rollout_steps
         cfg.timestamp = rollout_steps * 3
         cfg.num_envs = 1
-        cfg.num_update = 3
-        buf = Buffer(capacity=cfg.rollout_steps, num_envs=cfg.num_envs, schema={ "state": (obs_dim,), "reward": (), "terminated": (), "action": (), "log_prob": (), "entropy": (), "value": (), "truncated": (), }, device=cfg.device)
+        buf = Buffer(capacity=cfg.rollout_steps, num_envs=cfg.num_envs, schema={ "state": (obs_dim,), "reward": (), "terminated": (), "action": (), "log_prob": (), "entropy": (), "value": (), "truncated": (), "final_value": (), }, device=cfg.device)
         trainer = BaseTrain(agent, env, buf, _make_counting_update_weights([]),
                             cfg, AlgoConfig(), require_buffer_size=4)
         counter: list[int] = []
@@ -302,7 +302,7 @@ class TestBaseTrainTrain:
         cfg.rollout_steps = rollout_steps
         cfg.timestamp = rollout_steps * 2
         cfg.num_envs = 1
-        buf = Buffer(capacity=cfg.rollout_steps, num_envs=cfg.num_envs, schema={ "state": (obs_dim,), "reward": (), "terminated": (), "action": (), "log_prob": (), "entropy": (), "value": (), "truncated": (), }, device=cfg.device)
+        buf = Buffer(capacity=cfg.rollout_steps, num_envs=cfg.num_envs, schema={ "state": (obs_dim,), "reward": (), "terminated": (), "action": (), "log_prob": (), "entropy": (), "value": (), "truncated": (), "final_value": (), }, device=cfg.device)
         trainer = BaseTrain(agent, env, buf, _make_counting_update_weights([]),
                             cfg, AlgoConfig(), require_buffer_size=100)
         counter: list[int] = []
@@ -321,7 +321,7 @@ class TestBaseTrainTrain:
         cfg.rollout_steps = rollout_steps
         cfg.timestamp = rollout_steps
         cfg.num_envs = 1
-        buf = Buffer(capacity=cfg.rollout_steps, num_envs=cfg.num_envs, schema={ "state": (obs_dim,), "reward": (), "terminated": (), "action": (), "log_prob": (), "entropy": (), "value": (), "truncated": (), }, device=cfg.device)
+        buf = Buffer(capacity=cfg.rollout_steps, num_envs=cfg.num_envs, schema={ "state": (obs_dim,), "reward": (), "terminated": (), "action": (), "log_prob": (), "entropy": (), "value": (), "truncated": (), "final_value": (), }, device=cfg.device)
         trainer = BaseTrain(agent, env, buf, _make_counting_update_weights([]),
                             cfg, AlgoConfig(), require_buffer_size=4)
         with patch("wandb.init"), patch("wandb.log") as mock_log:
@@ -341,7 +341,7 @@ class TestBaseTrainTrain:
         cfg.rollout_steps = rollout_steps
         cfg.timestamp = rollout_steps
         cfg.num_envs = 1
-        buf = Buffer(capacity=cfg.rollout_steps, num_envs=cfg.num_envs, schema={ "state": (obs_dim,), "reward": (), "terminated": (), "action": (), "log_prob": (), "entropy": (), "value": (), "truncated": (), }, device=cfg.device)
+        buf = Buffer(capacity=cfg.rollout_steps, num_envs=cfg.num_envs, schema={ "state": (obs_dim,), "reward": (), "terminated": (), "action": (), "log_prob": (), "entropy": (), "value": (), "truncated": (), "final_value": (), }, device=cfg.device)
         trainer = BaseTrain(agent, env, buf, _make_counting_update_weights([]),
                             cfg, AlgoConfig(), require_buffer_size=4)
         mock_log_fn = MagicMock()
@@ -392,12 +392,11 @@ class TestBaseTrainLogMetrics:
     def test_log_metrics_handles_tensors(self, tmp_path: Path, device: torch.device) -> None:
         agent = MockAgent()
         env = FakeVecEnv(num_envs=1, obs_dim=4, act_dim=2, steps_until_done=(100,), auto_reset=True)
-        buf = Buffer(capacity=8, num_envs=1, schema={"state": (4,), "reward": (), "terminated": (), "action": (), "log_prob": (), "entropy": (), "value": (), "truncated": ()}, device=device)
+        buf = Buffer(capacity=8, num_envs=1, schema={"state": (4,), "reward": (), "terminated": (), "action": (), "log_prob": (), "entropy": (), "value": (), "truncated": (), "final_value": ()}, device=device)
         cfg = _make_train_config(tmp_path, device)
         cfg.rollout_steps = 8
         cfg.timestamp = 8
         cfg.num_envs = 1
-        cfg.num_update = 1
         trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, AlgoConfig(),
                             require_buffer_size=4)
         metrics = {"x": torch.tensor(1.5, device=device), "y": 2.5}
@@ -417,12 +416,11 @@ class TestBaseTrainLogMetrics:
     def test_log_metrics_handles_floats(self, tmp_path: Path, device: torch.device) -> None:
         agent = MockAgent()
         env = FakeVecEnv(num_envs=1, obs_dim=4, act_dim=2, steps_until_done=(100,), auto_reset=True)
-        buf = Buffer(capacity=8, num_envs=1, schema={"state": (4,), "reward": (), "terminated": (), "action": (), "log_prob": (), "entropy": (), "value": (), "truncated": ()}, device=device)
+        buf = Buffer(capacity=8, num_envs=1, schema={"state": (4,), "reward": (), "terminated": (), "action": (), "log_prob": (), "entropy": (), "value": (), "truncated": (), "final_value": ()}, device=device)
         cfg = _make_train_config(tmp_path, device)
         cfg.rollout_steps = 8
         cfg.timestamp = 8
         cfg.num_envs = 1
-        cfg.num_update = 1
         trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, AlgoConfig(),
                             require_buffer_size=4)
         mock_log_fn = MagicMock()
@@ -448,8 +446,7 @@ class TestBaseTrainOptionalDeps:
         cfg.rollout_steps = 8
         cfg.timestamp = 8
         cfg.num_envs = 1
-        cfg.num_update = 1
-        buf = Buffer(capacity=cfg.rollout_steps, num_envs=cfg.num_envs, schema={ "state": (4,), "reward": (), "terminated": (), "action": (), "log_prob": (), "entropy": (), "value": (), "truncated": (), }, device=cfg.device)
+        buf = Buffer(capacity=cfg.rollout_steps, num_envs=cfg.num_envs, schema={ "state": (4,), "reward": (), "terminated": (), "action": (), "log_prob": (), "entropy": (), "value": (), "truncated": (), "final_value": (), }, device=cfg.device)
         trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, AlgoConfig(),
                             require_buffer_size=4)
         with patch("zerorl.logger.wandb", None):
@@ -465,8 +462,7 @@ class TestBaseTrainOptionalDeps:
         cfg.rollout_steps = 8
         cfg.timestamp = 8
         cfg.num_envs = 1
-        cfg.num_update = 1
-        buf = Buffer(capacity=cfg.rollout_steps, num_envs=cfg.num_envs, schema={ "state": (4,), "reward": (), "terminated": (), "action": (), "log_prob": (), "entropy": (), "value": (), "truncated": (), }, device=cfg.device)
+        buf = Buffer(capacity=cfg.rollout_steps, num_envs=cfg.num_envs, schema={ "state": (4,), "reward": (), "terminated": (), "action": (), "log_prob": (), "entropy": (), "value": (), "truncated": (), "final_value": (), }, device=cfg.device)
         trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, AlgoConfig(),
                             require_buffer_size=4)
         with patch("zerorl.logger.SummaryWriter", None):
@@ -485,7 +481,7 @@ class TestBaseTrainVectorizedRollout:
         cfg = _make_train_config(tmp_path, device)
         cfg.rollout_steps = rollout_steps
         cfg.num_envs = num_envs
-        buf = Buffer(capacity=cfg.rollout_steps, num_envs=cfg.num_envs, schema={ "state": (obs_dim,), "reward": (), "terminated": (), "action": (), "log_prob": (), "entropy": (), "value": (), "truncated": (), }, device=cfg.device)
+        buf = Buffer(capacity=cfg.rollout_steps, num_envs=cfg.num_envs, schema={ "state": (obs_dim,), "reward": (), "terminated": (), "action": (), "log_prob": (), "entropy": (), "value": (), "truncated": (), "final_value": (), }, device=cfg.device)
         trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, AlgoConfig())
         state, _ = env.reset(seed=42)
         trainer.state = torch.as_tensor(state, dtype=torch.float32, device=device)
@@ -508,7 +504,7 @@ class TestBaseTrainVectorizedRollout:
         cfg = _make_train_config(tmp_path, device)
         cfg.rollout_steps = rollout_steps
         cfg.num_envs = num_envs
-        buf = Buffer(capacity=cfg.rollout_steps, num_envs=cfg.num_envs, schema={ "state": (obs_dim,), "reward": (), "terminated": (), "action": (), "log_prob": (), "entropy": (), "value": (), "truncated": (), }, device=cfg.device)
+        buf = Buffer(capacity=cfg.rollout_steps, num_envs=cfg.num_envs, schema={ "state": (obs_dim,), "reward": (), "terminated": (), "action": (), "log_prob": (), "entropy": (), "value": (), "truncated": (), "final_value": (), }, device=cfg.device)
         trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, AlgoConfig())
         state, _ = env.reset(seed=42)
         trainer.state = torch.as_tensor(state, dtype=torch.float32, device=device)
@@ -530,7 +526,7 @@ class TestBaseTrainVectorizedRollout:
         cfg = _make_train_config(tmp_path, device)
         cfg.rollout_steps = rollout_steps
         cfg.num_envs = num_envs
-        buf = Buffer(capacity=cfg.rollout_steps, num_envs=cfg.num_envs, schema={ "state": (obs_dim,), "reward": (), "terminated": (), "action": (), "log_prob": (), "entropy": (), "value": (), "truncated": (), }, device=cfg.device)
+        buf = Buffer(capacity=cfg.rollout_steps, num_envs=cfg.num_envs, schema={ "state": (obs_dim,), "reward": (), "terminated": (), "action": (), "log_prob": (), "entropy": (), "value": (), "truncated": (), "final_value": (), }, device=cfg.device)
         trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, AlgoConfig())
         state, _ = trainer.env.reset(seed=[0, 1])
         trainer.state = torch.as_tensor(state, dtype=torch.float32, device=device)
@@ -560,7 +556,7 @@ class TestBaseTrainVectorizedRollout:
         cfg = _make_train_config(tmp_path, device)
         cfg.rollout_steps = rollout_steps
         cfg.num_envs = num_envs
-        buf = Buffer(capacity=cfg.rollout_steps, num_envs=cfg.num_envs, schema={ "state": (obs_dim,), "reward": (), "terminated": (), "action": (), "log_prob": (), "entropy": (), "value": (), "truncated": (), }, device=cfg.device)
+        buf = Buffer(capacity=cfg.rollout_steps, num_envs=cfg.num_envs, schema={ "state": (obs_dim,), "reward": (), "terminated": (), "action": (), "log_prob": (), "entropy": (), "value": (), "truncated": (), "final_value": (), }, device=cfg.device)
         trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, AlgoConfig())
         state, _ = trainer.env.reset(seed=[0, 1])
         trainer.state = torch.as_tensor(state, dtype=torch.float32, device=device)
@@ -619,7 +615,6 @@ def _make_profile_config(tmp_path: Path, device: torch.device,
     cfg.rollout_steps = rollout_steps
     cfg.num_envs = num_envs
     cfg.timestamp = rollout_steps * num_envs * num_steps
-    cfg.num_update = num_steps
     cfg.profile = profile
     return cfg
 
@@ -730,7 +725,7 @@ class TestBaseTrainProfilerTrain:
         env = FakeVecEnv(num_envs=1, obs_dim=4, act_dim=2, steps_until_done=(100,), auto_reset=True)
         cfg = _make_profile_config(tmp_path, device, profile=False,
                                    rollout_steps=8, num_envs=1, num_steps=3)
-        buf = Buffer(capacity=cfg.rollout_steps, num_envs=cfg.num_envs, schema={ "state": (4,), "reward": (), "terminated": (), "action": (), "log_prob": (), "entropy": (), "value": (), "truncated": (), }, device=cfg.device)
+        buf = Buffer(capacity=cfg.rollout_steps, num_envs=cfg.num_envs, schema={ "state": (4,), "reward": (), "terminated": (), "action": (), "log_prob": (), "entropy": (), "value": (), "truncated": (), "final_value": (), }, device=cfg.device)
         trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, AlgoConfig(),
                             require_buffer_size=4)
         written: list[str] = []
@@ -749,7 +744,7 @@ class TestBaseTrainProfilerTrain:
         agent = MockAgent()
         env = FakeVecEnv(num_envs=1, obs_dim=4, act_dim=2, steps_until_done=(100,), auto_reset=True)
         cfg = _make_profile_config(tmp_path, device, profile=True, num_steps=3)
-        buf = Buffer(capacity=cfg.rollout_steps, num_envs=cfg.num_envs, schema={ "state": (4,), "reward": (), "terminated": (), "action": (), "log_prob": (), "entropy": (), "value": (), "truncated": (), }, device=cfg.device)
+        buf = Buffer(capacity=cfg.rollout_steps, num_envs=cfg.num_envs, schema={ "state": (4,), "reward": (), "terminated": (), "action": (), "log_prob": (), "entropy": (), "value": (), "truncated": (), "final_value": (), }, device=cfg.device)
         trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, AlgoConfig(),
                             require_buffer_size=4)
         written: list[str] = []
@@ -765,7 +760,7 @@ class TestBaseTrainProfilerTrain:
         agent = MockAgent()
         env = FakeVecEnv(num_envs=1, obs_dim=4, act_dim=2, steps_until_done=(100,), auto_reset=True)
         cfg = _make_profile_config(tmp_path, torch.device("cpu"), profile=True, num_steps=3)
-        buf = Buffer(capacity=cfg.rollout_steps, num_envs=cfg.num_envs, schema={ "state": (4,), "reward": (), "terminated": (), "action": (), "log_prob": (), "entropy": (), "value": (), "truncated": (), }, device=cfg.device)
+        buf = Buffer(capacity=cfg.rollout_steps, num_envs=cfg.num_envs, schema={ "state": (4,), "reward": (), "terminated": (), "action": (), "log_prob": (), "entropy": (), "value": (), "truncated": (), "final_value": (), }, device=cfg.device)
         trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, AlgoConfig(),
                             require_buffer_size=4)
         written: list[str] = []
@@ -789,7 +784,7 @@ class TestBaseTrainProfilerTrain:
         env = FakeVecEnv(num_envs=1, obs_dim=4, act_dim=2, steps_until_done=(100,), auto_reset=True)
         cfg = _make_profile_config(tmp_path, torch.device("cpu"), profile=True, num_steps=3)
         cfg.normalize = True
-        buf = Buffer(capacity=cfg.rollout_steps, num_envs=cfg.num_envs, schema={ "state": (4,), "reward": (), "terminated": (), "action": (), "log_prob": (), "entropy": (), "value": (), "truncated": (), }, device=cfg.device)
+        buf = Buffer(capacity=cfg.rollout_steps, num_envs=cfg.num_envs, schema={ "state": (4,), "reward": (), "terminated": (), "action": (), "log_prob": (), "entropy": (), "value": (), "truncated": (), "final_value": (), }, device=cfg.device)
         trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, AlgoConfig(),
                             require_buffer_size=4)
         trainer.config.device = torch.device("cuda")
@@ -823,7 +818,7 @@ class TestBaseTrainProfilerTrain:
         env = FakeVecEnv(num_envs=1, obs_dim=4, act_dim=2, steps_until_done=(100,), auto_reset=True)
         cfg = _make_profile_config(tmp_path, torch.device("cpu"), profile=True, num_steps=1)
         cfg.normalize = True
-        buf = Buffer(capacity=cfg.rollout_steps, num_envs=cfg.num_envs, schema={ "state": (4,), "reward": (), "terminated": (), "action": (), "log_prob": (), "entropy": (), "value": (), "truncated": (), }, device=cfg.device)
+        buf = Buffer(capacity=cfg.rollout_steps, num_envs=cfg.num_envs, schema={ "state": (4,), "reward": (), "terminated": (), "action": (), "log_prob": (), "entropy": (), "value": (), "truncated": (), "final_value": (), }, device=cfg.device)
         trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, AlgoConfig(),
                             require_buffer_size=4)
         trainer.config.device = torch.device("cuda")
@@ -852,7 +847,7 @@ class TestBaseTrainProfilerTrain:
         env = FakeVecEnv(num_envs=2, obs_dim=4, act_dim=2, steps_until_done=(100, 100), auto_reset=True)
         cfg = _make_profile_config(tmp_path, device, profile=True,
                                    rollout_steps=8, num_envs=2, num_steps=1)
-        buf = Buffer(capacity=cfg.rollout_steps, num_envs=cfg.num_envs, schema={ "state": (4,), "reward": (), "terminated": (), "action": (), "log_prob": (), "entropy": (), "value": (), "truncated": (), }, device=cfg.device)
+        buf = Buffer(capacity=cfg.rollout_steps, num_envs=cfg.num_envs, schema={ "state": (4,), "reward": (), "terminated": (), "action": (), "log_prob": (), "entropy": (), "value": (), "truncated": (), "final_value": (), }, device=cfg.device)
         trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, AlgoConfig(),
                             require_buffer_size=4)
         captured = _capture_profile_metrics(trainer)
@@ -889,7 +884,7 @@ class TestBaseTrainProfilerTrain:
         agent = MockAgent()
         env = FakeVecEnv(num_envs=1, obs_dim=4, act_dim=2, steps_until_done=(100,), auto_reset=True)
         cfg = _make_profile_config(tmp_path, device, profile=True, num_steps=3)
-        buf = Buffer(capacity=cfg.rollout_steps, num_envs=cfg.num_envs, schema={ "state": (4,), "reward": (), "terminated": (), "action": (), "log_prob": (), "entropy": (), "value": (), "truncated": (), }, device=cfg.device)
+        buf = Buffer(capacity=cfg.rollout_steps, num_envs=cfg.num_envs, schema={ "state": (4,), "reward": (), "terminated": (), "action": (), "log_prob": (), "entropy": (), "value": (), "truncated": (), "final_value": (), }, device=cfg.device)
         trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, AlgoConfig(),
                             require_buffer_size=4)
         captured = _capture_profile_metrics(trainer)
@@ -917,7 +912,7 @@ class TestBaseTrainProfilerWandb:
         agent = MockAgent()
         env = FakeVecEnv(num_envs=1, obs_dim=4, act_dim=2, steps_until_done=(100,), auto_reset=True)
         cfg = _make_profile_config(tmp_path, device, profile=True, num_steps=1)
-        buf = Buffer(capacity=cfg.rollout_steps, num_envs=cfg.num_envs, schema={ "state": (4,), "reward": (), "terminated": (), "action": (), "log_prob": (), "entropy": (), "value": (), "truncated": (), }, device=cfg.device)
+        buf = Buffer(capacity=cfg.rollout_steps, num_envs=cfg.num_envs, schema={ "state": (4,), "reward": (), "terminated": (), "action": (), "log_prob": (), "entropy": (), "value": (), "truncated": (), "final_value": (), }, device=cfg.device)
         trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, AlgoConfig(),
                             require_buffer_size=4)
         with patch("wandb.init"), patch("wandb.log") as mock_log:
@@ -935,7 +930,7 @@ class TestBaseTrainProfilerWandb:
         agent = MockAgent()
         env = FakeVecEnv(num_envs=1, obs_dim=4, act_dim=2, steps_until_done=(100,), auto_reset=True)
         cfg = _make_profile_config(tmp_path, device, profile=True, num_steps=2)
-        buf = Buffer(capacity=cfg.rollout_steps, num_envs=cfg.num_envs, schema={ "state": (4,), "reward": (), "terminated": (), "action": (), "log_prob": (), "entropy": (), "value": (), "truncated": (), }, device=cfg.device)
+        buf = Buffer(capacity=cfg.rollout_steps, num_envs=cfg.num_envs, schema={ "state": (4,), "reward": (), "terminated": (), "action": (), "log_prob": (), "entropy": (), "value": (), "truncated": (), "final_value": (), }, device=cfg.device)
         trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, AlgoConfig(),
                             require_buffer_size=4)
         with patch("wandb.init"), patch("wandb.log") as mock_log:
@@ -954,7 +949,7 @@ class TestBaseTrainProfilerWandb:
         agent = MockAgent()
         env = FakeVecEnv(num_envs=1, obs_dim=4, act_dim=2, steps_until_done=(100,), auto_reset=True)
         cfg = _make_profile_config(tmp_path, device, profile=True, num_steps=1)
-        buf = Buffer(capacity=cfg.rollout_steps, num_envs=cfg.num_envs, schema={ "state": (4,), "reward": (), "terminated": (), "action": (), "log_prob": (), "entropy": (), "value": (), "truncated": (), }, device=cfg.device)
+        buf = Buffer(capacity=cfg.rollout_steps, num_envs=cfg.num_envs, schema={ "state": (4,), "reward": (), "terminated": (), "action": (), "log_prob": (), "entropy": (), "value": (), "truncated": (), "final_value": (), }, device=cfg.device)
         trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, AlgoConfig(),
                             require_buffer_size=4)
         with patch("wandb.init"), patch("wandb.log") as mock_log:
@@ -1057,8 +1052,7 @@ class TestBaseTrainRealEnvIntegration:
         cfg.rollout_steps = rollout_steps
         cfg.timestamp = rollout_steps * 2
         cfg.num_envs = 1
-        cfg.num_update = 2
-        buf = Buffer(capacity=cfg.rollout_steps, num_envs=cfg.num_envs, schema={ "state": (obs_dim,), "reward": (), "terminated": (), "action": (), "log_prob": (), "entropy": (), "value": (), "truncated": (), }, device=cfg.device)
+        buf = Buffer(capacity=cfg.rollout_steps, num_envs=cfg.num_envs, schema={ "state": (obs_dim,), "reward": (), "terminated": (), "action": (), "log_prob": (), "entropy": (), "value": (), "truncated": (), "final_value": (), }, device=cfg.device)
         trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, AlgoConfig(),
                             require_buffer_size=4)
         trainer.train(use_wandb=False, use_tb=False)
@@ -1076,8 +1070,7 @@ class TestBaseTrainRealEnvIntegration:
         cfg.rollout_steps = rollout_steps
         cfg.timestamp = rollout_steps * 2
         cfg.num_envs = 1
-        cfg.num_update = 2
-        buf = Buffer(capacity=cfg.rollout_steps, num_envs=cfg.num_envs, schema={ "state": (obs_dim,), "reward": (), "terminated": (), "action": (act_dim,), "log_prob": (), "entropy": (), "value": (), "truncated": (), }, device=cfg.device)
+        buf = Buffer(capacity=cfg.rollout_steps, num_envs=cfg.num_envs, schema={ "state": (obs_dim,), "reward": (), "terminated": (), "action": (act_dim,), "log_prob": (), "entropy": (), "value": (), "truncated": (), "final_value": (), }, device=cfg.device)
         trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, AlgoConfig(),
                             require_buffer_size=4)
         trainer.train(use_wandb=False, use_tb=False)

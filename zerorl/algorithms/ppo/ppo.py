@@ -20,8 +20,8 @@ from zerorl.compiler import fast_compile
 from zerorl.errors import assert_agent_contract
 
 
-def gae_compute(rewards: Tensor, values: Tensor, last_value: Tensor,
-            dones: Tensor, buffer:Buffer, algo_config: AlgoConfig):
+def gae_compute(rewards: Tensor, values: Tensor, final_value: Tensor,
+                terminated: Tensor, truncated: Tensor, buffer:Buffer, algo_config: AlgoConfig):
     """Compute Generalized Advantage Estimation.
 
     Works backwards through the trajectory, accumulating TD errors
@@ -32,20 +32,22 @@ def gae_compute(rewards: Tensor, values: Tensor, last_value: Tensor,
         rewards: Rewards for each timestep, shape (T, num_envs).
         values: Value estimates for each timestep, shape (T, num_envs).
         last_value: Bootstrap value for the state after the last step, shape (num_envs,).
-        dones: Episode termination flags, shape (T, num_envs). 1.0 = done.
+        terminated: Episode termination flags, shape (T, num_envs). 1.0 = done.
         buffer: Buffer to write "advantage" and "return" into.
         algo_config: Algorithm configuration (gamma, gae_lambda).
     """
-    num_envs = rewards.shape[1]
-    gae = torch.zeros(num_envs, dtype=torch.float32, device=rewards.device)
-    # Mask: 0.0 at episode boundaries (no bootstrapping across episodes)
-    mask = 1.0 - dones
-    next_values = torch.cat((values[1:], last_value.unsqueeze(0)), 0)
-    total_size = rewards.shape[0]
-    delta = rewards + algo_config.gamma * next_values * mask - values
+    next_values = torch.cat((values[1:], torch.zeros_like(values[0:1])), 0)
+    next_values[-1] = final_value[-1]
+    is_trunc = truncated > 0
+    is_term = terminated > 0
+    next_values[is_trunc] = final_value[is_trunc]
+    next_values[is_term] = 0.0
+    delta = rewards + algo_config.gamma * next_values - values
+    mask_trace = 1.0 - (is_term | is_trunc).float()
+    gae = torch.zeros_like(rewards[0])
     advantages = torch.empty_like(delta)
-    for step in reversed(range(total_size)):
-        gae = delta[step] + algo_config.gamma * algo_config.gae_lambda * mask[step] * gae
+    for step in reversed(range(rewards.shape[0])):
+        gae = delta[step] + algo_config.gamma * algo_config.gae_lambda * mask_trace[step] * gae
         advantages[step] = gae
     returns = advantages + values
     buffer.data["advantage"][:buffer.size] = advantages

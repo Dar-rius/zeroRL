@@ -22,7 +22,7 @@ from zerorl.algorithms.ppo import gae_compute, ppo_func
 from zerorl.buffer import Buffer
 from zerorl.config import AlgoConfig, TrainConfig
 from zerorl.functions import (
-    _deterministic_action,
+    deterministic_action,
     get_obs_act,
     parse_dict_to_tensor,
     processing_state,
@@ -252,7 +252,7 @@ def evaluate_hopper_gif(
                 obs, normalizer, update=False, device=cfg.device
             )
             with torch.inference_mode():
-                action = _deterministic_action(agent, state)
+                action = deterministic_action(agent, state)
             obs, _, terminated, truncated, _ = env.step(
                 action.squeeze(0).detach().cpu().numpy()
             )
@@ -419,11 +419,15 @@ def run_immediate(
             )
 
         data = buffer.get_all()
+        T = data["reward"].shape[0]
+        final_value = torch.zeros(T, cfg.num_envs, device=cfg.device)
+        final_value[-1] = last_output["value"].view(-1)
         gae_compute(
             data["reward"],
             data["value"],
-            last_output["value"],
+            final_value,
             data["terminated"],
+            data["truncated"],
             buffer,
             algo_cfg,
         )

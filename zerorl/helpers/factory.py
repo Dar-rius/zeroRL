@@ -47,9 +47,9 @@ def get_actor_critic_buffer(state_space: tuple,
     """
     buffer = Buffer(capacity = capacity,
                     num_envs = num_envs,
-                    schema = {"state": state_space, "action": action_space,
-                                "reward": (), "terminated": (), "truncated": (), "entropy": (),
-                                "value": (), "return": (), "log_prob": (), "advantage": ()},
+                    schema = {"state": state_space, "action": action_space, "reward": ()
+                              , "terminated": (), "truncated": (), "entropy": (), "value": (),
+                              "final_value": (), "return": (), "log_prob": (), "advantage": ()},
                     device = device)
     return buffer
 
@@ -100,7 +100,7 @@ def get_replay_buffer(state_space: tuple,
     buffer = Buffer(capacity = capacity,
                     num_envs = num_envs,
                     schema = {"state": state_space, "action": action_space,
-                            "reward": (), "terminated": (), "next_state": (), "truncated": ()},
+                            "reward": (), "terminated": (), "next_state": state_space, "truncated": ()},
                     device = device)
     return buffer
 
@@ -130,8 +130,7 @@ class ActorCriticAgent(BaseAgent):
                 nn.Linear(self.input_dim, self.hidden_dim),
                 nn.Tanh(),
                 nn.Linear(self.hidden_dim, self.hidden_dim),
-                nn.Tanh()
-                )
+                nn.Tanh())
         # Actor
         self.actor = nn.Linear(self.hidden_dim, self.output_dim)
         # Critic
@@ -140,21 +139,23 @@ class ActorCriticAgent(BaseAgent):
         if not is_discrete:
             self.log_std = nn.Parameter(torch.zeros(output_dim))
 
-        self.apply(self._orthogonal_init)
+        self._orthogonal_init()
 
 
-    def _orthogonal_init(self, module: nn.Module):
+    def _init_layer(self, layer: nn.Linear, gain: float):
+        nn.init.orthogonal_(layer.weight, gain=gain)
+        if layer.bias is not None: nn.init.constant_(layer.bias, 0.0)
+
+    def _orthogonal_init(self):
         """Apply orthogonal weight initialization with gain based on layer role."""
-        if isinstance(module, nn.Linear):
-            if module.out_features == self.hidden_dim:
-                nn.init.orthogonal_(module.weight, gain=np.sqrt(2))
-            elif module.out_features == 1:
-                nn.init.orthogonal_(module.weight, gain=1.0)
-            else:
-                nn.init.orthogonal_(module.weight, gain=0.01)
-                
-            if module.bias is not None:
-                nn.init.constant_(module.bias, 0.0)
+        # Hidden layers
+        for layer in self.extract_layer:
+            if isinstance(layer, nn.Linear):
+                self._init_layer(layer, gain=np.sqrt(2))
+        # Actor output
+        self._init_layer(self.actor, gain=0.01)
+        # Critic output
+        self._init_layer(self.critic, gain=1.0)
 
     def forward(self, state: Tensor):
         """Forward pass returning (logits, value)."""
@@ -165,12 +166,11 @@ class ActorCriticAgent(BaseAgent):
 
     def build_distribution(self, logits: torch.Tensor):
         """Build a torch distribution from logits (Categorical or Normal)."""
-        if self.is_discrete:
-            return torch.distributions.Categorical(logits=logits)
+        if self.is_discrete: return torch.distributions.Categorical(logits=logits)
         log_std_clamped = torch.clamp(self.log_std, min=-3.0, max=1.0)
         std = log_std_clamped.exp().expand_as(logits)
         return torch.distributions.Normal(logits, std)
-    
+
     def get_action(self, state: torch.Tensor, action: torch.Tensor | None = None):
         """Sample or evaluate an action, returning action, log_prob, entropy, value."""
         logits, value = self.forward(state)
@@ -214,19 +214,21 @@ class PolicyAgent(BaseAgent):
         if not is_discrete:
             self.log_std = nn.Parameter(torch.zeros(output_dim))
 
-        self.apply(self._orthogonal_init)
+        self._orthogonal_init()
 
 
-    def _orthogonal_init(self, module: nn.Module):
+    def _init_layer(self, layer: nn.Linear, gain: float):
+        nn.init.orthogonal_(layer.weight, gain=gain)
+        if layer.bias is not None: nn.init.constant_(layer.bias, 0.0)
+
+    def _orthogonal_init(self):
         """Apply orthogonal weight initialization with gain based on layer role."""
-        if isinstance(module, nn.Linear):
-            if module.out_features == self.hidden_dim:
-                nn.init.orthogonal_(module.weight, gain=np.sqrt(2))
-            else:
-                nn.init.orthogonal_(module.weight, gain=0.01)
-                
-            if module.bias is not None:
-                nn.init.constant_(module.bias, 0.0)
+        # Hidden layers
+        for layer in self.extract_layer:
+            if isinstance(layer, nn.Linear):
+                self._init_layer(layer, gain=np.sqrt(2))
+        # Actor output
+        self._init_layer(self.actor, gain=0.01)
 
     def forward(self, state: Tensor):
         """Forward pass returning logits."""

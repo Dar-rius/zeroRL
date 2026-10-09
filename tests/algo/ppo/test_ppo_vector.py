@@ -71,6 +71,7 @@ class TestPPOVectorizedIntegration:
                 "log_prob": (),
                 "reward": (),
                 "terminated": (),
+                "truncated": (),
                 "value": (),
                 "advantage": (),
                 "return": (),
@@ -87,11 +88,12 @@ class TestPPOVectorizedIntegration:
                 out = agent.get_action(state_tensor)
                 
             # Step the real vectorized environment
-            next_state, reward, terminated, _, _ = env.step(out["action"].cpu().numpy())  # type: ignore[var-annotated]
+            next_state, reward, terminated, truncated, _ = env.step(out["action"].cpu().numpy())  # type: ignore[var-annotated]
             
             # Convert to tensors for the buffer
             reward_tensor = torch.as_tensor(reward, dtype=torch.float32, device=device)
-            done_tensor = torch.as_tensor(terminated, dtype=torch.float32, device=device)
+            terminated_tensor = torch.as_tensor(terminated, dtype=torch.float32, device=device)
+            truncated_tensor = torch.as_tensor(truncated, dtype=torch.float32, device=device)
             
             # Insert batched data into buffer
             buf.insert(
@@ -99,7 +101,8 @@ class TestPPOVectorizedIntegration:
                 action=out["action"],
                 log_prob=out["log_prob"],
                 reward=reward_tensor,
-                terminated=done_tensor,
+                terminated=terminated_tensor,
+                truncated=truncated_tensor,
                 value=out["value"].squeeze(-1),
             )
             state = next_state
@@ -108,13 +111,15 @@ class TestPPOVectorizedIntegration:
 
         # 4. Compute GAE on 2D data (T, N)
         all_data = buf.get_all()
-        last_value = torch.zeros(num_envs, device=device)  # Mock last value (N,)
+        final_value = torch.zeros(T, num_envs, device=device)  # (T, N)
+        final_value[-1] = torch.zeros(num_envs, device=device)  # Mock bootstrap (N,)
         
         gae_compute(
             all_data["reward"],      # (T, N)
             all_data["value"],       # (T, N)
-            last_value,              # (N,)
-            all_data["terminated"],        # (T, N)
+            final_value,             # (T, N)
+            all_data["terminated"],  # (T, N)
+            all_data["truncated"],   # (T, N)
             buf,
             cfg,
         )

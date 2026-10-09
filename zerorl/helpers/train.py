@@ -26,6 +26,7 @@ from zerorl.functions import (
         vectorize_env,
         processing_state,
         parse_dict_to_tensor,
+        get_last_obs,
         env_step,
         save_checkpoints,
         try_agent,
@@ -47,9 +48,9 @@ class BaseTrain:
                  update_weights: Callable,
                  config: TrainConfig,
                  algo_config: AlgoConfig,
+                 seeds: list[int] | None = None,
                  optimizer: optim.Optimizer | None = None,
                  schedule_func: Callable[[int], float] | None = None,
-                 seed: int = 22,
                  render_mode: str | None = None,
                  require_buffer_size: int = 10):
         """Initialize the training loop.
@@ -92,16 +93,16 @@ class BaseTrain:
             self.optimizer = optimizer
 
         obs_ = getattr(self.env, "single_observation_space", self.env.observation_space)
-        obs_shape = obs_.shape
+        self.obs_shape = obs_.shape
 
-        if obs_shape is None:
+        if self.obs_shape is None:
             raise ValueError("NormMeanStd requires environment with a defined observation shape")
 
         if schedule_func is None: schedule_func = lambda current_step: 1.0 - (current_step / self.config.num_update)
         self.scheduler = LambdaLR(self.optimizer, schedule_func)
-        self.seed = set_seed(seed, self.num_envs)
+        self.seeds = set_seed(22, self.num_envs) if seeds is None else seeds
         self.require_buffer_size = require_buffer_size
-        self.normalizer = NormMeanStd(obs_shape, config.device) if self.config.normalize else None
+        self.normalizer = NormMeanStd(self.obs_shape, config.device) if self.config.normalize else None
         self.current_episode_reward: Tensor | None = None
         self.episode_rewards: list[float] = []
         self.env_device = getattr(self.env, "device", "cpu")
@@ -141,34 +142,40 @@ class BaseTrain:
         """
         state = self.state
         if self.current_episode_reward is None:
-            self.current_episode_reward = torch.zeros(self.num_envs, device=self.device)
+            self.current_episode_reward = torch.zeros(self.num_envs, device = self.device)
 
         for i in range(self.config.rollout_steps):
             state_processed = processing_state(state, self.normalizer, device = self.device)
             outputs = env_step(self.env, self.agent, state_processed)
             outputs = parse_dict_to_tensor(outputs, self.device)
-            outputs.pop("info")
-            episode_done = (outputs["terminated"] > 0) | (outputs["truncated"] > 0)
+            info = outputs.pop("info", {})
             self._hook_env_check_(outputs, i)
-            next_state = outputs.pop("next_state")
+            next_state =  outputs.pop("next_state")
+            is_term = outputs["terminated"] > 0
+            is_trunc = outputs["truncated"] > 0
+            done = is_term | is_trunc
+            final_value = torch.zeros(self.num_envs, device = self.device)
+            if is_trunc.any():
+                last_obs = get_last_obs(info, self.num_envs, self.obs_shape, self.device)
+                if last_obs  is  not None:
+                    with torch.inference_mode():
+                        last_obs_processed = processing_state(last_obs, self.normalizer, update=False, device = self.device)
+                        last_value = self.agent.get_action(last_obs_processed)["value"]
+                    final_value = torch.where(is_trunc, last_value, final_value)
+            if i == self.config.rollout_steps - 1:
+                with torch.inference_mode():
+                    state_processed = processing_state(next_state, self.normalizer, update=False, device=self.device)
+                    val = self.agent.get_action(state_processed)["value"]
+                final_value = torch.where(done, final_value, val)
+            outputs["final_value"] = final_value
             self.buffer.insert(**outputs)
             self.current_episode_reward += outputs["reward"]
-
-            if episode_done.any():
-                finished_rewards = self.current_episode_reward[episode_done]
+            if done.any():
+                finished_rewards = self.current_episode_reward[done]
                 self.episode_rewards.extend(finished_rewards.tolist())
-                self.current_episode_reward[episode_done] = 0.0
-
+                self.current_episode_reward[done] = 0.0
             state = next_state
-
-        if "value" in self.buffer.data:
-            with torch.inference_mode():
-                state_processed = processing_state(state, self.normalizer, update=False, device = self.device)
-                next_output = self.agent.get_action(state_processed) #type: ignore[operator]
-        else:
-            next_output = None
         self.state = state
-        return next_output
 
     def _log_profile_metrics(self, step: int, metrics: PhaseMetrics):
         """Print profiling metrics for the current training step to stderr."""
@@ -193,14 +200,14 @@ class BaseTrain:
         is_cuda = True if str(self.device).startswith("cuda") else False
         profiler = PhaseProfiler(self.config, is_cuda = is_cuda)
         log = create_logger(self.config, self.algo_config, use_wandb=use_wandb, use_tb=use_tb)
-        state, _ = self.env.reset(seed = self.seed)
+        state, _ = self.env.reset(seed = self.seeds)
         self.state = torch.as_tensor(state, dtype=torch.float32, device=self.config.device)
 
         for step in tqdm(range(self.config.num_update)):
             if is_profile: profiler.start_phase()
 
             with profiler.track("rollout") if is_profile else contextlib.nullcontext():
-                last_output = self.rollout_phase()
+                self.rollout_phase()
 
             if self.buffer.size < self.require_buffer_size: raise EmptyBufferError(self.buffer.size, self.require_buffer_size)
 
@@ -214,7 +221,6 @@ class BaseTrain:
                                 buffer = self.buffer,
                                 scheduler = self.scheduler,
                                 optimizer = self.optimizer,
-                                last_output = last_output,
                                 algo_config = self.algo_config)
 
 

@@ -122,7 +122,8 @@ class TestPPOContinuousIntegration:
                 "action": (act_dim,),
                 "log_prob": (),
                 "reward": (),
-                "done": (),
+                "terminated": (),
+                "truncated": (),
                 "value": (),
                 "advantage": (),
                 "return": (),
@@ -151,7 +152,8 @@ class TestPPOContinuousIntegration:
                 action=out["action"],
                 log_prob=log_prob,
                 reward=torch.tensor(reward, dtype=torch.float32, device=device),
-                done=torch.tensor(1.0 if done else 0.0, device=device),
+                terminated=torch.tensor(1.0 if terminated else 0.0, device=device),
+                truncated=torch.tensor(1.0 if truncated else 0.0, device=device),
                 value=out["value"].squeeze(),
             )
 
@@ -161,12 +163,14 @@ class TestPPOContinuousIntegration:
 
         # 4. Compute GAE (writes advantage/return in place into raw_buf)
         all_data = raw_buf.get_all()
-        last_value = torch.zeros(1, device=device) # Assume 0 for simplicity at end of rollout
+        final_value = torch.zeros(n_steps, 1, device=device)  # (T, 1)
+        final_value[-1] = torch.zeros(1, device=device)  # Assume 0 for simplicity at end of rollout
         gae_compute(
             all_data["reward"],
             all_data["value"],
-            last_value,
-            all_data["done"],
+            final_value,
+            all_data["terminated"],
+            all_data["truncated"],
             raw_buf,
             cfg,
         )

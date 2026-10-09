@@ -24,7 +24,6 @@ def tmp_config(tmp_path, device) -> TrainConfig:
     cfg.rollout_steps = 8
     cfg.timestamp = 8 * 3
     cfg.num_envs = 1
-    cfg.num_update = 3
     return cfg
 
 
@@ -98,7 +97,6 @@ class TestEasyTrainPpo:
         cfg.rollout_steps = 16
         cfg.timestamp = 16 * 2
         cfg.num_envs = 1
-        cfg.num_update = 2
         algo = AlgoConfig(epochs=2)
         train = easy_train_ppo("CartPole-v1", config=cfg, algo_config=algo)
         train.train(use_wandb=False, use_tb=False)
