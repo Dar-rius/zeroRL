@@ -141,3 +141,18 @@ class TestTrainConfig:
             timestamp=10000, rollout_steps=100, num_envs=2,
         )
         assert cfg.num_update == 10000 // (100 * 2)
+
+    def test_optional_flags_default_false(self) -> None:
+        cfg = TrainConfig(model_name="m", model_save_path="/tmp", project_name="test")
+        assert cfg.normalize is False
+        assert cfg.profile is False
+        assert cfg.debug is False
+
+    def test_num_update_recomputed_after_rollout_change(self) -> None:
+        cfg = TrainConfig(
+            model_name="m", model_save_path="/tmp", project_name="test",
+            timestamp=1000, rollout_steps=100,
+        )
+        assert cfg.num_update == 10
+        cfg.rollout_steps = 250
+        assert cfg.num_update == 4

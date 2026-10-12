@@ -2,7 +2,14 @@
 
 import numpy as np
 import gymnasium as gym
+import pytest
 from zerorl.helpers.env import BaseEnv
+
+
+class TestBaseEnvContract:
+    def test_bare_base_env_cannot_be_instantiated(self) -> None:
+        with pytest.raises(TypeError):
+            BaseEnv()  # type: ignore[abstract]
 
 
 class GymTestEnv(BaseEnv):

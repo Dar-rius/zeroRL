@@ -20,8 +20,10 @@ from zerorl.helpers.env import BaseEnv
 from zerorl.helpers.train import BaseTrain
 from zerorl.logger import PhaseMetrics
 from torch.optim.lr_scheduler import LambdaLR
-from zerorl.functions import vectorize_env
+from zerorl.functions import vectorize_env, set_seed
 from gymnasium.vector import SyncVectorEnv
+from zerorl.debug import RLSanityError
+from zerorl.algorithms.ppo import easy_train_ppo
 
 
 @pytest.fixture
@@ -31,6 +33,8 @@ def device():
 
 class MockAgent(BaseAgent):
     """Minimal agent for testing BaseTrain."""
+    is_discrete = True  # deterministic_action branches on this
+
     def __init__(self, obs_dim: int = 4, act_dim: int = 2) -> None:
         super().__init__()
         self.actor = nn.Linear(obs_dim, act_dim)
@@ -564,6 +568,12 @@ class TestBaseTrainVectorizedRollout:
         data = buf.get_all()
         assert int(data["truncated"].sum().item()) == 1
         assert int(data["terminated"].sum().item()) == 0
+        # Bootstrap contract: the truncated row must carry a nonzero
+        # final_value (from info["final_obs"] via get_last_obs) so GAE still
+        # bootstraps on time-limit truncation. This is the integration half of
+        # the gymnasium-v1 key rename (final_observation -> final_obs).
+        trunc_rows = data["truncated"] > 0
+        assert float(data["final_value"][trunc_rows].abs().sum().item()) > 0
         env.close()
 
 
@@ -902,7 +912,7 @@ class TestBaseTrainProfilerTrain:
 
 
 # ---------------------------------------------------------------------------
-# TestBaseTrainProfilerWandb — wandb integration (includes xfail)
+# TestBaseTrainProfilerWandb — wandb integration
 # ---------------------------------------------------------------------------
 
 class TestBaseTrainProfilerWandb:
@@ -1075,4 +1085,137 @@ class TestBaseTrainRealEnvIntegration:
                             require_buffer_size=4)
         trainer.train(use_wandb=False, use_tb=False)
         assert isinstance(trainer.episode_rewards, list)
+        env.close()
+
+
+class TestBaseTrainEvals:
+    """Eval-metric logging driven by the evals= kwarg (C1 semantics)."""
+
+    @staticmethod
+    def _make_cartpole_trainer(tmp_path, device, evals):
+        obs_dim, act_dim, rollout_steps = 4, 2, 8
+        agent = MockAgent(obs_dim, act_dim)
+        env = _RawCartPoleEnv()
+        cfg = _make_train_config(tmp_path, device)
+        cfg.rollout_steps = rollout_steps
+        cfg.timestamp = rollout_steps * 4
+        cfg.num_envs = 1
+        buf = Buffer(capacity=cfg.rollout_steps, num_envs=cfg.num_envs,
+                     schema={"state": (obs_dim,), "reward": (), "terminated": (),
+                             "action": (), "log_prob": (), "entropy": (), "value": (),
+                             "truncated": (), "final_value": ()}, device=cfg.device)
+        trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, AlgoConfig(),
+                            evals=evals, require_buffer_size=4)
+        return trainer, env
+
+    @pytest.mark.gpu
+    def test_evals_metrics_logged_to_wandb(self, tmp_path: Path, device: torch.device) -> None:
+        trainer, env = self._make_cartpole_trainer(tmp_path, device, evals=2)
+        with patch("wandb.init"), patch("wandb.log") as mock_log:
+            trainer.train(use_wandb=True, use_tb=False)
+        logged_keys: set[str] = set()
+        for call in mock_log.call_args_list:
+            logged_keys.update(call.args[0].keys())
+        assert "evals/mean_return" in logged_keys
+        assert "evals/std_return" in logged_keys
+        env.close()
+
+    @pytest.mark.gpu
+    def test_evals_zero_omits_eval_metrics(self, tmp_path: Path, device: torch.device) -> None:
+        trainer, env = self._make_cartpole_trainer(tmp_path, device, evals=0)
+        with patch("wandb.init"), patch("wandb.log") as mock_log:
+            trainer.train(use_wandb=True, use_tb=False)
+        logged_keys: set[str] = set()
+        for call in mock_log.call_args_list:
+            logged_keys.update(call.args[0].keys())
+        assert "evals/mean_return" not in logged_keys
+        assert "evals/std_return" not in logged_keys
+        env.close()
+
+
+class TestBaseTrainSeedsPropagation:
+    """C1: seeds and eval_seeds are independent channels."""
+
+    @staticmethod
+    def _trainer_with_seeds(tmp_path, device, **kwargs):
+        agent = MockAgent()
+        env = FakeVecEnv(num_envs=1, steps_until_done=(100,), auto_reset=True)
+        cfg = _make_train_config(tmp_path, device)
+        cfg.rollout_steps, cfg.timestamp, cfg.num_envs = 8, 16, 1
+        buf = Buffer(capacity=8, num_envs=1,
+                     schema={"state": (4,), "reward": (), "terminated": (), "action": (),
+                             "log_prob": (), "entropy": (), "value": (), "truncated": (),
+                             "final_value": ()}, device=cfg.device)
+        trainer = BaseTrain(agent, env, buf, _mock_update_weights, cfg, AlgoConfig(),
+                            require_buffer_size=4, **kwargs)
+        return trainer, env
+
+    @pytest.mark.gpu
+    def test_explicit_seeds_stored_verbatim(self, tmp_path: Path, device: torch.device) -> None:
+        trainer, env = self._trainer_with_seeds(tmp_path, device,
+                                                seeds=[11, 12], eval_seeds=[21, 22])
+        assert trainer.seeds == [11, 12]
+        assert trainer.eval_seeds == [21, 22]
+        env.close()
+
+    @pytest.mark.gpu
+    def test_default_seeds_differ_from_eval_seeds(self, tmp_path: Path, device: torch.device) -> None:
+        trainer, env = self._trainer_with_seeds(tmp_path, device)
+        assert trainer.seeds == set_seed(22, 1)
+        assert trainer.eval_seeds == set_seed(42, 1)
+        assert trainer.seeds != trainer.eval_seeds
+        env.close()
+
+    @pytest.mark.gpu
+    def test_easy_train_ppo_seed_propagates(self, tmp_path: Path, device: torch.device) -> None:
+        cfg = TrainConfig(model_name="test", model_save_path=str(tmp_path), project_name="test")
+        cfg.device = device
+        cfg.rollout_steps, cfg.num_envs, cfg.timestamp = 8, 1, 16
+        trainer = easy_train_ppo("CartPole-v1", cfg, AlgoConfig(epochs=1), seed=7)
+        assert trainer.seeds == set_seed(7, 1)
+        assert trainer.eval_seeds == set_seed(42, 1)
+        assert trainer.seeds != trainer.eval_seeds
+
+
+class TestBaseTrainDebugMode:
+    """cfg.debug=True wiring: _debug_mode flag + RLSanityError on NaN reward."""
+
+    @staticmethod
+    def _debug_trainer(tmp_path, device, env):
+        agent = MockAgent()
+        cfg = _make_train_config(tmp_path, device)
+        cfg.rollout_steps, cfg.timestamp, cfg.num_envs = 8, 16, env.num_envs
+        cfg.debug = True
+        buf = Buffer(capacity=8, num_envs=env.num_envs,
+                     schema={"state": (4,), "reward": (), "terminated": (), "action": (),
+                             "log_prob": (), "entropy": (), "value": (), "truncated": (),
+                             "final_value": ()}, device=cfg.device)
+        return BaseTrain(agent, env, buf, _mock_update_weights, cfg, AlgoConfig(),
+                         require_buffer_size=4)
+
+    @pytest.mark.gpu
+    def test_train_sets_debug_mode_on_algo_config(self, tmp_path: Path, device: torch.device) -> None:
+        env = FakeVecEnv(num_envs=1, steps_until_done=(100,), auto_reset=True)
+        trainer = self._debug_trainer(tmp_path, device, env)
+        assert getattr(trainer.algo_config, "_debug_mode", False) is False
+        trainer.train(use_wandb=False, use_tb=False)
+        assert trainer.algo_config._debug_mode is True  # type: ignore[attr-defined]
+        env.close()
+
+    @pytest.mark.gpu
+    def test_hook_env_check_raises_on_nan_reward(self, tmp_path: Path, device: torch.device) -> None:
+        class _NaNRewardEnv(FakeVecEnv):
+            def step(self, action):
+                obs, reward, terminated, truncated, info = super().step(action)
+                reward = np.full(self.num_envs, np.nan, dtype=np.float32)
+                return obs, reward, terminated, truncated, info
+
+        env = _NaNRewardEnv(num_envs=1, steps_until_done=(100,), auto_reset=True)
+        trainer = self._debug_trainer(tmp_path, device, env)
+        state, _ = env.reset(seed=42)
+        trainer.state = torch.as_tensor(state, dtype=torch.float32, device=device)
+        if trainer.state.dim() == 1:
+            trainer.state = trainer.state.unsqueeze(0)
+        with pytest.raises(RLSanityError):
+            trainer.rollout_phase()
         env.close()

@@ -72,9 +72,56 @@ def deterministic_action(agent: BaseAgent, state: Tensor) -> Tensor:
         return agent.get_action(state)["action"]  # type: ignore[operator]
     out = agent.forward(state)  # type: ignore[operator]
     logits = out[0] if isinstance(out, tuple) else out
-    if getattr(agent, "is_discrete", False):
+    dist = agent.build_distribution(logits)  # type: ignore[operator]
+    if isinstance(dist, torch.distributions.Categorical):
         return torch.argmax(logits, dim=-1)
-    return agent.build_distribution(logits).mean  # type: ignore[operator]
+    return dist.mean
+
+def _resolve_env_spec(env: Any, *, render_mode: str | None = None) -> Any:
+    """Resolve a vectorized env into a reusable spec for a fresh single env.
+
+    Returns a zero-arg factory replaying the registry id + saved kwargs
+    (render_mode optionally forced), or the unwrapped env class when there is
+    no usable id — never a wrapper class, never a deepcopy (unsafe for a
+    closed MuJoCo sub-env).
+    """
+    if not isinstance(env, gym.vector.VectorEnv):
+        return env
+    root = getattr(env.envs[0], "unwrapped", env.envs[0])
+    spec = getattr(root, "spec", None)
+    if spec is None or spec.id is None:
+        return type(root)
+    kwargs = dict(spec.kwargs)
+    if render_mode is not None:
+        kwargs["render_mode"] = render_mode
+    return lambda: gym.make(spec.id, **kwargs)
+
+#Eval Policy
+def evaluate_policy(env_spec: Any, agent: BaseAgent, seeds: list[int], normalizer: NormMeanStd | None, device: torch.device):
+    env_spec = _resolve_env_spec(env_spec)
+
+    env = vectorize_env(env_spec, num_envs=1)
+    was_training = agent.training
+    agent.eval()
+    episode_returns = []
+
+    for seed in seeds:
+        state, _ = env.reset(seed=[seed]) #type: ignore
+        total_reward = 0.0
+        finished = False
+        while not finished:
+            state_processed = processing_state(state, normalizer, device=device)
+            with torch.inference_mode():
+                action = deterministic_action(agent, state_processed)
+            action_env = to_env_action(action, env)
+            state, reward, terminated, truncated, _ = env.step(action_env) #type: ignore
+            total_reward += float(np.asarray(reward).reshape(-1)[0])
+            finished = bool(terminated[0] or truncated[0])
+        episode_returns.append(total_reward)
+    env.close()
+    if was_training: agent.train()
+    values = np.asarray(episode_returns, dtype=np.float64)
+    return {"mean": float(values.mean()), "std": float(values.std(ddof=1)) if len(values) > 1 else 0.0, "returns": values.tolist()}
 
 def save_checkpoints(agent: BaseAgent, model_path: str, normalizer: NormMeanStd | None = None):
     """Save agent weights and Normalizer state to the path in config.model_path."""
@@ -117,7 +164,9 @@ def to_env_action(action: Tensor, env: Any) -> np.ndarray | Tensor:
     return action.detach().cpu().numpy()
 
 def get_last_obs(info: dict, num_envs: int, obs_dim: tuple, device: torch.device) -> Tensor | None:
-    final_obs = info.get("final_observation", None)
+    final_obs = info.get("final_obs", None)
+    if final_obs is None:
+        final_obs = info.get("final_observation", None)
     if final_obs is None: return None
     obs_stacked = np.stack([final_obs[i] if final_obs[i] is not None
         else np.zeros(obs_dim, dtype=np.float32) for i in range(num_envs)])
@@ -148,13 +197,7 @@ def try_agent(env_eval: Any, agent: BaseAgent, config: TrainConfig, *, normalize
     if torch.cuda.is_available():
         os.environ["MUJOCO_GL"] = "egl"
         os.environ["PYOPENGL_PLATFORM"] = "egl"
-    env_spec = env_eval
-    if isinstance(env_spec, gym.vector.VectorEnv):
-        try:
-            env_spec = env_spec.envs[0].spec.id
-        except AttributeError:
-            # Fresh class: deepcopy of a closed MuJoCo sub-env is unsafe.
-            env_spec = type(env_spec.envs[0])
+    env_spec = _resolve_env_spec(env_eval, render_mode="rgb_array")
 
     def make_env_fn():
         def _init():
@@ -198,9 +241,9 @@ def try_agent(env_eval: Any, agent: BaseAgent, config: TrainConfig, *, normalize
         else:
             output_path = f"{gif_path}_{i}.gif"
         if frames:
-            durations = [0.2] * len(frames)
-            durations[-1] = 1.2
-            imageio.mimsave(output_path, frames, duration=durations, fps=25)
+            durations = [200] * len(frames)
+            durations[-1] = 1200
+            imageio.mimsave(output_path, frames, duration=durations)
     env_eval.close()
     if was_training: agent.train()
     sys.stderr.write(f"gif is saved in {output_path}")

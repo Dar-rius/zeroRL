@@ -36,6 +36,7 @@ class MujocoEnv(BaseEnv):
         if model_xml is not None:
             self.model = mujoco.MjModel.from_xml_string(model_xml)
         else:
+            assert model_path is not None  # guaranteed by XOR check above
             path = Path(model_path).expanduser()
             if not path.is_file():
                 raise FileNotFoundError(f"MuJoCo model not found: {path}")

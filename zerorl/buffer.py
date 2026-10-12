@@ -37,7 +37,7 @@ class Buffer:
             schema: Dict mapping field names to shape tuples (e.g. {"state": (4,), "action": ()}).
             device: Torch device to allocate tensors on.
         """
-        self.required_keys = {"state", "action", "reward", "terminated", "truncated", "action"}
+        self.required_keys = {"state", "action", "reward", "terminated", "truncated"}
         self.step = capacity
         self.num_envs = num_envs
         self.device_ = device

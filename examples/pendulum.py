@@ -11,6 +11,6 @@ config = TrainConfig(
 config.device = torch.device("cpu")
 algo_config = AlgoConfig(ent_coef=0.0)
 
-trainer = easy_train_ppo("Pendulum-v1", config, algo_config)
+trainer = easy_train_ppo("Pendulum-v1", config, algo_config, evals=10)
 trainer.train(use_wandb=True)
 trainer.try_agent()

@@ -30,7 +30,8 @@ from zerorl.functions import (
         env_step,
         save_checkpoints,
         try_agent,
-        set_seed)
+        set_seed,
+        evaluate_policy)
 
 
 class BaseTrain:
@@ -48,7 +49,10 @@ class BaseTrain:
                  update_weights: Callable,
                  config: TrainConfig,
                  algo_config: AlgoConfig,
+                 *,
+                 evals: int = 0,
                  seeds: list[int] | None = None,
+                 eval_seeds: list[int] | None = None,
                  optimizer: optim.Optimizer | None = None,
                  schedule_func: Callable[[int], float] | None = None,
                  render_mode: str | None = None,
@@ -61,7 +65,7 @@ class BaseTrain:
             buffer: Pre-allocated buffer for rollout data.
             update_weights: Callable that computes the weight update from
                 collected rollout data. Signature:
-                (agent, buffer, scheduler, optimizer, last_output, algo_config) -> dict[str, Tensor].
+                (agent, buffer, scheduler, optimizer, algo_config) -> dict[str, Tensor].
             config: Training configuration (device, paths, hyperparams).
             algo_config: Algorithm hyperparameters (passed to update_weights).
             optimizer: Optional optimizer. If None, creates Adam with algo_config.lr.
@@ -84,6 +88,7 @@ class BaseTrain:
         self.buffer = buffer
         self.update_weights = update_weights
         self.algo_config = algo_config
+        self.evals = evals
         self.optimizer: optim.Optimizer
 
         if optimizer is None:
@@ -101,6 +106,7 @@ class BaseTrain:
         if schedule_func is None: schedule_func = lambda current_step: 1.0 - (current_step / self.config.num_update)
         self.scheduler = LambdaLR(self.optimizer, schedule_func)
         self.seeds = set_seed(22, self.num_envs) if seeds is None else seeds
+        self.eval_seeds = set_seed(42, self.num_envs) if eval_seeds is None else eval_seeds
         self.require_buffer_size = require_buffer_size
         self.normalizer = NormMeanStd(self.obs_shape, config.device) if self.config.normalize else None
         self.current_episode_reward: Tensor | None = None
@@ -132,7 +138,7 @@ class BaseTrain:
         else:
             self._hook_env_check_ = lambda data_, step : None
 
-    def rollout_phase(self) -> dict[str, Tensor] | None:
+    def rollout_phase(self):
         """Collect experience by running the agent in the environment.
 
         Stores each transition in the buffer and resets on episode end.
@@ -185,6 +191,12 @@ class BaseTrain:
                 f"VRAM: {metrics.vram_allocated_gb:.2f}GB (Peak: {metrics.vram_peak_gb:.2f}GB) | "
                 f"RAM: {metrics.ram_mb:.0f}MB\033[0m\n"
                 )
+
+    def _should_evals(self, step: int) -> bool:
+        if self.evals <= 0:
+            return False
+        # On évalue tous les 'evals' steps, et obligatoirement au tout dernier step
+        return step % self.evals == 0 or step == self.config.num_update - 1
 
     def train(self, *, save_model: bool = False, use_wandb: bool = False, use_tb: bool = False):
         """Run the full training loop.
@@ -244,7 +256,12 @@ class BaseTrain:
                 mean_reward = 0.0
 
             metrics = {"train/mean_episode_reward": mean_reward,
-                        "train/learning_rate": self.optimizer.param_groups[0]['lr']}
+                       "train/learning_rate": self.optimizer.param_groups[0]['lr']}
+
+            if self._should_evals(step):
+                evaluation = evaluate_policy(self.env, self.agent, self.eval_seeds, self.normalizer, self.device)
+                metrics["evals/mean_return"] = evaluation["mean"]
+                metrics["evals/std_return"] = evaluation["std"]
             if use_wandb and is_profile:
                 for k, v in asdict(profile_data).items(): metrics[f"profile/{k}"] = v
             for k, v in losses.items(): metrics[f"train/{k}"] = v
