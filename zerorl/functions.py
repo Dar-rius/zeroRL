@@ -76,13 +76,28 @@ def deterministic_action(agent: BaseAgent, state: Tensor) -> Tensor:
         return torch.argmax(logits, dim=-1)
     return agent.build_distribution(logits).mean  # type: ignore[operator]
 
+def _resolve_env_spec(env: Any, *, render_mode: str | None = None) -> Any:
+    """Resolve a vectorized env into a reusable spec for a fresh single env.
+
+    Returns a zero-arg factory replaying the registry id + saved kwargs
+    (render_mode optionally forced), or the unwrapped env class when there is
+    no usable id — never a wrapper class, never a deepcopy (unsafe for a
+    closed MuJoCo sub-env).
+    """
+    if not isinstance(env, gym.vector.VectorEnv):
+        return env
+    root = getattr(env.envs[0], "unwrapped", env.envs[0])
+    spec = getattr(root, "spec", None)
+    if spec is None or spec.id is None:
+        return type(root)
+    kwargs = dict(spec.kwargs)
+    if render_mode is not None:
+        kwargs["render_mode"] = render_mode
+    return lambda: gym.make(spec.id, **kwargs)
+
 #Eval Policy
 def evaluate_policy(env_spec: Any, agent: BaseAgent, seeds: list[int], normalizer: NormMeanStd | None, device: torch.device):
-    if isinstance(env_spec, gym.vector.VectorEnv):
-        try:
-            env_spec = env_spec.envs[0].spec.id
-        except AttributeError:
-            env_spec = type(env_spec.envs[0])
+    env_spec = _resolve_env_spec(env_spec)
 
     env = vectorize_env(env_spec, num_envs=1)
     was_training = agent.training
@@ -179,13 +194,7 @@ def try_agent(env_eval: Any, agent: BaseAgent, config: TrainConfig, *, normalize
     if torch.cuda.is_available():
         os.environ["MUJOCO_GL"] = "egl"
         os.environ["PYOPENGL_PLATFORM"] = "egl"
-    env_spec = env_eval
-    if isinstance(env_spec, gym.vector.VectorEnv):
-        try:
-            env_spec = env_spec.envs[0].spec.id
-        except AttributeError:
-            # Fresh class: deepcopy of a closed MuJoCo sub-env is unsafe.
-            env_spec = type(env_spec.envs[0])
+    env_spec = _resolve_env_spec(env_eval, render_mode="rgb_array")
 
     def make_env_fn():
         def _init():

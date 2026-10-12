@@ -91,6 +91,38 @@ class TestActorCriticAgent:
         assert result["value"].dim() == 1
         assert result["value"].shape == (4,)
 
+    def test_build_distribution_discrete_is_categorical(self, device) -> None:
+        agent = ActorCriticAgent(input_dim=4, output_dim=2, is_discrete=True).to(device)
+        logits = torch.randn(5, 2, device=device)
+        dist = agent.build_distribution(logits)
+        assert isinstance(dist, torch.distributions.Categorical)
+
+    def test_build_distribution_continuous_is_normal(self, device) -> None:
+        agent = ActorCriticAgent(input_dim=3, output_dim=1, is_discrete=False).to(device)
+        logits = torch.randn(5, 1, device=device)
+        dist = agent.build_distribution(logits)
+        assert isinstance(dist, torch.distributions.Normal)
+        assert dist.scale.shape == (5, 1)
+
+    def test_build_distribution_log_std_clamped_high(self, device) -> None:
+        agent = ActorCriticAgent(input_dim=3, output_dim=1, is_discrete=False).to(device)
+        with torch.no_grad():
+            agent.log_std.fill_(5.0)  # above clamp max=1.0
+        dist = agent.build_distribution(torch.zeros(1, 1, device=device))
+        torch.testing.assert_close(
+            dist.scale, torch.full((1, 1), torch.exp(torch.tensor(1.0)), device=device)
+        )
+
+    def test_build_distribution_log_std_clamped_low(self, device) -> None:
+        agent = ActorCriticAgent(input_dim=3, output_dim=1, is_discrete=False).to(device)
+        with torch.no_grad():
+            agent.log_std.fill_(-10.0)  # below clamp min=-3.0
+        dist = agent.build_distribution(torch.zeros(1, 1, device=device))
+        torch.testing.assert_close(
+            dist.scale,
+            torch.full((1, 1), torch.exp(torch.tensor(-3.0)), device=device),
+        )
+
 
 class TestGetPolicyBuffer:
     def test_has_correct_keys(self, tmp_config) -> None:

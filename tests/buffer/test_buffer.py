@@ -41,6 +41,11 @@ class TestBufferInit:
         buf = Buffer(capacity=5, num_envs=1, schema=_schema({"x": (3,)}), device=device)
         assert buf.data["x"].device.type == device.type
 
+    @pytest.mark.gpu
+    def test_required_keys_exact_set(self, device) -> None:
+        buf = Buffer(capacity=4, num_envs=1, schema=_schema(), device=device)
+        assert buf.required_keys == {"state", "action", "reward", "terminated", "truncated"}
+
 class TestBufferInsert:
     @pytest.mark.gpu
     def test_single_insert_state(self, device) -> None:

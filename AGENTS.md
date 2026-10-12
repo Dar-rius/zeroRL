@@ -56,7 +56,11 @@ via `gym.make`. `mujoco` is a core dep.
 
 ## Testing notes
 - tests/ is grouped by area: `agent/`, `algo/ppo/`, `buffer/`, `env/` + flat
-  `test_config|test_errors|test_factory|test_function|test_processing|test_train.py`
-  plus `tests/compiler.py`.
+  `test_config|test_errors|test_eval|test_factory|test_function|test_logger|
+  test_processing|test_smoke|test_train.py` plus `tests/test_compiler.py`
+  (renamed from `tests/compiler.py` so pytest collects it — default
+  `python_files = test_*.py`). `test_smoke.py` = min-train e2e (easy_train_ppo /
+  BaseTrain+real PPO / immediate-mode loop) on cpu+cuda param; debug-mode
+  (RLSanityError) tests live in `test_train.py`.
 - Vectorized train uses Gymnasium SAME_STEP autoreset (no manual multi-env reset in
   `rollout_phase`).

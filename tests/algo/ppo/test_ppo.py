@@ -344,3 +344,80 @@ class TestPpoEdgeCases:
         scheduler = MagicMock()
         ppo_func(agent, optimizer, buf, cfg, scheduler)
         assert scheduler.step.call_count == 1
+
+
+class TestPpoInjectableLoss:
+    @pytest.mark.gpu
+    def test_custom_loss_func_used(self, device) -> None:
+        agent = DiscreteTestAgent().to(device)
+        optimizer = torch.optim.Adam(agent.parameters(), lr=3e-4)
+        buf = TestPpoFunction()._make_buffer(64, 4, device)
+        cfg = AlgoConfig(epochs=2)
+        scheduler = LambdaLR(optimizer, lr_lambda=lambda _: 1.0)
+        calls: list[int] = []
+
+        def spy_loss(agent_, params, buffers, hyper_params, data, idx):
+            calls.append(len(idx))
+            loss = sum(p.sum() for p in params.values()) * 0.0
+            return {"loss": loss, "policy_loss": loss, "value_loss": loss,
+                    "entropy_loss": loss}
+
+        result = ppo_func(agent, optimizer, buf, cfg, scheduler,
+                          ppo_loss_func=spy_loss)
+        assert len(calls) == 2  # epochs=2, one full-batch minibatch each
+        assert set(result) == {"loss", "policy_loss", "value_loss", "entropy_loss"}
+
+    @pytest.mark.gpu
+    def test_custom_loss_receives_normalized_advantages(self, device) -> None:
+        agent = DiscreteTestAgent().to(device)
+        optimizer = torch.optim.Adam(agent.parameters(), lr=3e-4)
+        buf = TestPpoFunction()._make_buffer(64, 4, device)
+        # varying advantages (the default fill is constant 1.0 -> std 0)
+        buf.data["advantage"][:buf.size] = torch.randn(64, 1, device=device)
+        cfg = AlgoConfig(epochs=1)
+        scheduler = LambdaLR(optimizer, lr_lambda=lambda _: 1.0)
+        captured: dict[str, torch.Tensor] = {}
+
+        def spy_loss(agent_, params, buffers, hyper_params, data, idx):
+            captured.setdefault("adv_norm", data["adv_norm"].clone())
+            loss = sum(p.sum() for p in params.values()) * 0.0
+            return {"loss": loss}
+
+        ppo_func(agent, optimizer, buf, cfg, scheduler, ppo_loss_func=spy_loss)
+        adv = captured["adv_norm"]
+        assert adv.shape == (64,)
+        assert adv.mean().item() == pytest.approx(0.0, abs=1e-5)
+        assert adv.std().item() == pytest.approx(1.0, abs=1e-3)
+
+    @pytest.mark.gpu
+    def test_clip_vf_branch_matches_clipped_formula(self, device) -> None:
+        agent = DiscreteTestAgent().to(device)
+        params = dict(agent.named_parameters())
+        buffers = dict(agent.named_buffers())
+        cfg = AlgoConfig()
+        cfg.clip_vf = True  # not a declared field; read via getattr in ppo_loss
+
+        n = 16
+        state = torch.randn(n, 4, device=device)
+        action = torch.randint(0, 2, (n,), device=device)
+        logits, new_values = agent(state)
+        dist = agent.build_distribution(logits)
+        log_prob, _ = eval_action(dist, action)
+        old_values = torch.full((n,), 10.0, device=device)  # far from new_values
+        returns = torch.zeros(n, device=device)
+        advantage = torch.randn(n, device=device)
+        idx = torch.arange(n, device=device)
+        data = {"state": state, "action": action, "log_prob": log_prob,
+                "value": old_values, "adv_norm": advantage, "return": returns}
+
+        result = ppo_loss(agent, params, buffers, cfg, data, idx)
+
+        eps = cfg.clip_eps
+        nv = new_values.view(-1)
+        clipped = old_values + (nv - old_values).clamp(-eps, eps)
+        expected = 0.5 * torch.max((returns - nv).pow(2),
+                                   (clipped - returns).pow(2)).mean()
+        torch.testing.assert_close(result["value_loss"], expected)
+        # clipped branch must actually differ from plain MSE here
+        plain = 0.5 * torch.nn.functional.mse_loss(nv, returns)
+        assert not torch.allclose(result["value_loss"], plain)
