@@ -65,7 +65,7 @@ class BaseTrain:
             buffer: Pre-allocated buffer for rollout data.
             update_weights: Callable that computes the weight update from
                 collected rollout data. Signature:
-                (agent, buffer, scheduler, optimizer, last_output, algo_config) -> dict[str, Tensor].
+                (agent, buffer, scheduler, optimizer, algo_config) -> dict[str, Tensor].
             config: Training configuration (device, paths, hyperparams).
             algo_config: Algorithm hyperparameters (passed to update_weights).
             optimizer: Optional optimizer. If None, creates Adam with algo_config.lr.
@@ -88,7 +88,7 @@ class BaseTrain:
         self.buffer = buffer
         self.update_weights = update_weights
         self.algo_config = algo_config
-        self.should_evals = lambda step: step % evals == 0 or step == config.num_update if evals > 0 else False
+        self.should_evals = lambda step: step % evals == 0 or step == config.num_update - 1 if evals > 0 else False
         self.optimizer: optim.Optimizer
 
         if optimizer is None:
@@ -106,7 +106,7 @@ class BaseTrain:
         if schedule_func is None: schedule_func = lambda current_step: 1.0 - (current_step / self.config.num_update)
         self.scheduler = LambdaLR(self.optimizer, schedule_func)
         self.seeds = set_seed(22, self.num_envs) if seeds is None else seeds
-        self.eval_seeds = set_seed(42, self.num_envs) if seeds is None else seeds
+        self.eval_seeds = set_seed(42, self.num_envs) if eval_seeds is None else eval_seeds
         self.require_buffer_size = require_buffer_size
         self.normalizer = NormMeanStd(self.obs_shape, config.device) if self.config.normalize else None
         self.current_episode_reward: Tensor | None = None
