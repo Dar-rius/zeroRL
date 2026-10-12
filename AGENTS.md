@@ -34,12 +34,23 @@ via `gym.make`. `mujoco` is a core dep.
   Rollout keys: `state, reward, terminated, truncated` + `get_action()` outputs
   (`action, log_prob, entropy, value`). Pass **true** `data["terminated"]` to
   `gae_compute` (do **not** OR with `truncated` — time-limit must still bootstrap).
-  Episode-end bookkeeping uses `terminated | truncated`. GAE writes `"advantage"`
-  and `"return"`.
+  The bootstrap VALUE for a truncated step comes from the pre-reset observation
+  that Gymnasium v1 puts in `info["final_obs"]` (key is `final_obs`, NOT
+  `final_observation` — that key was REMOVED in gymnasium 1.0; reading it makes
+  `get_last_obs` return None and silently kills the bootstrap). `get_last_obs`
+  also falls back to the legacy key for safety. Episode-end bookkeeping uses
+  `terminated | truncated`. GAE writes `"advantage"` and `"return"`.
 - `BaseTrain` lives in `zerorl.helpers.train` (NOT `zerorl.train`). Wraps envs lacking
   `auto_reset=True` via `vectorize_env` (SAME_STEP). Logging via `create_logger`.
-  Eval/GIF: `trainer.try_agent()` → `functions.try_agent` (deterministic mean/argmax,
-  AutoresetMode.DISABLED). `train(save_model=, use_wandb=, use_tb=)` is keyword-only.
+  Eval/GIF: `trainer.try_agent()` → `functions.try_agent` (AutoresetMode.DISABLED).
+  GIF frame `duration` is MILLISECONDS (imageio ≥2.33 removed `fps=`; passing it
+  raises DeprecationWarning AND overwrites `duration` with `1000/fps`). Pillow
+  merges pixel-identical consecutive GIF frames and SUMS their durations — assert
+  merge-invariant properties in tests, never an exact per-frame list.
+  `deterministic_action` branches on the DISTRIBUTION TYPE (Categorical→argmax),
+  not the `is_discrete` flag: torch's `Categorical.mean` is ALWAYS `nan`, so any
+  agent that omits `is_discrete` used to feed nan actions to gym. `train(save_model=,
+  use_wandb=, use_tb=)` is keyword-only.
 - `TrainConfig` requires `project_name` (no default); `num_update` is computed ONCE in
   `__post_init__` (`timestamp // (rollout_steps * num_envs)`). `normalize=True` enables
   NormMeanStd (also saved by `save_checkpoints`). `profile=True` → `PhaseProfiler`.
@@ -56,11 +67,17 @@ via `gym.make`. `mujoco` is a core dep.
 
 ## Testing notes
 - tests/ is grouped by area: `agent/`, `algo/ppo/`, `buffer/`, `env/` + flat
-  `test_config|test_errors|test_eval|test_factory|test_function|test_logger|
-  test_processing|test_smoke|test_train.py` plus `tests/test_compiler.py`
+  `test_config|test_debug|test_errors|test_eval|test_factory|test_function|
+  test_logger|test_processing|test_smoke|test_train.py` plus `tests/test_compiler.py`
   (renamed from `tests/compiler.py` so pytest collects it — default
-  `python_files = test_*.py`). `test_smoke.py` = min-train e2e (easy_train_ppo /
-  BaseTrain+real PPO / immediate-mode loop) on cpu+cuda param; debug-mode
-  (RLSanityError) tests live in `test_train.py`.
+  `python_files = test_*.py`). Split of debug coverage:
+  - `test_debug.py` = UNIT tests for `zerorl.debug` helpers
+    (`check_tensor`/`check_shape`/`check_reward_scale` → `RLSanityError`).
+  - `test_train.py::TestBaseTrainDebugMode` = INTEGRATION wiring
+    (`cfg.debug=True` → `algo_config._debug_mode` set in `train()`;
+    `_hook_env_check_` raises `RLSanityError` on NaN reward).
+  - `test_smoke.py` = min-train e2e (easy_train_ppo / BaseTrain+real PPO /
+    immediate-mode loop) on a cpu+cuda parametrized `device` fixture (cuda leg
+    has `@pytest.mark.gpu`, runtime-skips when CUDA is unavailable).
 - Vectorized train uses Gymnasium SAME_STEP autoreset (no manual multi-env reset in
   `rollout_phase`).

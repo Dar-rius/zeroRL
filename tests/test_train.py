@@ -568,6 +568,12 @@ class TestBaseTrainVectorizedRollout:
         data = buf.get_all()
         assert int(data["truncated"].sum().item()) == 1
         assert int(data["terminated"].sum().item()) == 0
+        # Bootstrap contract: the truncated row must carry a nonzero
+        # final_value (from info["final_obs"] via get_last_obs) so GAE still
+        # bootstraps on time-limit truncation. This is the integration half of
+        # the gymnasium-v1 key rename (final_observation -> final_obs).
+        trunc_rows = data["truncated"] > 0
+        assert float(data["final_value"][trunc_rows].abs().sum().item()) > 0
         env.close()
 
 
@@ -906,7 +912,7 @@ class TestBaseTrainProfilerTrain:
 
 
 # ---------------------------------------------------------------------------
-# TestBaseTrainProfilerWandb — wandb integration (includes xfail)
+# TestBaseTrainProfilerWandb — wandb integration
 # ---------------------------------------------------------------------------
 
 class TestBaseTrainProfilerWandb:

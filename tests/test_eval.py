@@ -342,13 +342,13 @@ class TestParseToTensor:
 # ---------------------------------------------------------------------------
 
 class TestGetLastObs:
-    def test_missing_final_observation_returns_none(self) -> None:
+    def test_missing_final_obs_returns_none(self) -> None:
         assert get_last_obs({}, 1, (4,), torch.device("cpu")) is None
 
-    def test_full_final_observation_stacked(self) -> None:
+    def test_full_final_obs_stacked(self) -> None:
         obs0 = np.array([1.0, 2.0], dtype=np.float32)
         obs1 = np.array([3.0, 4.0], dtype=np.float32)
-        info = {"final_observation": [obs0, obs1]}
+        info = {"final_obs": [obs0, obs1]}
         out = get_last_obs(info, 2, (2,), torch.device("cpu"))
         assert out is not None
         assert out.shape == (2, 2)
@@ -356,18 +356,25 @@ class TestGetLastObs:
 
     def test_none_slot_zero_filled(self) -> None:
         obs0 = np.array([1.0, 2.0], dtype=np.float32)
-        info = {"final_observation": [obs0, None]}
+        info = {"final_obs": [obs0, None]}
         out = get_last_obs(info, 2, (2,), torch.device("cpu"))
         assert out is not None
         assert out.shape == (2, 2)
         assert out[1].tolist() == [0.0, 0.0]
 
     def test_all_none_slots_still_tensor(self) -> None:
-        info = {"final_observation": [None, None]}
+        info = {"final_obs": [None, None]}
         out = get_last_obs(info, 2, (3,), torch.device("cpu"))
         assert out is not None
         assert out.shape == (2, 3)
         assert torch.count_nonzero(out) == 0
+
+    def test_legacy_final_observation_key_fallback(self) -> None:
+        obs0 = np.array([1.0, 2.0], dtype=np.float32)
+        info = {"final_observation": [obs0, None]}
+        out = get_last_obs(info, 2, (2,), torch.device("cpu"))
+        assert out is not None
+        torch.testing.assert_close(out, torch.tensor([[1.0, 2.0], [0.0, 0.0]]))
 
 
 # ---------------------------------------------------------------------------

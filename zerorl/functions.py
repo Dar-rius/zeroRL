@@ -164,7 +164,9 @@ def to_env_action(action: Tensor, env: Any) -> np.ndarray | Tensor:
     return action.detach().cpu().numpy()
 
 def get_last_obs(info: dict, num_envs: int, obs_dim: tuple, device: torch.device) -> Tensor | None:
-    final_obs = info.get("final_observation", None)
+    final_obs = info.get("final_obs", None)
+    if final_obs is None:
+        final_obs = info.get("final_observation", None)
     if final_obs is None: return None
     obs_stacked = np.stack([final_obs[i] if final_obs[i] is not None
         else np.zeros(obs_dim, dtype=np.float32) for i in range(num_envs)])
