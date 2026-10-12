@@ -232,7 +232,7 @@ def evaluate_hopper_gif(
     gif_path: str,
     normalizer: NormMeanStd | None = None,
     n_trials: int = 8,
-    frame_duration: float = 0.04,
+    frame_duration: float = 40,
     frame_stride: int = 3,
 ) -> dict[str, float | bool | int]:
     """Multi-seed deterministic eval; keep best by (truncated, dx). Record healthy frames only."""
@@ -284,7 +284,7 @@ def evaluate_hopper_gif(
     out1 = f"{gif_path}_1.gif"
     if frames:
         durations = [frame_duration] * len(frames)
-        durations[-1] = min(0.5, frame_duration * 8)
+        durations[-1] = min(500, frame_duration * 8)
         imageio.mimsave(out0, frames, duration=durations)
         imageio.mimsave(out1, frames, duration=durations)
 

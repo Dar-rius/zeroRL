@@ -88,7 +88,7 @@ class BaseTrain:
         self.buffer = buffer
         self.update_weights = update_weights
         self.algo_config = algo_config
-        self.should_evals = lambda step: step % evals == 0 or step == config.num_update - 1 if evals > 0 else False
+        self.evals = evals
         self.optimizer: optim.Optimizer
 
         if optimizer is None:
@@ -192,6 +192,12 @@ class BaseTrain:
                 f"RAM: {metrics.ram_mb:.0f}MB\033[0m\n"
                 )
 
+    def _should_evals(self, step: int) -> bool:
+        if self.evals <= 0:
+            return False
+        # On évalue tous les 'evals' steps, et obligatoirement au tout dernier step
+        return step % self.evals == 0 or step == self.config.num_update - 1
+
     def train(self, *, save_model: bool = False, use_wandb: bool = False, use_tb: bool = False):
         """Run the full training loop.
 
@@ -252,7 +258,7 @@ class BaseTrain:
             metrics = {"train/mean_episode_reward": mean_reward,
                        "train/learning_rate": self.optimizer.param_groups[0]['lr']}
 
-            if self.should_evals(step):
+            if self._should_evals(step):
                 evaluation = evaluate_policy(self.env, self.agent, self.eval_seeds, self.normalizer, self.device)
                 metrics["evals/mean_return"] = evaluation["mean"]
                 metrics["evals/std_return"] = evaluation["std"]

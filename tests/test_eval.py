@@ -1,5 +1,7 @@
 """Unit tests for eval/policy primitives (zerorl.functions)."""
 
+import warnings
+
 import gymnasium as gym
 import numpy as np
 import pytest
@@ -142,6 +144,34 @@ class TestDeterministicAction:
         out = deterministic_action(agent, state)
         assert torch.allclose(out, expected)
 
+    def test_flagless_categorical_agent_returns_argmax(self) -> None:
+        """Agents without `is_discrete` must still get argmax, not Categorical.mean
+        (which torch deliberately returns as nan)."""
+        class FlaglessCategoricalAgent(BaseAgent):
+            def __init__(self, obs_dim: int = 4, act_dim: int = 2) -> None:
+                super().__init__()
+                self.actor = nn.Linear(obs_dim, act_dim)
+
+            def forward(self, state, **kwargs):
+                return self.actor(state), torch.zeros(state.shape[0], device=state.device)
+
+            def get_action(self, state, action=None, **kwargs):
+                batch = state.shape[0]
+                zeros = torch.zeros(batch, device=state.device)
+                return {"action": zeros.long(), "log_prob": zeros,
+                        "entropy": zeros, "value": zeros}
+
+            def build_distribution(self, logits):
+                return torch.distributions.Categorical(logits=logits)
+
+        agent = FlaglessCategoricalAgent()
+        assert not hasattr(agent, "is_discrete")
+        state = torch.randn(5, 4)
+        logits, _ = agent(state)
+        out = deterministic_action(agent, state)
+        assert torch.equal(out, logits.argmax(dim=-1))
+        assert torch.isfinite(out.float()).all()
+
 
 # ---------------------------------------------------------------------------
 # evaluate_policy
@@ -243,6 +273,38 @@ class TestTryAgent:
         agent.eval()
         try_agent("CartPole-v1", agent, cfg, gif_path=str(tmp_path / "n"))
         assert not agent.training
+
+    def test_try_agent_no_fps_deprecation_warning(self, tmp_path, cfg) -> None:
+        agent = ActorCriticAgent(4, 2, is_discrete=True)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            try_agent("CartPole-v1", agent, cfg, iterations=1,
+                      gif_path=str(tmp_path / "w"))
+        fps_warnings = [w for w in caught
+                        if issubclass(w.category, DeprecationWarning)
+                        and "fps" in str(w.message)]
+        assert fps_warnings == []
+
+    def test_gif_frame_durations_ms(self, tmp_path, cfg) -> None:
+        from PIL import Image
+        agent = ActorCriticAgent(4, 2, is_discrete=True)
+        try_agent("CartPole-v1", agent, cfg, iterations=1,
+                  gif_path=str(tmp_path / "d"))
+        gif = tmp_path / "d_0.gif"
+        assert gif.is_file()
+        im = Image.open(gif)
+        durations = []
+        for i in range(im.n_frames):
+            im.seek(i)
+            durations.append(im.info.get("duration"))
+        # Pillow merges pixel-identical consecutive frames and sums their
+        # durations, so assert merge-invariant properties instead of an
+        # exact per-frame list: every delay is a positive multiple of the
+        # 200 ms base (not the old fps=25 40 ms, not a seconds misread),
+        # and the 1200 ms terminal hold survives (possibly merged upward).
+        assert durations, "gif has no frames"
+        assert all(d > 0 and d % 200 == 0 for d in durations), durations
+        assert durations[-1] >= 1200
 
 
 # ---------------------------------------------------------------------------

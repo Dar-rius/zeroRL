@@ -72,9 +72,10 @@ def deterministic_action(agent: BaseAgent, state: Tensor) -> Tensor:
         return agent.get_action(state)["action"]  # type: ignore[operator]
     out = agent.forward(state)  # type: ignore[operator]
     logits = out[0] if isinstance(out, tuple) else out
-    if getattr(agent, "is_discrete", False):
+    dist = agent.build_distribution(logits)  # type: ignore[operator]
+    if isinstance(dist, torch.distributions.Categorical):
         return torch.argmax(logits, dim=-1)
-    return agent.build_distribution(logits).mean  # type: ignore[operator]
+    return dist.mean
 
 def _resolve_env_spec(env: Any, *, render_mode: str | None = None) -> Any:
     """Resolve a vectorized env into a reusable spec for a fresh single env.
@@ -238,9 +239,9 @@ def try_agent(env_eval: Any, agent: BaseAgent, config: TrainConfig, *, normalize
         else:
             output_path = f"{gif_path}_{i}.gif"
         if frames:
-            durations = [0.2] * len(frames)
-            durations[-1] = 1.2
-            imageio.mimsave(output_path, frames, duration=durations, fps=25)
+            durations = [200] * len(frames)
+            durations[-1] = 1200
+            imageio.mimsave(output_path, frames, duration=durations)
     env_eval.close()
     if was_training: agent.train()
     sys.stderr.write(f"gif is saved in {output_path}")
