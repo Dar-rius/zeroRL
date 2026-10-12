@@ -76,6 +76,37 @@ def deterministic_action(agent: BaseAgent, state: Tensor) -> Tensor:
         return torch.argmax(logits, dim=-1)
     return agent.build_distribution(logits).mean  # type: ignore[operator]
 
+#Eval Policy
+def evaluate_policy(env_spec: Any, agent: BaseAgent, seeds: list[int], normalizer: NormMeanStd | None, device: torch.device):
+    if isinstance(env_spec, gym.vector.VectorEnv):
+        try:
+            env_spec = env_spec.envs[0].spec.id
+        except AttributeError:
+            env_spec = type(env_spec.envs[0])
+
+    env = vectorize_env(env_spec, num_envs=1)
+    was_training = agent.training
+    agent.eval()
+    episode_returns = []
+
+    for seed in seeds:
+        state, _ = env.reset(seed=[seed]) #type: ignore
+        total_reward = 0.0
+        finished = False
+        while not finished:
+            state_processed = processing_state(state, normalizer, device=device)
+            with torch.inference_mode():
+                action = deterministic_action(agent, state_processed)
+            action_env = to_env_action(action, env)
+            state, reward, terminated, truncated, _ = env.step(action_env) #type: ignore
+            total_reward += float(np.asarray(reward).reshape(-1)[0])
+            finished = bool(terminated[0] or truncated[0])
+        episode_returns.append(total_reward)
+    env.close()
+    if was_training: agent.train()
+    values = np.asarray(episode_returns, dtype=np.float64)
+    return {"mean": float(values.mean()), "std": float(values.std(ddof=1)) if len(values) > 1 else 0.0, "returns": values.tolist()}
+
 def save_checkpoints(agent: BaseAgent, model_path: str, normalizer: NormMeanStd | None = None):
     """Save agent weights and Normalizer state to the path in config.model_path."""
     checkpoints_state = {

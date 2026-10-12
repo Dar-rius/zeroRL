@@ -30,7 +30,8 @@ from zerorl.functions import (
         env_step,
         save_checkpoints,
         try_agent,
-        set_seed)
+        set_seed,
+        evaluate_policy)
 
 
 class BaseTrain:
@@ -48,7 +49,10 @@ class BaseTrain:
                  update_weights: Callable,
                  config: TrainConfig,
                  algo_config: AlgoConfig,
+                 *,
+                 evals: int = 0,
                  seeds: list[int] | None = None,
+                 eval_seeds: list[int] | None = None,
                  optimizer: optim.Optimizer | None = None,
                  schedule_func: Callable[[int], float] | None = None,
                  render_mode: str | None = None,
@@ -84,6 +88,7 @@ class BaseTrain:
         self.buffer = buffer
         self.update_weights = update_weights
         self.algo_config = algo_config
+        self.should_evals = lambda step: step % evals == 0 or step == config.num_update if evals > 0 else False
         self.optimizer: optim.Optimizer
 
         if optimizer is None:
@@ -101,6 +106,7 @@ class BaseTrain:
         if schedule_func is None: schedule_func = lambda current_step: 1.0 - (current_step / self.config.num_update)
         self.scheduler = LambdaLR(self.optimizer, schedule_func)
         self.seeds = set_seed(22, self.num_envs) if seeds is None else seeds
+        self.eval_seeds = set_seed(42, self.num_envs) if seeds is None else seeds
         self.require_buffer_size = require_buffer_size
         self.normalizer = NormMeanStd(self.obs_shape, config.device) if self.config.normalize else None
         self.current_episode_reward: Tensor | None = None
@@ -132,7 +138,7 @@ class BaseTrain:
         else:
             self._hook_env_check_ = lambda data_, step : None
 
-    def rollout_phase(self) -> dict[str, Tensor] | None:
+    def rollout_phase(self):
         """Collect experience by running the agent in the environment.
 
         Stores each transition in the buffer and resets on episode end.
@@ -244,7 +250,12 @@ class BaseTrain:
                 mean_reward = 0.0
 
             metrics = {"train/mean_episode_reward": mean_reward,
-                        "train/learning_rate": self.optimizer.param_groups[0]['lr']}
+                       "train/learning_rate": self.optimizer.param_groups[0]['lr']}
+
+            if self.should_evals(step):
+                evaluation = evaluate_policy(self.env, self.agent, self.eval_seeds, self.normalizer, self.device)
+                metrics["evals/mean_return"] = evaluation["mean"]
+                metrics["evals/std_return"] = evaluation["std"]
             if use_wandb and is_profile:
                 for k, v in asdict(profile_data).items(): metrics[f"profile/{k}"] = v
             for k, v in losses.items(): metrics[f"train/{k}"] = v
