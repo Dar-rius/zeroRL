@@ -38,6 +38,7 @@ def create_logger(config: TrainConfig, algo_config: AlgoConfig, *, use_wandb:boo
 
 
     def log(metrics:dict, step:int):
+        """Convert metrics to floats and forward them to enabled backends."""
         clean_metrics: dict[str, float] = {}
         for k, v in metrics.items():
             if isinstance(v, Tensor):
@@ -55,6 +56,7 @@ def create_logger(config: TrainConfig, algo_config: AlgoConfig, *, use_wandb:boo
 
 
     def close():
+        """Flush and close wandb/tensorboard backends (attached as log.close)."""
         if use_wandb: wandb.finish()
         if use_tb: tb_writer.close()
 

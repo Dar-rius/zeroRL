@@ -28,11 +28,22 @@ def gae_compute(rewards: Tensor, values: Tensor, final_value: Tensor,
     with exponentially decaying weights. Writes "advantage" and "return"
     directly into buffer.data.
 
+    Termination vs truncation contract (do not conflate):
+        - terminated (natural episode end): next_value = 0. No bootstrap.
+        - truncated (time-limit cut): next_value = final_value for that
+          step, so the value of the cut observation still counts. Passing
+          terminated | truncated here instead of true terminated would
+          treat time-limit cuts as terminal and bias the value targets.
+
     Args:
         rewards: Rewards for each timestep, shape (T, num_envs).
         values: Value estimates for each timestep, shape (T, num_envs).
-        last_value: Bootstrap value for the state after the last step, shape (num_envs,).
-        terminated: Episode termination flags, shape (T, num_envs). 1.0 = done.
+        final_value: Bootstrap values for the state after selected steps,
+            shape (T, num_envs) for mid-rollout truncations plus the last
+            step (row -1 is used as the bootstrap after the final step).
+        terminated: True termination flags (episode naturally ended),
+            shape (T, num_envs).
+        truncated: Time-limit truncation flags, shape (T, num_envs).
         buffer: Buffer to write "advantage" and "return" into.
         algo_config: Algorithm configuration (gamma, gae_lambda).
     """
@@ -122,19 +133,25 @@ def ppo_func(agent: BaseAgent,
         ) ->  dict[str, Tensor]:
     """Run a full PPO update on collected rollout data.
 
-    Steps the scheduler first, then normalizes advantages and runs
-    minibatch SGD epochs with clipped surrogate loss and gradient clipping.
+    Normalizes advantages into "adv_norm" (zero mean, unit std), then runs
+    minibatch SGD epochs with clipped surrogate loss and gradient clipping
+    (max-norm 0.5). The learning-rate scheduler is stepped once, at the end.
 
     Args:
-        agent: The policy network.
+        agent: The policy network (must have forward + build_distribution).
         optimizer: Optimizer for the agent parameters.
         buffer: Buffer containing rollout data with keys "state", "action",
             "log_prob", "value", "advantage", "return".
-        algo_config: Algorithm configuration (batch_size, epochs, clip_eps, etc.).
+        algo_config: Algorithm configuration (batch_size, epochs, clip_eps,
+            and optionally clip_vf for clipped value loss).
         scheduler: Learning rate scheduler (stepped once per call).
+        ppo_loss_func: Injectable loss function, defaults to ppo_loss.
+            Must accept the same signature as ppo_loss and return a dict
+            with at least a "loss" tensor.
 
     Returns:
-        Dict of averaged loss metrics ("loss", "policy_loss", "value_loss", "entropy_loss").
+        Dict of averaged loss metrics ("loss", "policy_loss", "value_loss",
+        "entropy_loss").
     """
     assert_agent_contract(agent,
          {"forward": "Your agent should have the method `forward`",

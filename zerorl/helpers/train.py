@@ -30,7 +30,7 @@ from zerorl.functions import (
         env_step,
         save_checkpoints,
         try_agent,
-        set_seed,
+        derive_env_seeds,
         evaluate_policy)
 
 
@@ -105,8 +105,8 @@ class BaseTrain:
 
         if schedule_func is None: schedule_func = lambda current_step: 1.0 - (current_step / self.config.num_update)
         self.scheduler = LambdaLR(self.optimizer, schedule_func)
-        self.seeds = set_seed(22, self.num_envs) if seeds is None else seeds
-        self.eval_seeds = set_seed(42, self.num_envs) if eval_seeds is None else eval_seeds
+        self.seeds = derive_env_seeds(22, self.num_envs) if seeds is None else seeds
+        self.eval_seeds = derive_env_seeds(42, self.num_envs) if eval_seeds is None else eval_seeds
         self.require_buffer_size = require_buffer_size
         self.normalizer = NormMeanStd(self.obs_shape, config.device) if self.config.normalize else None
         self.current_episode_reward: Tensor | None = None
@@ -141,8 +141,15 @@ class BaseTrain:
     def rollout_phase(self):
         """Collect experience by running the agent in the environment.
 
-        Stores each transition in the buffer and resets on episode end.
-        After the rollout, computes the bootstrap value for GAE.
+        Stores each transition in the buffer and bookkeeps episode-end
+        rewards (terminated | truncated). Builds the per-step "final_value"
+        column for GAE:
+        - truncated steps: bootstrap value from the pre-reset observation
+          (gymnasium v1 key info["final_obs"] via get_last_obs, NOT the
+          removed final_observation key) so time-limit cuts are not
+          treated as terminal.
+        - last rollout step (done or not): bootstrap with V(next_state).
+        - terminated steps: 0 (episode truly ended).
 
         Uses self.state internally as the starting observation.
         """
@@ -259,7 +266,7 @@ class BaseTrain:
                        "train/learning_rate": self.optimizer.param_groups[0]['lr']}
 
             if self._should_evals(step):
-                evaluation = evaluate_policy(self.env, self.agent, self.eval_seeds, self.normalizer, self.device)
+                evaluation = evaluate_policy(self.env, self.agent, self.eval_seeds, self.normalizer, False, self.device)
                 metrics["evals/mean_return"] = evaluation["mean"]
                 metrics["evals/std_return"] = evaluation["std"]
             if use_wandb and is_profile:
