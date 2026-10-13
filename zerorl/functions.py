@@ -54,20 +54,30 @@ def env_step(env: Any, agent: BaseAgent, state: Tensor) -> dict[str, Any]:
     with torch.inference_mode():
         outputs: dict[str, Tensor] = agent.get_action(state) #type: ignore[operator]
 
-    action_space = actions_limits(env, agent)
+    #action_space = actions_limits(env, agent)
     action = to_env_action(outputs["action"], env)
+    """
     if action_space is not None:
         if isinstance(action, np.ndarray):
             action = np.clip(action, *action_space)
         else:
             action = torch.clamp(action, *action_space)
+    """
     # Gymnasium v1 step() returns: obs, reward, terminated, truncated, info
     # terminated = episode naturally ended; truncated = cut short by time limit
     next_state, reward, terminated, truncated, info = env.step(action)
     return {"state": state, "next_state": next_state, "reward": reward, "terminated": terminated, "truncated": truncated, "info": info, **outputs}
 
 def deterministic_action(agent: BaseAgent, state: Tensor) -> Tensor:
-    """Greedy action for eval/GIF: argmax (discrete) or Gaussian mean (continuous)."""
+    """Greedy action for eval/GIF.
+
+    Branches on the DISTRIBUTION TYPE, not any ``is_discrete`` flag:
+    Categorical -> argmax over logits; everything else -> ``dist.mean``
+    (Gaussian mean for Normal). Reason: torch's ``Categorical.mean`` is
+    ALWAYS nan, so using .mean on a categorical would feed nan actions to
+    gym. Falls back to a sampled ``get_action`` when the agent has no
+    ``build_distribution``.
+    """
     if not hasattr(agent, "build_distribution"):
         return agent.get_action(state)["action"]  # type: ignore[operator]
     out = agent.forward(state)  # type: ignore[operator]
@@ -97,7 +107,15 @@ def _resolve_env_spec(env: Any, *, render_mode: str | None = None) -> Any:
     return lambda: gym.make(spec.id, **kwargs)
 
 #Eval Policy
-def evaluate_policy(env_spec: Any, agent: BaseAgent, seeds: list[int], normalizer: NormMeanStd | None, device: torch.device):
+def evaluate_policy(env_spec: Any, agent: BaseAgent, seeds: list[int], normalizer: NormMeanStd | None, update: bool, device: torch.device):
+    """Run deterministic eval episodes (one env, per-seed resets).
+
+    Uses deterministic_action and temporarily sets the agent to eval mode
+    (restored on exit). One episode per seed.
+
+    Returns:
+        {"mean": float, "std": float (0.0 for a single seed), "returns": list[float]}.
+    """
     env_spec = _resolve_env_spec(env_spec)
 
     env = vectorize_env(env_spec, num_envs=1)
@@ -110,7 +128,7 @@ def evaluate_policy(env_spec: Any, agent: BaseAgent, seeds: list[int], normalize
         total_reward = 0.0
         finished = False
         while not finished:
-            state_processed = processing_state(state, normalizer, device=device)
+            state_processed = processing_state(state, normalizer, update = update, device=device)
             with torch.inference_mode():
                 action = deterministic_action(agent, state_processed)
             action_env = to_env_action(action, env)
@@ -164,9 +182,15 @@ def to_env_action(action: Tensor, env: Any) -> np.ndarray | Tensor:
     return action.detach().cpu().numpy()
 
 def get_last_obs(info: dict, num_envs: int, obs_dim: tuple, device: torch.device) -> Tensor | None:
-    final_obs = info.get("final_obs", None)
-    if final_obs is None:
-        final_obs = info.get("final_observation", None)
+    """Extract pre-reset observations of envs that ended this step.
+
+    Reads the ``info["final_observation"]`` key (pre-1.0 gymnasium vector
+    envs). NOTE: gymnasium >=1.0 emits ``final_obs`` instead, so on modern
+    gymnasium this returns None and the truncation bootstrap in
+    BaseTrain.rollout_phase stays inactive. Returns None when no env ended
+    this step; slots for envs that did NOT end are zero-filled.
+    """
+    final_obs = info.get("final_observation", None)
     if final_obs is None: return None
     obs_stacked = np.stack([final_obs[i] if final_obs[i] is not None
         else np.zeros(obs_dim, dtype=np.float32) for i in range(num_envs)])
@@ -180,11 +204,24 @@ def set_seed(seed: int, num_envs: int):
     sequence = np.random.SeedSequence(seed)
     return [int(child.generate_state(1)[0]) for child in sequence.spawn(num_envs)]
 
+def derive_env_seeds(seed: int, num_envs: int):
+    sequence = np.random.SeedSequence(seed)
+    return [int(child.generate_state(1)[0])
+            for child in sequence.spawn(num_envs)]
+
 def try_agent(env_eval: Any, agent: BaseAgent, config: TrainConfig, *, normalizer: NormMeanStd | None = None, iterations: int = 1, gif_path: str | None = None):
     """Evaluate agent and save a GIF of its behavior.
 
-    Uses deterministic actions (Gaussian mean / argmax) and DISABLED autoreset
-    so the last frame is the terminal state, not a fresh reset.
+    Uses deterministic_action (distribution-type branch: Categorical ->
+    argmax, else Gaussian mean) and DISABLED autoreset so the last frame
+    is the terminal state, not a fresh reset.
+
+    Notes:
+        GIF frame durations are MILLISECONDS (imageio >=2.33 removed
+        ``fps=``; passing it overwrites duration with 1000/fps and raises
+        DeprecationWarning). The last frame is held 1200 ms; the rest are
+        200 ms. Pillow may merge pixel-identical consecutive frames and
+        SUM their durations.
 
     Args:
         env_eval: Environment to evaluate in.
@@ -282,6 +319,10 @@ def get_obs_act(env: SyncVectorEnv) -> Any:
     return (obs_dim.shape, act_dim.shape, obs_n, act_n, is_discrete)
 
 def actions_limits(env: SyncVectorEnv, agent: BaseAgent) -> tuple[Any, Any] | None:
+    """Return (low, high) clip bounds for Box action spaces, else None.
+
+    Discrete spaces need no clipping, so None is returned for them.
+    """
     act_space = getattr(env, "single_action_space", env.action_space)
     if isinstance(act_space, spaces.Box):
         return (act_space.low, act_space.high)

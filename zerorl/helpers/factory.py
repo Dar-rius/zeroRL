@@ -112,7 +112,7 @@ class ActorCriticAgent(BaseAgent):
     Uses a shared 2-layer Tanh MLP feature extractor.
 
     Args:
-        input_dim: Observation dimension.
+        obs_dim: Observation dimension.
         output_dim: Action dimension (n for discrete, dim for continuous).
         is_discrete: Whether the action space is discrete.
         hidden_dim: Hidden layer size (default 64).

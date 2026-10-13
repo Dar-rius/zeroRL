@@ -42,10 +42,14 @@ class TrainConfig:
             raise ValueError(f"num_update must be greater than 0, got {self.num_update}")
 
     @property
-    def num_update(self): return self.timestamp // (self.rollout_steps * self.num_envs)
+    def num_update(self):
+        """Total PPO updates: timestamp // (rollout_steps * num_envs)."""
+        return self.timestamp // (self.rollout_steps * self.num_envs)
 
     @property
-    def model_path(self): return f"{self.model_save_path}/{self.model_name}.pt"
+    def model_path(self):
+        """Checkpoint path: "{model_save_path}/{model_name}.pt"."""
+        return f"{self.model_save_path}/{self.model_name}.pt"
 
 
 @dataclass
