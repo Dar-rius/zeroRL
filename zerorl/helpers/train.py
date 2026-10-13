@@ -144,10 +144,11 @@ class BaseTrain:
         Stores each transition in the buffer and bookkeeps episode-end
         rewards (terminated | truncated). Builds the per-step "final_value"
         column for GAE:
-        - truncated steps: bootstrap value from the pre-reset observation
-          (gymnasium v1 key info["final_obs"] via get_last_obs, NOT the
-          removed final_observation key) so time-limit cuts are not
-          treated as terminal.
+        - truncated steps: bootstrap value from get_last_obs, which reads
+          the pre-reset observation under the legacy key
+          info["final_observation"] (gymnasium >=1.0 emits "final_obs"
+          instead, so on modern gymnasium the truncation bootstrap stays
+          inactive and truncated steps get final_value=0).
         - last rollout step (done or not): bootstrap with V(next_state).
         - terminated steps: 0 (episode truly ended).
 

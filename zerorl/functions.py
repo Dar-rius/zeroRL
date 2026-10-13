@@ -184,12 +184,11 @@ def to_env_action(action: Tensor, env: Any) -> np.ndarray | Tensor:
 def get_last_obs(info: dict, num_envs: int, obs_dim: tuple, device: torch.device) -> Tensor | None:
     """Extract pre-reset observations of envs that ended this step.
 
-    Reads gymnasium v1's ``info["final_obs"]`` (key is ``final_obs``, NOT
-    ``final_observation`` — removed in gymnasium 1.0). Falls back to the
-    legacy key for safety. Returns None when no env ended this step.
-    Slots for envs that did NOT end are zero-filled (those rows need no
-    bootstrap). Consumed by BaseTrain.rollout_phase as the bootstrap VALUE
-    for truncated steps so GAE does not treat time-limit cuts as terminal.
+    Reads the ``info["final_observation"]`` key (pre-1.0 gymnasium vector
+    envs). NOTE: gymnasium >=1.0 emits ``final_obs`` instead, so on modern
+    gymnasium this returns None and the truncation bootstrap in
+    BaseTrain.rollout_phase stays inactive. Returns None when no env ended
+    this step; slots for envs that did NOT end are zero-filled.
     """
     final_obs = info.get("final_observation", None)
     if final_obs is None: return None

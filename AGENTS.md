@@ -34,12 +34,13 @@ via `gym.make`. `mujoco` is a core dep.
   Rollout keys: `state, reward, terminated, truncated` + `get_action()` outputs
   (`action, log_prob, entropy, value`). Pass **true** `data["terminated"]` to
   `gae_compute` (do **not** OR with `truncated` — time-limit must still bootstrap).
-  The bootstrap VALUE for a truncated step comes from the pre-reset observation
-  that Gymnasium v1 puts in `info["final_obs"]` (key is `final_obs`, NOT
-  `final_observation` — that key was REMOVED in gymnasium 1.0; reading it makes
-  `get_last_obs` return None and silently kills the bootstrap). `get_last_obs`
-  also falls back to the legacy key for safety. Episode-end bookkeeping uses
-  `terminated | truncated`. GAE writes `"advantage"` and `"return"`.
+  The bootstrap VALUE for a truncated step is meant to come from the pre-reset
+  observation via `get_last_obs`; `get_last_obs` currently reads the legacy
+  `info["final_observation"]` key (pre-1.0 gymnasium). Gymnasium >=1.0 emits
+  `final_obs` instead, so on modern gymnasium `get_last_obs` returns None and
+  the truncation bootstrap stays INACTIVE (truncated steps get `final_value=0`).
+  Episode-end bookkeeping uses `terminated | truncated`. GAE writes
+  `"advantage"` and `"return"`.
 - `BaseTrain` lives in `zerorl.helpers.train` (NOT `zerorl.train`). Wraps envs lacking
   `auto_reset=True` via `vectorize_env` (SAME_STEP). Logging via `create_logger`.
   Eval/GIF: `trainer.try_agent()` → `functions.try_agent` (AutoresetMode.DISABLED).

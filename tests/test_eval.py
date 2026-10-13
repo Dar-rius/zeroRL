@@ -181,7 +181,8 @@ class TestEvaluatePolicy:
     def test_returns_stats_dict(self) -> None:
         agent = ActorCriticAgent(4, 2, is_discrete=True)
         result = evaluate_policy("CartPole-v1", agent, seeds=[0, 1],
-                                 normalizer=None, device=torch.device("cpu"))
+                                 normalizer=None, update=False,
+                                 device=torch.device("cpu"))
         assert set(result) == {"mean", "std", "returns"}
         assert len(result["returns"]) == 2
         assert isinstance(result["mean"], float)
@@ -190,33 +191,38 @@ class TestEvaluatePolicy:
     def test_std_is_ddof_one(self) -> None:
         agent = ActorCriticAgent(4, 2, is_discrete=True)
         result = evaluate_policy("CartPole-v1", agent, seeds=[7, 8],
-                                 normalizer=None, device=torch.device("cpu"))
+                                 normalizer=None, update=False,
+                                 device=torch.device("cpu"))
         expected = float(np.std(result["returns"], ddof=1))
         assert result["std"] == pytest.approx(expected)
 
     def test_single_seed_std_zero(self) -> None:
         agent = ActorCriticAgent(4, 2, is_discrete=True)
         result = evaluate_policy("CartPole-v1", agent, seeds=[3],
-                                 normalizer=None, device=torch.device("cpu"))
+                                 normalizer=None, update=False,
+                                 device=torch.device("cpu"))
         assert result["std"] == 0.0
 
     def test_restores_training_mode(self) -> None:
         agent = ActorCriticAgent(4, 2, is_discrete=True)
         assert agent.training
         evaluate_policy("CartPole-v1", agent, seeds=[0],
-                        normalizer=None, device=torch.device("cpu"))
+                        normalizer=None, update=False,
+                        device=torch.device("cpu"))
         assert agent.training
 
         agent.eval()
         evaluate_policy("CartPole-v1", agent, seeds=[0],
-                        normalizer=None, device=torch.device("cpu"))
+                        normalizer=None, update=False,
+                        device=torch.device("cpu"))
         assert not agent.training
 
     def test_accepts_vector_env_input(self) -> None:
         env = vectorize_env("CartPole-v1", num_envs=2)
         agent = ActorCriticAgent(4, 2, is_discrete=True)
         result = evaluate_policy(env, agent, seeds=[0],
-                                 normalizer=None, device=torch.device("cpu"))
+                                 normalizer=None, update=False,
+                                 device=torch.device("cpu"))
         assert len(result["returns"]) == 1
         env.close()
 
@@ -229,7 +235,8 @@ class TestEvaluatePolicy:
         try:
             agent = ActorCriticAgent(4, 2, is_discrete=True)
             result = evaluate_policy(env, agent, seeds=[0],
-                                     normalizer=None, device=torch.device("cpu"))
+                                     normalizer=None, update=False,
+                                     device=torch.device("cpu"))
             assert len(result["returns"]) == 1
         finally:
             root_spec.id = old_id
@@ -342,13 +349,13 @@ class TestParseToTensor:
 # ---------------------------------------------------------------------------
 
 class TestGetLastObs:
-    def test_missing_final_obs_returns_none(self) -> None:
+    def test_missing_info_returns_none(self) -> None:
         assert get_last_obs({}, 1, (4,), torch.device("cpu")) is None
 
-    def test_full_final_obs_stacked(self) -> None:
+    def test_full_final_observation_stacked(self) -> None:
         obs0 = np.array([1.0, 2.0], dtype=np.float32)
         obs1 = np.array([3.0, 4.0], dtype=np.float32)
-        info = {"final_obs": [obs0, obs1]}
+        info = {"final_observation": [obs0, obs1]}
         out = get_last_obs(info, 2, (2,), torch.device("cpu"))
         assert out is not None
         assert out.shape == (2, 2)
@@ -356,25 +363,18 @@ class TestGetLastObs:
 
     def test_none_slot_zero_filled(self) -> None:
         obs0 = np.array([1.0, 2.0], dtype=np.float32)
-        info = {"final_obs": [obs0, None]}
+        info = {"final_observation": [obs0, None]}
         out = get_last_obs(info, 2, (2,), torch.device("cpu"))
         assert out is not None
         assert out.shape == (2, 2)
         assert out[1].tolist() == [0.0, 0.0]
 
     def test_all_none_slots_still_tensor(self) -> None:
-        info = {"final_obs": [None, None]}
+        info = {"final_observation": [None, None]}
         out = get_last_obs(info, 2, (3,), torch.device("cpu"))
         assert out is not None
         assert out.shape == (2, 3)
         assert torch.count_nonzero(out) == 0
-
-    def test_legacy_final_observation_key_fallback(self) -> None:
-        obs0 = np.array([1.0, 2.0], dtype=np.float32)
-        info = {"final_observation": [obs0, None]}
-        out = get_last_obs(info, 2, (2,), torch.device("cpu"))
-        assert out is not None
-        torch.testing.assert_close(out, torch.tensor([[1.0, 2.0], [0.0, 0.0]]))
 
 
 # ---------------------------------------------------------------------------
