@@ -62,8 +62,11 @@ via `gym.make`. `mujoco` is a core dep.
 ## Trust hierarchy
 - README quickstart may be stale. Copy working code from `examples/` (pendulum.py,
   immediate_mode.py, point_mass.py, reacher_mujoco.py) or tests.
-- `benchmarks/` auto-set `DEVICE = cuda if available` → same sm_61 crash without
-  `CUDA_VISIBLE_DEVICES=""`. Their deps are NOT in pyproject — `uv sync` may evict them.
+- `benchmarks/scalability/` hardcodes `DEVICE = "cpu"` (deliberate: the dev-box
+  GTX 1050 Ti sm_61 crashes on CUDA with torch 2.13+cu130). They compare ZeroRL vs
+  SB3 only (CleanRL was deleted). Their deps live in the `benchmarks` optional
+  extra (`uv pip install -e ".[benchmarks]"`) — a bare `uv sync` does NOT install
+  them and may evict manually installed ones.
 - `.opencode/agents/` workflow expects this file kept current.
 
 ## Testing notes
