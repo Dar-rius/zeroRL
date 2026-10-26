@@ -164,7 +164,7 @@ def benchmark_sb3():
     target_timesteps = ROLLOUT_STEPS * 2
 
     while steps_done < TOTAL_STEPS:
-        target_timesteps += ROLLOUT_STEPS
+        target_timesteps = ROLLOUT_STEPS
         model.learn(total_timesteps=target_timesteps, reset_num_timesteps=False)
         sync_gpu()
         
