@@ -1,6 +1,7 @@
 # AGENTS.md
 
 ## Project
+
 zeroRL — RL training framework on PyTorch 2 + Gymnasium v1. Base classes
 (`BaseAgent`, `BaseEnv`, `BaseTrain` in `helpers/train.py`), standalone PPO
 functions, factory helpers (`factory.py`, `easy_train_ppo`). Immediate mode =
@@ -9,16 +10,18 @@ manual loop with `functions` + `logger` (see `examples/immediate_mode.py`).
 via `gym.make`. `mujoco` is a core dep.
 
 ## Commands
-- `uv sync --all-extras --dev`          # uv-managed, hatchling build; no .python-version (requires-python >=3.11)
-- `ruff check zerorl/ tests/`           # Pyflakes rules only (select=["F"])
-- `mypy zerorl/`                        # NOT strict: disables operator/attr-defined/call-arg/override; library only
-- `CUDA_VISIBLE_DEVICES="" uv run pytest tests/`          # full suite — prefix mandatory, see below
-- `CUDA_VISIBLE_DEVICES="" uv run pytest tests/test_train.py::TestClass::test_name`  # single test
+
+- `uv sync --all-extras --dev` # uv-managed, hatchling build; no .python-version (requires-python >=3.11)
+- `ruff check zerorl/ tests/` # Pyflakes rules only (select=["F"])
+- `mypy zerorl/` # NOT strict: disables operator/attr-defined/call-arg/override; library only
+- `CUDA_VISIBLE_DEVICES="" uv run pytest tests/` # full suite — prefix mandatory, see below
+- `CUDA_VISIBLE_DEVICES="" uv run pytest tests/test_train.py::TestClass::test_name` # single test
 - `.pre-commit-config.yaml` exists: ruff + mypy via `uv run` (always_run)
 - CI: `.github/workflows/test.yml` — CPU matrix py3.11–3.13 (`pytest -m "not gpu" --cov=zerorl`),
   GPU job on a self-hosted **Jetson Thor** runner (`pytest -m "gpu"`); plus `security.yml` (SBOM)
 
 ## GPU on this dev box
+
 - This box has a GTX 1050 Ti (sm_61) + torch 2.13+cu130: `torch.cuda.is_available()` returns
   True but sm_61 kernels are missing → CUDA ops crash. ALWAYS prefix test/benchmark/example
   runs with `CUDA_VISIBLE_DEVICES=""`. GPU CI runs on the separate Jetson Thor runner.
@@ -26,6 +29,7 @@ via `gym.make`. `mujoco` is a core dep.
   is unavailable, so the whole suite runs CPU-only with the prefix.
 
 ## Architecture contracts (not obvious from filenames)
+
 - Duck-typed agent contract, not ABC: `BaseAgent` is a plain nn.Module (+`device` property).
   Agents must define `get_action()` themselves (see `factory.ActorCriticAgent`);
   `BaseTrain.__init__` asserts it exists, `ppo_func` asserts `forward`/`build_distribution`
@@ -51,28 +55,41 @@ via `gym.make`. `mujoco` is a core dep.
   `deterministic_action` branches on the DISTRIBUTION TYPE (Categorical→argmax),
   not the `is_discrete` flag: torch's `Categorical.mean` is ALWAYS `nan`, so any
   agent that omits `is_discrete` used to feed nan actions to gym. `train(save_model=,
-  use_wandb=, use_tb=)` is keyword-only.
+use_wandb=, use_tb=)` is keyword-only.
 - `TrainConfig` requires `project_name` (no default); `num_update` is computed ONCE in
   `__post_init__` (`timestamp // (rollout_steps * num_envs)`). `normalize=True` enables
   NormMeanStd (also saved by `save_checkpoints`). `profile=True` → `PhaseProfiler`.
 - PPO: `ppo_func` with injectable `ppo_loss_func`; `fast_compile` in `zerorl.compiler`
   (no-op without C++ compiler or without Triton on CUDA). `easy_train_ppo(env_spec,
-  config, algo_config, *, seed=22, ...)` — env first. Import from full module paths.
+config, algo_config, *, seed=22, ...)` — env first. Import from full module paths.
 
 ## Trust hierarchy
+
 - README quickstart may be stale. Copy working code from `examples/` (pendulum.py,
   immediate_mode.py, point_mass.py, reacher_mujoco.py) or tests.
-- `benchmarks/scalability/` hardcodes `DEVICE = "cpu"` (deliberate: the dev-box
-  GTX 1050 Ti sm_61 crashes on CUDA with torch 2.13+cu130). They compare ZeroRL vs
-  SB3 only (CleanRL was deleted). Their deps live in the `benchmarks` optional
-  extra (`uv pip install -e ".[benchmarks]"`) — a bare `uv sync` does NOT install
-  them and may evict manually installed ones.
+- `benchmarks/scalability/` is a THREE-framework benchmark (zeroRL vs SB3 vs TorchRL)
+  on CPU (deliberate: the dev-box GTX 1050 Ti sm_61 crashes on CUDA with
+  torch 2.13+cu130 — prefix runs with `CUDA_VISIBLE_DEVICES=""`). Experiments:
+  A = env scaling (N=1..16, sync, warmup 16k excluded + measure 100k transitions,
+  5 reps), B = worker scaling (N=8, W=1..8, `MultiSyncCollector`; zeroRL sync-only,
+  SB3 W∈{1,N}), C/D = PPO training protocols (fixed 2048 steps/env vs fixed global
+  2048; exact 262,144-transition budget, 3 reps) driven by
+  `benchmarks/scalability/run.py --experiment {A,B,C,D}`. Raw rows land in
+  `results/*.jsonl` (gitignored, schema in `results_schema.py`); figures/report via
+  `python -m benchmarks.scalability.plots|report`. Cross-framework collection parity
+  (zeroRL↔SB3 bit-exact) is enforced by `collection.py::FirstResetSeeded`; shared
+  policy weights in `policy_reference.py`; torchrl details in `INSPECTION.md`.
+  `CUDA_VISIBLE_DEVICES="" uv run pytest tests/test_benchmark_scaling.py` covers it.
+  SB3 + matplotlib live in the `benchmarks` optional extra
+  (`uv pip install -e ".[benchmarks]"`) — a bare `uv sync` does NOT install
+  them and may evict manually installed ones (torchrl/tensordict ARE core deps).
 - `.opencode/agents/` workflow expects this file kept current.
 
 ## Testing notes
+
 - tests/ is grouped by area: `agent/`, `algo/ppo/`, `buffer/`, `env/` + flat
   `test_config|test_debug|test_errors|test_eval|test_factory|test_function|
-  test_logger|test_processing|test_smoke|test_train.py` plus `tests/test_compiler.py`
+test_logger|test_processing|test_smoke|test_train.py` plus `tests/test_compiler.py`
   (renamed from `tests/compiler.py` so pytest collects it — default
   `python_files = test_*.py`). Split of debug coverage:
   - `test_debug.py` = UNIT tests for `zerorl.debug` helpers
@@ -83,5 +100,69 @@ via `gym.make`. `mujoco` is a core dep.
   - `test_smoke.py` = min-train e2e (easy_train_ppo / BaseTrain+real PPO /
     immediate-mode loop) on a cpu+cuda parametrized `device` fixture (cuda leg
     has `@pytest.mark.gpu`, runtime-skips when CUDA is unavailable).
+  - `test_benchmark_scaling.py` = budget/metric/schema units + framework
+    integration smokes (exp A/B/C/D at tiny budgets; SB3 legs importorskip,
+    torchrl legs run in CI). Budget math: protocol C = 128/N updates,
+    D = 128 updates of global batch 2048 at exactly 262,144 transitions.
 - Vectorized train uses Gymnasium SAME_STEP autoreset (no manual multi-env reset in
   `rollout_phase`).
+
+## Primary objective
+
+Maximize verified engineering progress per model token and tool call. Favor implementation, targeted validation, and measurable results over repeated exploration, lengthy planning, and unnecessary refactoring.
+
+## 1. Context management
+
+- Read applicable `AGENTS.md` instructions and inspect the current Git status before modifying files.
+- Explore only the files relevant to the current task. Use targeted searches, symbol references, and small file sections instead of dumping entire directories or large files.
+- Do not reread the entire project, architecture document, or conversation at every turn. Reuse information already established in the current session.
+- For long handoff documents, read only the sections relevant to the current task, plus any dependencies required to verify the implementation.
+- Respect the existing source-of-truth hierarchy and inspect the actual code and tests whenever documentation might be stale.
+- Do not create duplicate summaries, repeat explanations, or produce lengthy progress reports unless they are useful.
+
+## 2. Execution over planning
+
+- Start with a short statement of the objective, acceptance criteria, and the files most likely to be affected.
+- Explore enough to understand the relevant implementation, then start coding. Do not spend the entire task producing a plan.
+- Work in small, complete increments: implement, run targeted tests, inspect failures, and fix them.
+- Do not redesign the architecture, introduce unnecessary abstractions, or replace working code without a demonstrated reason.
+- Follow existing project conventions and reuse existing utilities, interfaces, fixtures, and examples.
+- Do not ask for permission for routine implementation decisions that are already covered by the project requirements.
+
+## 3. Efficient testing
+
+- Begin with the smallest relevant test or smoke test.
+- Run broader test suites when justified by the scope of the change and available resources.
+- Do not rerun unchanged, expensive tests without a reason.
+- Never claim a test passed unless it actually ran and passed.
+- Distinguish verified results, unverified assumptions, and known limitations.
+
+## 4. Reinforcement learning benchmarks
+
+- Inspect existing benchmark scripts before creating new ones.
+- Avoid duplicate implementations of environments, training loops, metrics, and experiment tracking.
+- Start with a cheap smoke test, then validate the benchmark protocol before running the full experiment.
+- Preserve reproducibility: record the Git commit, dependency versions, hardware, environment, configurations, random seeds, and measurement methodology.
+- Never fabricate benchmark results or infer statistical significance from insufficient runs.
+- Separate algorithm performance, throughput, resource consumption, and developer experience. Do not combine them into a single unsupported claim.
+- Do not launch large benchmark sweeps before validating that the harness, logging, and result aggregation work correctly.
+
+## 6. Tool-call discipline
+
+- Combine independent, inexpensive inspection commands when practical.
+- Avoid repeating searches, reading the same files, or generating multiple alternative plans without new evidence.
+- Do not launch parallel agents or duplicate investigations unless they provide a clear, measurable benefit.
+- Summarize large command outputs and inspect only relevant errors or result fields.
+- Prefer the smallest useful change that satisfies the acceptance criteria.
+
+## 7. Definition of done
+
+For each task, report concisely:
+
+1. What was implemented.
+2. Which files changed.
+3. Which commands and tests actually ran, with their results.
+4. Remaining limitations or unresolved failures.
+5. The next highest-value task.
+
+If the task is partially complete, preserve working progress and identify the exact remaining blocker. Do not restart completed work without evidence that it is incorrect.
