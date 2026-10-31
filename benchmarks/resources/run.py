@@ -30,6 +30,10 @@ Conventions (documented because they affect interpretation):
   builds); NVML provides device telemetry only. Energy is unavailable on
   this host (NVML power unsupported, no RAPL) and is recorded as such —
   never fabricated.
+
+Entrypoint::
+
+    CUDA_VISIBLE_DEVICES="" python -m benchmarks.resources.run
 """
 
 from __future__ import annotations
@@ -57,7 +61,7 @@ DEFAULT_INTERVAL_S = 0.2
 COLLECT_NUM_ENVS = 8
 PPO_EXPERIMENT = "D"
 PPO_NUM_ENVS = 4
-DEFAULT_OUT = REPO_ROOT / "benchmarks/scalability/results/resources.jsonl"
+DEFAULT_OUT = REPO_ROOT / "benchmarks/resources/results/resources.jsonl"
 
 
 # ---------------------------------------------------------------------------
@@ -567,7 +571,7 @@ def run_validation(out_dir: Path | None = None,
     """
     from benchmarks.scalability.collection import CollectionConfig, run_collection
 
-    out_dir = out_dir if out_dir is not None else REPO_ROOT / "benchmarks/scalability/results"
+    out_dir = out_dir if out_dir is not None else REPO_ROOT / "benchmarks/resources/results"
     val_rows = out_dir / "resources_validation.jsonl"
     if val_rows.exists():
         val_rows.unlink()
@@ -623,7 +627,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--reps-ppo", type=int, default=3,
                    help="repetitions for the ppo workload (C/D schedule)")
     p.add_argument("--out", default=None,
-                   help="JSONL output (default: results/resources.jsonl)")
+                   help="JSONL output (default: "
+                        "benchmarks/resources/results/resources.jsonl)")
     p.add_argument("--validate", action="store_true",
                    help="short validation runs + overhead probe only")
     return p

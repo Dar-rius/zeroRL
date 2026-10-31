@@ -353,8 +353,7 @@ def generate_report(results_dir: Path, out_path: Path) -> Path:
             rows.extend(load_flat(file))
         else:
             _warn(f"{file.name} missing — section skipped")
-    res_file = results_dir / "resources.jsonl"
-    if not rows and not res_file.exists():
+    if not rows:
         raise SystemExit(f"no result rows found under {results_dir}")
 
     curves: dict[str, dict[str, dict[str, list]]] = {
@@ -387,7 +386,6 @@ def generate_report(results_dir: Path, out_path: Path) -> Path:
         lines += [f"## Experiment {exp} — PPO training protocol ({title})", "",
                   table, ""]
 
-    lines += _section_resources(results_dir)
     lines += _findings(curves, rows)
     lines += _integrity(rows)
     lines += _hyperparams(rows)
@@ -399,72 +397,6 @@ def generate_report(results_dir: Path, out_path: Path) -> Path:
     out_path.write_text("\n".join(lines), encoding="utf-8")
     print(f"[report] wrote {out_path}")
     return out_path
-
-
-def _section_resources(results_dir: Path) -> list[str]:
-    """Table + telemetry notes for the resource-consumption campaign (R)."""
-    import statistics
-
-    from benchmarks.scalability.results_schema import load_rows
-
-    res_file = results_dir / "resources.jsonl"
-    if not res_file.exists():
-        return []
-    rows_all = load_rows(res_file)
-    ok = [r for r in rows_all if r["status"] == "ok"]
-    out = [
-        "## Resource consumption (experiment R)", "",
-        "Fixed workloads, device CPU. CPU% = sum over the live process "
-        "tree (multiprocess sums may exceed 100%); RSS summed across "
-        "tree processes (shared pages may repeat — PSS/USS recorded in "
-        "the raw rows); GPU = device-level telemetry only (workload does "
-        "not use the GPU); energy recorded only when reliable telemetry "
-        "exists.", "",
-    ]
-    if not ok:
-        out += [f"_no ok rows ({len(rows_all)} total) — campaign "
-                "incomplete or still running._", ""]
-        return out
-
-    def _pm2(vals, digits: int = 1) -> str:
-        vals = [v for v in vals if v is not None]
-        if not vals:
-            return "—"
-        m = statistics.fmean(vals)
-        s = statistics.stdev(vals) if len(vals) > 1 else 0.0
-        return f"{m:,.{digits}f} ± {s:,.{digits}f}"
-
-    header = ["workload", "framework", "wall (s)", "cpu util avg (%)",
-              "cpu total (s)", "cpu s / 1k", "rss peak (MiB)", "n"]
-    body: list[list[str]] = []
-    for wl in ("collect", "ppo"):
-        for fw in FRAMEWORK_ORDER:
-            rs = [r for r in ok
-                  if r["config"]["workload"] == wl
-                  and r["framework"] == fw]
-            if not rs:
-                continue
-            ms = [r["metrics"] for r in rs]
-            body.append([
-                wl, fw,
-                _pm2([m.get("wall_s") for m in ms]),
-                _pm2([m.get("cpu_util_avg_pct") for m in ms]),
-                _pm2([m.get("cpu_total_s") for m in ms]),
-                _pm2([m.get("cpu_s_per_1k") for m in ms], 2),
-                _pm2([(m.get("rss_peak_kib") or 0) / 1024 for m in ms]),
-                str(len(rs)),
-            ])
-    out += [_table(header, body), ""]
-    res0 = ok[0]["extra"]["resources"]
-    gpu = res0.get("gpu", {})
-    energy = res0.get("energy", {})
-    out += [
-        f"- GPU telemetry: {'available (device-level only)' if gpu.get('available') else 'unavailable — ' + str(gpu.get('reason', ''))}.",
-        f"- Energy: {'available — ' + str(energy.get('scope', '')) if energy.get('available') else 'unavailable — ' + str(energy.get('reason', ''))}.",
-        "- Raw per-run rows: `results/resources.jsonl` (validation runs "
-        "kept separately in `resources_validation.*`).", "",
-    ]
-    return out
 
 
 def main(argv: list[str] | None = None) -> int:
