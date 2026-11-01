@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from benchmarks.scalability.resources import (
+from benchmarks.resources.run import (
     DEFAULT_INTERVAL_S,
     ResourceMonitor,
     aggregate_samples,
@@ -187,6 +187,36 @@ class TestWorkloadIntegration:
         assert row["config"]["interval_s"] == 0.05
 
 
+class TestRawSamplePersistence:
+    """Raw per-interval samples are preserved next to the rows and are
+    addressable from the row (extra.samples_file); can be disabled."""
+
+    def test_raw_samples_dump_and_disable(self, tmp_path) -> None:
+        from benchmarks.scalability.collection import CollectionConfig
+
+        out = tmp_path / "res.jsonl"
+        cfg = CollectionConfig(warmup=500, measure=1000)
+        row = run_resource_workload(
+            "zeroRL", "collect", 97, interval=0.05, out_path=out,
+            collection_cfg=cfg, num_envs=2, gpu=None)
+        assert row["status"] == "ok"
+        rel = row["extra"]["samples_file"]
+        assert rel and rel.startswith("samples/")
+        samples = [json.loads(x)
+                   for x in (tmp_path / rel).read_text().splitlines()]
+        assert len(samples) >= 2
+        assert {"t", "rss", "n_procs"} <= set(samples[0])
+        # cpu_pct present on all but the first sample
+        assert all("cpu_pct" in s for s in samples[1:])
+
+        row2 = run_resource_workload(
+            "zeroRL", "collect", 96, interval=0.05, out_path=out,
+            collection_cfg=cfg, num_envs=2, gpu=None, write_samples=False)
+        assert row2["extra"]["samples_file"] is None
+        assert not (tmp_path / "samples"
+                    / "collect_zeroRL_rep96.jsonl").exists()
+
+
 class TestSerializationAndAggregation:
     """(11) rows are schema-valid and consumable by the aggregators."""
 
@@ -217,7 +247,7 @@ def test_monitor_interval_validation() -> None:
 
 
 def test_cli_parser_defaults() -> None:
-    from benchmarks.scalability.resources import build_parser
+    from benchmarks.resources.run import build_parser
 
     args = build_parser().parse_args([])
     assert args.workload == "all"

@@ -43,13 +43,17 @@ REQUIRED_FIELDS = (
 )
 
 
-def environment_info() -> dict[str, Any]:
-    """Capture versions/hardware metadata recorded into every row."""
+def environment_info(device: str = "cpu") -> dict[str, Any]:
+    """Capture versions/hardware metadata recorded into every row.
+
+    ``device`` is the ACTUAL device the workload ran on (default "cpu" keeps
+    every pre-existing CPU row identical).
+    """
     info: dict[str, Any] = {
         "python": sys.version.split()[0],
         "platform": platform.platform(),
         "processor": platform.processor(),
-        "device": "cpu",
+        "device": device,
         "hostname": platform.node(),
     }
     try:
@@ -119,6 +123,7 @@ def make_row(
     config: dict[str, Any],
     error: str | None = None,
     extra: dict[str, Any] | None = None,
+    device: str = "cpu",
 ) -> dict[str, Any]:
     """Build and validate one result row."""
     if framework not in FRAMEWORKS:
@@ -145,7 +150,7 @@ def make_row(
         "metrics": metrics,
         "config": config,
         "error": error,
-        "environment": environment_info(),
+        "environment": environment_info(device),
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
     }
     if extra:

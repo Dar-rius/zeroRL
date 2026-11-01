@@ -186,7 +186,7 @@ def _hyper_detail(cfg: PPOProtocolConfig, experiment: str, num_envs: int,
 # ---------------------------------------------------------------------------
 
 def run_zerorl_ppo(cfg: PPOProtocolConfig, experiment: str, num_envs: int,
-                   seed: int) -> dict:
+                   seed: int, device: str = "cpu") -> dict:
     from zerorl.algorithms.ppo.easy_ppo import easy_train_ppo
     from zerorl.config import TrainConfig
     from zerorl.functions import derive_env_seeds
@@ -201,6 +201,7 @@ def run_zerorl_ppo(cfg: PPOProtocolConfig, experiment: str, num_envs: int,
         agent = ActorCriticAgent(OBS_DIM, ACT_DIM, is_discrete=True,
                                  hidden_dim=HIDDEN)
         load_into_zerorl(agent, build_reference_state_dict(cfg.reference_seed))
+        agent.to(device)
         tconfig = TrainConfig(
             model_name=f"bench_ppo_{experiment}",
             project_name="benchmarks",
@@ -208,7 +209,7 @@ def run_zerorl_ppo(cfg: PPOProtocolConfig, experiment: str, num_envs: int,
             rollout_steps=rollout,
             num_envs=num_envs,
         )
-        tconfig.device = torch.device("cpu")
+        tconfig.device = torch.device(device)
         trainer = easy_train_ppo(
             seeded_env_factory(cfg.env_id, seeds), tconfig,
             _algo_config_from(cfg),
@@ -256,7 +257,7 @@ def run_zerorl_ppo(cfg: PPOProtocolConfig, experiment: str, num_envs: int,
 # ---------------------------------------------------------------------------
 
 def run_sb3_ppo(cfg: PPOProtocolConfig, experiment: str, num_envs: int,
-                seed: int) -> dict:
+                seed: int, device: str = "cpu") -> dict:
     from stable_baselines3 import PPO
     from stable_baselines3.common.utils import set_random_seed
     from stable_baselines3.common.vec_env import DummyVecEnv
@@ -286,7 +287,7 @@ def run_sb3_ppo(cfg: PPOProtocolConfig, experiment: str, num_envs: int,
             max_grad_norm=cfg.grad_clip,
             seed=seed,
             verbose=0,
-            device="cpu",
+            device=device,   # SB3 keeps its native rollout buffer on CPU
         )
         load_into_sb3(model.policy, build_reference_state_dict(cfg.reference_seed))
         init_s = time.perf_counter() - t0
@@ -444,7 +445,7 @@ def _torchrl_train_minibatch(trunk: TorchRLSharedTrunk, loss_module: Any,
 
 
 def run_torchrl_ppo(cfg: PPOProtocolConfig, experiment: str, num_envs: int,
-                    seed: int) -> dict:
+                    seed: int, device: str = "cpu") -> dict:
     from gymnasium.vector import AutoresetMode, SyncVectorEnv
     from torchrl.collectors import Collector
     from torchrl.envs.libs.gym import GymWrapper
@@ -470,15 +471,20 @@ def run_torchrl_ppo(cfg: PPOProtocolConfig, experiment: str, num_envs: int,
 
         rearm_first_reset(venv)
         trunk = TorchRLSharedTrunk(build_reference_state_dict(cfg.reference_seed))
+        trunk.to(device)   # before wiring + Collector: params match
+        # policy_device so the collector shares these exact params (no copy).
         wiring = build_torchrl_ppo_wiring(trunk, cfg, updates)
         lr_start, opt_ev = _lr_and_optimizer(wiring["optimizer"])
         # P5: collector construction (env carrier reset + spec wiring) is
         # setup work — timed under init, never inside the measure timer.
+        from benchmarks.scalability.collection import _collector_device_kwargs
+
         collector = Collector(
             wrapper, wiring["collector_policy"], backend="direct",
             trust_policy=True,
             auto_register_policy_transforms=False,
             frames_per_batch=fpb, total_frames=cfg.total,
+            **_collector_device_kwargs(device),
         )
         lc.add("collector", collector.shutdown)
         init_s = time.perf_counter() - t0
@@ -486,7 +492,9 @@ def run_torchrl_ppo(cfg: PPOProtocolConfig, experiment: str, num_envs: int,
         t = time.perf_counter()
         n_updates = 0
         collected = 0
-        ep_ret = torch.zeros(num_envs)
+        # accumulator must live where the collector stores rewards
+        # (storing_device == device for cuda runs; identical for cpu)
+        ep_ret = torch.zeros(num_envs, device=torch.device(device))
         returns: list[float] = []
         for td in collector:
             collected += int(td.batch_size.numel())
@@ -556,7 +564,8 @@ def run_torchrl_ppo(cfg: PPOProtocolConfig, experiment: str, num_envs: int,
 # ---------------------------------------------------------------------------
 
 def run_ppo_training(framework: str, experiment: str, num_envs: int,
-                     seed: int, cfg: PPOProtocolConfig | None = None) -> dict:
+                     seed: int, cfg: PPOProtocolConfig | None = None,
+                     device: str = "cpu") -> dict:
     """Run one C/D training pass and return the artifact dict."""
     if experiment not in EXPERIMENTS_CD:
         raise ValueError(f"experiment must be one of {EXPERIMENTS_CD}, "
@@ -566,7 +575,7 @@ def run_ppo_training(framework: str, experiment: str, num_envs: int,
                          f"(one of {FRAMEWORKS_A})")
     cfg = cfg if cfg is not None else PPOProtocolConfig()
     if framework == "zeroRL":
-        return run_zerorl_ppo(cfg, experiment, num_envs, seed)
+        return run_zerorl_ppo(cfg, experiment, num_envs, seed, device=device)
     if framework == "SB3":
-        return run_sb3_ppo(cfg, experiment, num_envs, seed)
-    return run_torchrl_ppo(cfg, experiment, num_envs, seed)
+        return run_sb3_ppo(cfg, experiment, num_envs, seed, device=device)
+    return run_torchrl_ppo(cfg, experiment, num_envs, seed, device=device)

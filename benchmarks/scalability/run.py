@@ -21,8 +21,8 @@ Examples::
 Every run appends one JSONL row (see results_schema.py); failures are
 recorded as ``status="failed"`` rows with the traceback and configurations a
 framework cannot express are ``status="unsupported"`` — never silently
-dropped, never faked. ``CUDA_VISIBLE_DEVICES=""`` is mandatory on the dev
-box (sm_61).
+dropped, never faked. Default device is CPU; prefix CPU runs with
+``CUDA_VISIBLE_DEVICES=""`` and run ``--device cuda`` WITHOUT that prefix.
 """
 
 from __future__ import annotations
@@ -93,6 +93,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--out", default=None,
                    help="JSONL output (default: benchmarks/scalability/results/"
                         "exp<EXPERIMENT>.jsonl)")
+    p.add_argument("--device", choices=["cpu", "cuda"], default="cpu",
+                   help="compute device for policies/agents (default cpu; "
+                        "env stepping is always CPU)")
     return p
 
 
@@ -142,13 +145,16 @@ def main(argv: list[str] | None = None) -> int:
             status, art, err = "ok", None, None
             try:
                 if args.experiment == "A":
-                    art = run_collection(framework, cfg, num_envs, seed)
+                    art = run_collection(framework, cfg, num_envs, seed,
+                                         device=args.device)
                 elif args.experiment == "B":
                     art = run_b_collection(framework, cfg, num_workers,
-                                           seed, num_envs)
+                                           seed, num_envs,
+                                           device=args.device)
                 else:
                     art = run_ppo_training(framework, args.experiment,
-                                           num_envs, seed, ppo_cfg)
+                                           num_envs, seed, ppo_cfg,
+                                           device=args.device)
             except UnsupportedConfiguration as exc:
                 status, err = "unsupported", str(exc)
             except Exception:
@@ -175,12 +181,16 @@ def main(argv: list[str] | None = None) -> int:
                         "measure_seconds": phases["measure_seconds"],
                     },
                     config={
+                        # requested device; fallback legs report actual in
+                        # config_detail.device_used
+                        "device": args.device,
                         "env_id": cfg.env_id, "warmup": cfg.warmup,
                         "measure": cfg.measure,
                         "reference_seed": cfg.reference_seed,
                         **art["config_detail"],
                     },
                     extra={"fingerprint": art["fingerprint"]},
+                    device=args.device,
                 )
             else:
                 phases = {"init_seconds": 0.0, "warmup_seconds": 0.0,
@@ -194,9 +204,11 @@ def main(argv: list[str] | None = None) -> int:
                                  "measure_target": cfg.measure,
                                  "measured": 0, "exact": False},
                     metrics={},
-                    config={"env_id": cfg.env_id, "warmup": cfg.warmup,
+                    config={"device": args.device, "env_id": cfg.env_id,
+                            "warmup": cfg.warmup,
                             "measure": cfg.measure},
                     error=err,
+                    device=args.device,
                 )
 
             append_row(out, row)
@@ -248,10 +260,12 @@ def _ppo_row(args: argparse.Namespace, framework: str, mode: str,
                 **art["metrics"],
             },
             config={
+                "device": args.device,
                 "env_id": ppo_cfg.env_id,
                 **art["config_detail"],
             },
             extra={"episode_returns": art["episode_returns"]},
+            device=args.device,
         )
         return row, throughput
     phases = {"init_seconds": 0.0, "measure_seconds": 0.0}
@@ -263,8 +277,10 @@ def _ppo_row(args: argparse.Namespace, framework: str, mode: str,
                      "measure_target": ppo_cfg.total,
                      "measured": 0, "exact": False},
         metrics={},
-        config={"env_id": ppo_cfg.env_id, "total": ppo_cfg.total},
+        config={"device": args.device, "env_id": ppo_cfg.env_id,
+                "total": ppo_cfg.total},
         error=err,
+        device=args.device,
     )
     return row, 0.0
 

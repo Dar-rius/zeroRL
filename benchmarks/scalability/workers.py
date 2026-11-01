@@ -94,7 +94,14 @@ def split_seeds(seeds: list[int], num_workers: int) -> list[list[int]]:
 
 
 def run_torchrl_mp_collection(cfg: CollectionConfig, num_envs: int,
-                              num_workers: int, seed: int) -> dict:
+                              num_workers: int, seed: int,
+                              device: str = "cpu") -> dict:
+    # cuda fallback (documented, honest): MultiSyncCollector ships the policy
+    # into worker PROCESSES — CUDA policy execution there is fragile on this
+    # 4 GB sm_61 GPU, so the mp leg always runs on CPU and records the
+    # requested-vs-used device in config_detail (never silently mixed).
+    device_used = "cpu"
+    fallback = device != "cpu"
     from tensordict.nn import TensorDictModule
     from torchrl.collectors import MultiSyncCollector
     from zerorl.functions import derive_env_seeds
@@ -184,6 +191,13 @@ def run_torchrl_mp_collection(cfg: CollectionConfig, num_envs: int,
                 "frames_per_batch_warmup": fpb_w,
                 "frames_per_batch_measure": fpb_m,
                 "seeds": seeds,
+                **({
+                    "device_requested": device,
+                    "device_used": device_used,
+                    "device_fallback_reason":
+                        "MultiSyncCollector worker-process CUDA fragility "
+                        "(4 GB sm_61)",
+                } if fallback else {}),
             },
         }
     lc.attach(art)
@@ -195,7 +209,8 @@ def run_torchrl_mp_collection(cfg: CollectionConfig, num_envs: int,
 # ---------------------------------------------------------------------------
 
 def run_b_collection(framework: str, cfg: CollectionConfig, num_workers: int,
-                     seed: int, num_envs: int = NUM_ENVS_B) -> dict:
+                     seed: int, num_envs: int = NUM_ENVS_B,
+                     device: str = "cpu") -> dict:
     """One Experiment B run; raises UnsupportedConfiguration when the
     framework cannot express this worker count (caller records it)."""
     if framework not in FRAMEWORKS_B:
@@ -218,10 +233,13 @@ def run_b_collection(framework: str, cfg: CollectionConfig, num_workers: int,
         )
 
     if framework == "zeroRL":
-        return run_zerorl_collection(cfg, num_envs, seed)          # W=1
+        return run_zerorl_collection(cfg, num_envs, seed,
+                                     device=device)         # W=1
     if framework == "SB3":
         return run_sb3_collection(cfg, num_envs, seed,
-                                  subproc=num_workers > 1)         # W=1 or N
+                                  subproc=num_workers > 1,
+                                  device=device)            # W=1 or N
     if num_workers == 1:
-        return run_torchrl_collection(cfg, num_envs, seed)
-    return run_torchrl_mp_collection(cfg, num_envs, num_workers, seed)
+        return run_torchrl_collection(cfg, num_envs, seed, device=device)
+    return run_torchrl_mp_collection(cfg, num_envs, num_workers, seed,
+                                     device=device)

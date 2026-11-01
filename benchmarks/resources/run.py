@@ -389,6 +389,11 @@ class ResourceMonitor:
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
 
+    @property
+    def samples(self) -> list[dict[str, Any]]:
+        """Raw per-interval samples recorded between start() and stop()."""
+        return list(self._samples)
+
     def stop(self) -> dict[str, Any]:
         self._stop.set()
         if self._thread is not None:
@@ -434,12 +439,19 @@ def run_resource_workload(
     gpu: Literal["auto"] | NvmlBackend | None
     | Callable[[], NvmlBackend | None] = "auto",
     monitor: ResourceMonitor | None = None,
+    write_samples: bool = True,
+    device: str = "cpu",
 ) -> dict[str, Any]:
     """Run one fixed workload under monitoring and append a schema row.
 
     ``gpu="auto"`` (default) resolves to a fresh ``make_gpu_backend()``;
     explicit ``None`` disables GPU sampling and a callable is resolved by
     ``ResourceMonitor``. This is the single place that interprets ``"auto"``.
+
+    With ``write_samples=True`` (default) the RAW per-interval samples are
+    persisted under ``<out-dir>/samples/`` so aggregated numbers stay
+    auditable; the repo-relative path is stored as ``extra.samples_file``.
+    The CLI flag ``--no-samples`` disables the dump.
     """
     from benchmarks.scalability.collection import run_collection
     from benchmarks.scalability.ppo_protocols import run_ppo_training
@@ -457,6 +469,7 @@ def run_resource_workload(
         raise ValueError(f"workload must be one of {WORKLOADS}, got {workload!r}")
 
     seed = 1000 + rep
+    out = out_path if out_path is not None else DEFAULT_OUT
     mon = monitor if monitor is not None else ResourceMonitor(
         interval=interval, gpu=gpu)
     status, err, art = "ok", None, None
@@ -464,9 +477,10 @@ def run_resource_workload(
     t0 = time.perf_counter()
     try:
         if workload == "ppo":
-            art = run_ppo_training(framework, PPO_EXPERIMENT, n, seed, cfg)
+            art = run_ppo_training(framework, PPO_EXPERIMENT, n, seed, cfg,
+                                   device=device)
         else:
-            art = run_collection(framework, cfg, n, seed)
+            art = run_collection(framework, cfg, n, seed, device=device)
     except Exception as exc:
         status = ("unsupported"
                   if type(exc).__name__ == "UnsupportedConfiguration"
@@ -474,6 +488,20 @@ def run_resource_workload(
         err = traceback.format_exc()
     wall_s = time.perf_counter() - t0
     stats = mon.stop()
+
+    # raw per-sample dump: auditable raw measurements next to the rows
+    samples_rel: str | None = None
+    if write_samples and mon.samples:
+        sdir = out.parent / "samples"
+        sdir.mkdir(parents=True, exist_ok=True)
+        # `_cuda` suffix keeps GPU samples from overwriting CPU sample files
+        sfile = sdir / (
+            f"{workload}_{framework}_rep{rep}"
+            f"{'_cuda' if device == 'cuda' else ''}.jsonl")
+        sfile.write_text(
+            "\n".join(json.dumps(s) for s in mon.samples) + "\n",
+            encoding="utf-8")
+        samples_rel = str(sfile.relative_to(out.parent))
 
     if art is not None:
         phases = art["phases"]
@@ -514,7 +542,7 @@ def run_resource_workload(
     config = {
         "workload": workload,
         "env_id": cfg.env_id,
-        "device": "cpu",
+        "device": device,   # actual device (fallback legs add device_used)
         "interval_s": interval,
         "budget": budget,
         "num_envs": n,
@@ -536,9 +564,10 @@ def run_resource_workload(
         metrics=metrics,
         config=config,
         error=err,
-        extra={"resources": stats, "hardware": hardware_info(mon.gpu)},
+        extra={"resources": stats, "hardware": hardware_info(mon.gpu),
+               "samples_file": samples_rel},
+        device=device,
     )
-    out = out_path if out_path is not None else DEFAULT_OUT
     append_row(out, row)
     # verify the row was written correctly before proceeding
     last_line = out.read_text(encoding="utf-8").strip().splitlines()[-1]
@@ -629,6 +658,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--out", default=None,
                    help="JSONL output (default: "
                         "benchmarks/resources/results/resources.jsonl)")
+    p.add_argument("--device", choices=["cpu", "cuda"], default="cpu",
+                   help="compute device for the workload (default cpu; "
+                        "env stepping is always CPU)")
+    p.add_argument("--no-samples", action="store_true",
+                   help="skip raw per-sample JSONL dumps under samples/")
     p.add_argument("--validate", action="store_true",
                    help="short validation runs + overhead probe only")
     return p
@@ -661,7 +695,9 @@ def main(argv: list[str] | None = None) -> int:
                 try:
                     row = run_resource_workload(
                         fw, workload, rep, interval=args.interval,
-                        out_path=out)
+                        out_path=out,
+                        write_samples=not args.no_samples,
+                        device=args.device)
                 except Exception:
                     n_failed += 1
                     print(f"[FAIL] {label}\n{traceback.format_exc()}")
@@ -682,7 +718,8 @@ def main(argv: list[str] | None = None) -> int:
                         f"cpu/1k {m['cpu_s_per_1k']}"
                     )
                 n_rows += 1
-    print(f"done: {n_rows} rows ({n_failed} failed) -> {out}")
+    print(f"done: {n_rows} rows ({n_failed} failed, device={args.device}) "
+          f"-> {out}")
     return 1 if n_failed else 0
 
 

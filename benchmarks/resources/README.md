@@ -14,4 +14,10 @@ Entrypoints: `CUDA_VISIBLE_DEVICES="" .venv/bin/python -m benchmarks.resources.r
 
 Outputs under `benchmarks/resources/results/`: `resources.jsonl` (campaign rows),
 `REPORT.md`, `figures/` (`resources_*.png`), `resources_validation.*` (short
-validation + monitor-overhead probe).
+validation + monitor-overhead probe), `samples/<workload>_<fw>_rep<n>.jsonl`
+(raw per-interval monitor samples for every run; disable with `--no-samples`,
+the kept path is recorded as `extra.samples_file`).
+
+Requires `psutil` — installed by the `benchmarks` extra or the `dev`
+dependency group; CPU/whole-system energy and GPU power are recorded as
+unavailable when the host exposes no reliable telemetry (never fabricated).

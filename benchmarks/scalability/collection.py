@@ -285,7 +285,24 @@ def _never_update(*_args: Any, **_kwargs: Any) -> None:
     raise RuntimeError("update_weights must not run in collection-only mode")
 
 
-def run_zerorl_collection(cfg: CollectionConfig, num_envs: int, seed: int) -> dict:
+def _collector_device_kwargs(device: str) -> dict[str, Any]:
+    """Collector device placement for non-CPU runs (probe-validated).
+
+    ``GymWrapper`` stays deviceless; env stepping remains CPU by contract
+    (``env_device="cpu"``) while policy execution and collector storage run
+    on ``device``. Returns {} for "cpu" so the CPU path is unchanged.
+    """
+    if device == "cpu":
+        return {}
+    return {
+        "policy_device": torch.device(device),
+        "env_device": torch.device("cpu"),
+        "storing_device": torch.device(device),
+    }
+
+
+def run_zerorl_collection(cfg: CollectionConfig, num_envs: int, seed: int,
+                          device: str = "cpu") -> dict:
     from zerorl.config import AlgoConfig, TrainConfig
     from zerorl.functions import derive_env_seeds, get_obs_act, vectorize_env
     from zerorl.helpers.factory import get_actor_critic_buffer
@@ -310,8 +327,9 @@ def run_zerorl_collection(cfg: CollectionConfig, num_envs: int, seed: int) -> di
         agent = build_deterministic_zerorl_agent(
             build_reference_state_dict(cfg.reference_seed)
         )
+        agent.to(device)
         buffer = get_actor_critic_buffer(
-            obs_shape, act_shape, capacity, num_envs, torch.device("cpu")
+            obs_shape, act_shape, capacity, num_envs, torch.device(device)
         )
         tconfig = TrainConfig(
             model_name="bench_collect",
@@ -320,13 +338,14 @@ def run_zerorl_collection(cfg: CollectionConfig, num_envs: int, seed: int) -> di
             num_envs=num_envs,
             timestamp=cfg.warmup + cfg.measure,
         )
-        tconfig.device = torch.device("cpu")
+        tconfig.device = torch.device(device)
         trainer = BaseTrain(
             agent=agent, env=env, buffer=buffer, update_weights=_never_update,
             config=tconfig, algo_config=AlgoConfig(), seeds=seeds,
         )
         state, _ = env.reset(seed=seeds)          # initial reset (init phase)
-        trainer.state = torch.as_tensor(state, dtype=torch.float32)
+        trainer.state = torch.as_tensor(
+            state, dtype=torch.float32, device=torch.device(device))
         first_obs = np.array(state, copy=True)
         init_s = time.perf_counter() - t0
 
@@ -341,7 +360,8 @@ def run_zerorl_collection(cfg: CollectionConfig, num_envs: int, seed: int) -> di
 
         tb = time.perf_counter()
         state, _ = env.reset()                    # boundary reset
-        trainer.state = torch.as_tensor(state, dtype=torch.float32)
+        trainer.state = torch.as_tensor(
+            state, dtype=torch.float32, device=torch.device(device))
         boundary_s = time.perf_counter() - tb
 
         t = time.perf_counter()
@@ -395,7 +415,7 @@ def run_zerorl_collection(cfg: CollectionConfig, num_envs: int, seed: int) -> di
 # ---------------------------------------------------------------------------
 
 def run_sb3_collection(cfg: CollectionConfig, num_envs: int, seed: int,
-                       *, subproc: bool = False) -> dict:
+                       *, subproc: bool = False, device: str = "cpu") -> dict:
     """SB3 collection. ``subproc=True`` uses SubprocVecEnv (one worker
     process per env -> W == N; used by Experiment B)."""
     from stable_baselines3.common.buffers import RolloutBuffer
@@ -415,6 +435,7 @@ def run_sb3_collection(cfg: CollectionConfig, num_envs: int, seed: int,
         lc.add("vec_env", vec.close)   # P6: terminates SubprocVecEnv workers
         policy = build_sb3_shared_policy(vec.observation_space, vec.action_space)
         load_into_sb3(policy, build_reference_state_dict(cfg.reference_seed))
+        policy.to(device)   # obs_to_tensor/fwd follow policy.device; buffer stays CPU
         # Native rollout storage: rows are env-steps; +1 slack so SB3's
         # pos-wrap at exact capacity can never eat a counted row.
         rows = max(cfg.warmup, cfg.measure) // num_envs + 1
@@ -494,7 +515,9 @@ def _sb3_collect_phase(vec, policy, rollout_buf, entropy_side, obs,
         next_obs, rewards, dones, _ = vec.step(actions)
         row = rollout_buf.pos
         entropy_side[row] = entropy.cpu().numpy().reshape(num_envs)
-        rollout_buf.add(obs, actions, rewards, prev_dones, values, log_probs)
+        # values/log_probs may live on the policy device; native buffer is CPU
+        rollout_buf.add(obs, actions, rewards, prev_dones,
+                        values.cpu(), log_probs.cpu())
         tracker.record(num_envs)
         prev_dones = np.asarray(dones, dtype=np.bool_)
         obs = next_obs
@@ -505,7 +528,8 @@ def _sb3_collect_phase(vec, policy, rollout_buf, entropy_side, obs,
 # TorchRL
 # ---------------------------------------------------------------------------
 
-def run_torchrl_collection(cfg: CollectionConfig, num_envs: int, seed: int) -> dict:
+def run_torchrl_collection(cfg: CollectionConfig, num_envs: int, seed: int,
+                           device: str = "cpu") -> dict:
     from gymnasium.vector import AutoresetMode, SyncVectorEnv
     from tensordict.nn import TensorDictModule
     from torchrl.collectors import Collector
@@ -527,6 +551,7 @@ def run_torchrl_collection(cfg: CollectionConfig, num_envs: int, seed: int) -> d
         # re-arm so the collector's carrier reset below IS the canonical reset.
         rearm_first_reset(venv)
         trunk = TorchRLSharedTrunk(build_reference_state_dict(cfg.reference_seed))
+        trunk.to(device)   # params match policy_device => collector shares them
         policy = _TorchRLCollectPolicy(trunk)
         tdm = TensorDictModule(policy, in_keys=["observation"],
                                out_keys=["action", "log_prob", "entropy", "value"])
@@ -535,6 +560,7 @@ def run_torchrl_collection(cfg: CollectionConfig, num_envs: int, seed: int) -> d
             wrapper, tdm, backend="direct", trust_policy=True,
             auto_register_policy_transforms=False,
             frames_per_batch=fpb_w, total_frames=cfg.warmup,
+            **_collector_device_kwargs(device),
         )
         lc.add("collector1", collector1.shutdown)
         init_s = time.perf_counter() - t0   # includes GymWrapper's official
@@ -566,6 +592,7 @@ def run_torchrl_collection(cfg: CollectionConfig, num_envs: int, seed: int) -> d
             wrapper, tdm, backend="direct", trust_policy=True,
             auto_register_policy_transforms=False,
             frames_per_batch=fpb_m, total_frames=cfg.measure,
+            **_collector_device_kwargs(device),
         )
         lc.add("collector2", collector2.shutdown)
         boundary_s = time.perf_counter() - tb
@@ -637,12 +664,12 @@ class _TorchRLCollectPolicy(torch.nn.Module):
 # ---------------------------------------------------------------------------
 
 def run_collection(framework: str, cfg: CollectionConfig, num_envs: int,
-                   seed: int) -> dict:
+                   seed: int, device: str = "cpu") -> dict:
     """Run one Experiment A collection pass and return the artifact dict."""
     if framework == "zeroRL":
-        return run_zerorl_collection(cfg, num_envs, seed)
+        return run_zerorl_collection(cfg, num_envs, seed, device=device)
     if framework == "SB3":
-        return run_sb3_collection(cfg, num_envs, seed)
+        return run_sb3_collection(cfg, num_envs, seed, device=device)
     if framework == "TorchRL":
-        return run_torchrl_collection(cfg, num_envs, seed)
+        return run_torchrl_collection(cfg, num_envs, seed, device=device)
     raise ValueError(f"unknown framework {framework!r} (one of {FRAMEWORKS_A})")

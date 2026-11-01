@@ -93,3 +93,36 @@ class TestFastCompileOutput:
         result = make_dict(42)  # type: ignore[arg-type]
         assert isinstance(result, dict)
         assert result["val"] == 42
+
+
+class TestTritonCapabilityGuard:
+    """fast_compile must no-op when the CURRENT GPU is too old for Triton
+    (e.g. sm_61 < sm_70), even though triton is importable."""
+
+    def test_unsupported_gpu_capability_disables_compile(self, monkeypatch) -> None:
+        from zerorl import compiler
+
+        monkeypatch.setattr(compiler, "_cxx_compiler_available", lambda: True)
+        monkeypatch.setattr(compiler, "_triton_available", lambda: True)
+        monkeypatch.setattr(compiler.sys, "platform", "linux")
+        monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+        monkeypatch.setattr(torch.cuda, "current_device", lambda: 0)
+        monkeypatch.setattr(torch.cuda, "get_device_capability",
+                            lambda *a, **k: (6, 1))
+        assert compiler._triton_device_supported() is False
+        assert compiler._torch_compile_usable() is False
+        # an already-built fast_compile wrapper must return the eager fn
+        assert compiler.fast_compile(lambda x: x + 1)(1) == 2
+
+    def test_supported_gpu_capability_allows_compile(self, monkeypatch) -> None:
+        from zerorl import compiler
+
+        monkeypatch.setattr(compiler, "_cxx_compiler_available", lambda: True)
+        monkeypatch.setattr(compiler, "_triton_available", lambda: True)
+        monkeypatch.setattr(compiler.sys, "platform", "linux")
+        monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+        monkeypatch.setattr(torch.cuda, "current_device", lambda: 0)
+        monkeypatch.setattr(torch.cuda, "get_device_capability",
+                            lambda *a, **k: (8, 0))
+        assert compiler._triton_device_supported() is True
+        assert compiler._torch_compile_usable() is True
