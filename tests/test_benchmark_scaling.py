@@ -318,6 +318,7 @@ class TestSchema:
             transitions={"target": 100_000, "measured": 100_000, "exact": True},
             metrics={"throughput_mean": 50_000.0},
             config={"env_id": "LunarLander-v3"},
+            device="cpu",
         )
         base.update(over)
         return schema.make_row(**base)  # type: ignore[arg-type]
@@ -327,6 +328,24 @@ class TestSchema:
         assert row["framework"] == "zeroRL"
         assert row["schema_version"] == schema.SCHEMA_VERSION
         assert row["environment"]["device"] == "cpu"
+
+    def test_environment_info_device_default_and_override(self) -> None:
+        assert schema.environment_info()["device"] == "cpu"
+        assert schema.environment_info("cuda")["device"] == "cuda"
+
+    def test_make_row_records_requested_device(self) -> None:
+        assert self._ok_row()["environment"]["device"] == "cpu"
+        row = self._ok_row(device="cuda")
+        assert row["environment"]["device"] == "cuda"
+
+    def test_cli_device_flag_defaults_and_parses(self) -> None:
+        from benchmarks.resources import run as resources_run
+        from benchmarks.scalability import run as scaling_run
+
+        for mod in (scaling_run, resources_run):
+            assert mod.build_parser().parse_args([]).device == "cpu"
+            parsed = mod.build_parser().parse_args(["--device", "cuda"])
+            assert parsed.device == "cuda"
 
     def test_bad_framework_rejected(self) -> None:
         with pytest.raises(ValueError, match="framework"):

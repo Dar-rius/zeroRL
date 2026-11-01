@@ -16,6 +16,7 @@ import time
 from pathlib import Path
 
 import pytest
+import torch
 
 from benchmarks.resources.run import (
     DEFAULT_INTERVAL_S,
@@ -202,6 +203,7 @@ class TestRawSamplePersistence:
         assert row["status"] == "ok"
         rel = row["extra"]["samples_file"]
         assert rel and rel.startswith("samples/")
+        assert "_cuda" not in rel
         samples = [json.loads(x)
                    for x in (tmp_path / rel).read_text().splitlines()]
         assert len(samples) >= 2
@@ -215,6 +217,28 @@ class TestRawSamplePersistence:
         assert row2["extra"]["samples_file"] is None
         assert not (tmp_path / "samples"
                     / "collect_zeroRL_rep96.jsonl").exists()
+
+    def test_cuda_sample_suffix(self, tmp_path) -> None:
+        try:
+            torch.zeros(1, device="cuda") + 1
+            ok = torch.cuda.get_device_capability()[0] >= 7
+        except Exception:
+            ok = False
+        if not ok:
+            pytest.skip("CUDA kernels unavailable or too old on this host")
+
+        from benchmarks.scalability.collection import CollectionConfig
+
+        row = run_resource_workload(
+            "zeroRL", "collect", 95, interval=0.05,
+            out_path=tmp_path / "r.jsonl",
+            collection_cfg=CollectionConfig(warmup=500, measure=1000),
+            num_envs=2, device="cuda", gpu=None)
+        assert row["status"] == "ok"
+        assert row["config"]["device"] == "cuda"
+        rel = row["extra"]["samples_file"]
+        assert rel.endswith("_cuda.jsonl")
+        assert (tmp_path / rel).exists()
 
 
 class TestSerializationAndAggregation:
