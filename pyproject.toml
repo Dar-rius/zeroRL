@@ -31,7 +31,7 @@ dependencies = [
 box2d = ["swig>=4.4.1", "box2d==2.3.10"]
 pygame = ["pygame==2.6.1", "pygame-ce==2.5.8"]
 logging = ["wandb>=0.28.1", "tensorboard>=2.21.0"]
-benchmarks = ["stable-baselines3>=2.3.0", "matplotlib>=3.8.0"]
+benchmarks = ["stable-baselines3>=2.3.0", "matplotlib>=3.8.0", "psutil>=5.9.0"]
 
 
 [tool.ruff]

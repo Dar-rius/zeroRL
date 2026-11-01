@@ -104,13 +104,16 @@ storage:
 
 ## 4. Experiments executed; discarded prior results; neutrality
 
-- Pre-fix campaign rows (collected under the old unequal workload) were
-  **discarded**: expA=75, expB=60, expC=45, expD=45 rows, total 225 —
-  `results/*.jsonl` deleted (Task 0).
-- At the time of writing, only tiny-budget CLI smokes had been re-run
-  (section 2). The full spec campaign (A/B: 5 reps, C/D: 3 reps, default
-  budgets 16k+100k and 262,144) is launched after this file, results in
-  `results/*.jsonl` (gitignored).
+- The full post-fix A–D campaign completed 2026-10-31 → 2026-11-01:
+  A=75, B=60, C=45, D=45 all-ok rows in `results/exp{A,B,C,D}.jsonl`
+  (B includes its 25 by-design `unsupported` rows; no failed rows).
+- The earlier discarded pre-fix rows and every contaminated/superseded run
+  remain preserved as `*_pretrunkfix.jsonl`, `*_duprun*.jsonl`,
+  `*_partial_rerun*.jsonl`, and `expB_contention.jsonl` — nothing deleted.
+- After this document's original writing, the shared-trunk single-execution
+  fix was implemented and validated by `TestSharedTrunkSinglePass`
+  (10 tests: trunk-call counts, numerical equivalence, gradients,
+  optimizer de-dup).
 - No `zerorl/` core source was modified. No timing window, budget, seed
   schedule, or workload element was adjusted to benefit any framework;
   differences that could not be equalized (official-path overheads, TorchRL

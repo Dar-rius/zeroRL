@@ -83,6 +83,7 @@ config, algo_config, *, seed=22, ...)` — env first. Import from full module pa
   SB3 + matplotlib live in the `benchmarks` optional extra
   (`uv pip install -e ".[benchmarks]"`) — a bare `uv sync` does NOT install
   them and may evict manually installed ones (torchrl/tensordict ARE core deps).
+- `benchmarks/resources/` = separate resource-consumption benchmark (process-tree CPU/memory, GPU telemetry, energy only when supported; `python -m benchmarks.resources.{run,plots,report}` → `benchmarks/resources/results/`) — scalability stays throughput-only.
 - `.opencode/agents/` workflow expects this file kept current.
 
 ## Testing notes
@@ -104,6 +105,10 @@ test_logger|test_processing|test_smoke|test_train.py` plus `tests/test_compiler.
     integration smokes (exp A/B/C/D at tiny budgets; SB3 legs importorskip,
     torchrl legs run in CI). Budget math: protocol C = 128/N updates,
     D = 128 updates of global batch 2048 at exactly 262,144 transitions.
+  - `test_resources.py` = resource-consumption monitor units (process-tree
+    CPU/memory accounting incl. spawned children, mocked GPU/energy,
+    budget/serialization; needs `psutil` from the benchmarks extra or dev
+    group) for `benchmarks/resources/`.
 - Vectorized train uses Gymnasium SAME_STEP autoreset (no manual multi-env reset in
   `rollout_phase`).
 

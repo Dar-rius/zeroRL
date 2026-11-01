@@ -8,6 +8,8 @@ Full framework findings: [`INSPECTION.md`](INSPELECTION.md).
 Generated results/report: `results/` (gitignored) → `results/REPORT.md`,
 `results/figures/*.png`.
 
+- Resource consumption (CPU/memory/GPU/energy) lives in `benchmarks/resources/` — see its `README.md`.
+
 ## Experiments
 
 | Exp | What varies | Budget per run | Reps | Frameworks |
