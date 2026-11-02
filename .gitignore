@@ -20,3 +20,4 @@ tmp/
 benchmarks/scalability/results/
 benchmarks/resources/results/
 docs/mujoco-integration-report.md
+docs/superpowers
