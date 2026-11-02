@@ -40,7 +40,7 @@ jobs:
   gpu-execution:
     name: GPU Integration Tests
     needs: cpu-tests
-    runs-on: [self-hosted, Jetson, gpu]
+    runs-on: [self-hosted, ARM64, Jetson, GPU]
     environment: gpu-cluster
     steps:
       - name: Checkout code
