@@ -17,7 +17,11 @@ wandb/
 tmp/
 *.png
 *.gif
-benchmarks/scalability/results/
-benchmarks/resources/results/
-docs/mujoco-integration-report.md
-docs/superpowers
+benchmarks/scalability/results/*.jsonl
+benchmarks/scalability/results/*.json
+benchmarks/scalability/results/figres/*.png
+benchmarks/resources/results/samples/*.jsonl
+benchmarks/resources/results/*.jsonl
+benchmarks/resources/results/*.json
+benchmarks/resources/results/figures/*.png
+docs/superpowers/
