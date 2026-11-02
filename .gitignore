@@ -23,5 +23,7 @@ benchmarks/scalability/results/figres/*.png
 benchmarks/resources/results/samples/*.jsonl
 benchmarks/resources/results/*.jsonl
 benchmarks/resources/results/*.json
+# scalability report figures ARE deliverables (REPORT.md embeds them on GitHub)
+!benchmarks/scalability/results/figures/*.png
 benchmarks/resources/results/figures/*.png
 docs/superpowers/
