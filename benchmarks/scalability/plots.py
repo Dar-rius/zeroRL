@@ -161,7 +161,8 @@ def _speedup_series(rows, experiment, *, kind, point_key="num_envs",
     return series
 
 
-def plot_experiment_a(rows, out_dir: Path) -> list[Path]:
+def plot_experiment_a(rows, out_dir: Path, suffix: str = "") -> list[Path]:
+    """Exp A figures; ``suffix`` (e.g. ``"_gpu"``) only changes filenames."""
     paths = []
     paths.append(_save(_line_plot(
         _tp_series(rows, "A"),
@@ -169,46 +170,49 @@ def plot_experiment_a(rows, out_dir: Path) -> list[Path]:
         xlabel="number of envs N (single process)",
         ylabel="transitions / second",
         logy=True, xscale_log2=True,
-    ), out_dir, "expA_throughput.png"))
+    ), out_dir, f"expA{suffix}_throughput.png"))
     paths.append(_save(_line_plot(
         _speedup_series(rows, "A", kind="environment"),
         title="Exp A — speedup vs N (equal-work collection)",
         xlabel="N", ylabel="speedup = t(N=1) / t(N)",
         ideal=("ideal (=N)", "identity"), xscale_log2=True,
-    ), out_dir, "expA_speedup.png"))
+    ), out_dir, f"expA{suffix}_speedup.png"))
     paths.append(_save(_line_plot(
         _curve_series(rows, "A", kind="environment"),
         title="Exp A — environment-scaling efficiency vs N",
         xlabel="N", ylabel="speedup(N) / N",
         hline=1.0, xscale_log2=True,
-    ), out_dir, "expA_efficiency.png"))
+    ), out_dir, f"expA{suffix}_efficiency.png"))
     return paths
 
 
-def plot_experiment_b(rows, out_dir: Path) -> list[Path]:
+def plot_experiment_b(rows, out_dir: Path, suffix: str = "") -> list[Path]:
+    """Exp B figures; ``suffix`` (e.g. ``"_gpu"``) only changes filenames."""
     paths = []
     paths.append(_save(_line_plot(
         _tp_series(rows, "B", point_key="num_workers"),
         title="Exp B — collection throughput vs worker count (N=8)",
         xlabel="workers W", ylabel="transitions / second",
         logy=True, xscale_log2=True,
-    ), out_dir, "expB_throughput.png"))
+    ), out_dir, f"expB{suffix}_throughput.png"))
     paths.append(_save(_line_plot(
         _speedup_series(rows, "B", kind="worker", point_key="num_workers"),
         title="Exp B — speedup vs W (equal-work collection)",
         xlabel="W", ylabel="speedup = t(W=1) / t(W)",
         ideal=("ideal (=W)", "identity"), xscale_log2=True,
-    ), out_dir, "expB_speedup.png"))
+    ), out_dir, f"expB{suffix}_speedup.png"))
     paths.append(_save(_line_plot(
         _curve_series(rows, "B", kind="worker", point_key="num_workers"),
         title="Exp B — worker parallel efficiency vs W",
         xlabel="W", ylabel="speedup(W) / W",
         hline=1.0, xscale_log2=True,
-    ), out_dir, "expB_efficiency.png"))
+    ), out_dir, f"expB{suffix}_efficiency.png"))
     return paths
 
 
-def plot_ppo_experiment(rows, experiment: str, out_dir: Path) -> list[Path]:
+def plot_ppo_experiment(rows, experiment: str, out_dir: Path,
+                        suffix: str = "") -> list[Path]:
+    """PPO protocol figures; ``suffix`` only changes output filenames."""
     paths = []
     paths.append(_save(_line_plot(
         _tp_series(rows, experiment),
@@ -217,7 +221,7 @@ def plot_ppo_experiment(rows, experiment: str, out_dir: Path) -> list[Path]:
                f"{'2048' if experiment == 'C' else '2048/N'})",
         ylabel="training transitions / second",
         logy=True, xscale_log2=True,
-    ), out_dir, f"exp{experiment}_throughput.png"))
+    ), out_dir, f"exp{experiment}{suffix}_throughput.png"))
     returns = return_stats_by_point(rows, experiment)
     series = {
         fw: [(float(point), stats["mean"], stats["std"])
@@ -230,7 +234,7 @@ def plot_ppo_experiment(rows, experiment: str, out_dir: Path) -> list[Path]:
             title=f"Exp {experiment} — mean return (last 100 episodes) vs N",
             xlabel="N", ylabel="episode return (mean ± std over reps)",
             xscale_log2=True,
-        ), out_dir, f"exp{experiment}_returns.png"))
+        ), out_dir, f"exp{experiment}{suffix}_returns.png"))
     return paths
 
 
@@ -244,14 +248,21 @@ def generate_all(results_dir: Path, out_dir: Path | None = None) -> list[Path]:
         file = results_dir / f"exp{exp}.jsonl"
         if not file.exists():
             warnings.warn(f"{file} missing — skipping exp {exp}")
-            continue
-        paths.extend(plotter(load_flat(file), out_dir))
+        else:
+            paths.extend(plotter(load_flat(file), out_dir))
+        gpu_file = results_dir / f"exp{exp}_gpu.jsonl"   # silent when absent
+        if gpu_file.exists():
+            paths.extend(plotter(load_flat(gpu_file), out_dir, suffix="_gpu"))
     for exp in ("C", "D"):
         file = results_dir / f"exp{exp}.jsonl"
         if not file.exists():
             warnings.warn(f"{file} missing — skipping exp {exp}")
-            continue
-        paths.extend(plot_ppo_experiment(load_flat(file), exp, out_dir))
+        else:
+            paths.extend(plot_ppo_experiment(load_flat(file), exp, out_dir))
+        gpu_file = results_dir / f"exp{exp}_gpu.jsonl"   # silent when absent
+        if gpu_file.exists():
+            paths.extend(plot_ppo_experiment(load_flat(gpu_file), exp, out_dir,
+                                             suffix="_gpu"))
     return paths
 
 

@@ -21,3 +21,5 @@ the kept path is recorded as `extra.samples_file`).
 Requires `psutil` — installed by the `benchmarks` extra or the `dev`
 dependency group; CPU/whole-system energy and GPU power are recorded as
 unavailable when the host exposes no reliable telemetry (never fabricated).
+
+GPU campaign files (`exp{X}_gpu.jsonl` / `resources_gpu.jsonl`) are auto-detected and rendered as separate device sections/figures.

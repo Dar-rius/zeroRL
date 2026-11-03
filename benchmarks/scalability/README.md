@@ -9,6 +9,7 @@ Generated results/report: `results/` (gitignored) → `results/REPORT.md`,
 `results/figures/*.png`.
 
 - Resource consumption (CPU/memory/GPU/energy) lives in `benchmarks/resources/` — see its `README.md`.
+- GPU campaign files (`exp{X}_gpu.jsonl` / `resources_gpu.jsonl`) are auto-detected and rendered as separate device sections/figures.
 
 ## Experiments
 

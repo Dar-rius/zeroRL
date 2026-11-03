@@ -46,12 +46,11 @@ def _resource_cells(path: Path) -> dict[str, dict[str, list[dict]]]:
     return cells
 
 
-def plot_resources(results_dir: Path, out_dir: Path) -> list[Path]:
-    """Resource-consumption figures (experiment R).
-
-    All configured runs are device=CPU; GPU/energy panels are generated
-    only when the corresponding telemetry actually exists.
-    """
+def _plot_resource_file(res_file: Path, out_dir: Path,
+                        suffix: str = "") -> list[Path]:
+    """Figures for ONE result file; ``suffix`` (e.g. ``"_gpu"``) only
+    changes output filenames. Availability rules (GPU/energy telemetry)
+    are evaluated on this file's own rows — one device side per call."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -59,7 +58,6 @@ def plot_resources(results_dir: Path, out_dir: Path) -> list[Path]:
 
     from benchmarks.scalability.results_schema import load_rows
 
-    res_file = results_dir / "resources.jsonl"
     if not res_file.exists():
         return []
     rows = [r for r in load_rows(res_file) if r["status"] == "ok"]
@@ -70,6 +68,7 @@ def plot_resources(results_dir: Path, out_dir: Path) -> list[Path]:
     fws = [fw for fw in FRAMEWORK_ORDER
            if any(fw in cells[w] for w in workloads)]
     paths: list[Path] = []
+    workload_device = "cuda" if suffix else "cpu"
 
     def _vals(wl: str, fw: str, getter):
         return [v for r in cells[wl].get(fw, [])
@@ -109,7 +108,7 @@ def plot_resources(results_dir: Path, out_dir: Path) -> list[Path]:
              scale=1 / 1024)
     fig.suptitle("System memory — sum of tree RSS (shared pages may repeat)", fontsize=10)
     fig.tight_layout()
-    paths.append(_save(fig, out_dir, "resources_memory.png"))
+    paths.append(_save(fig, out_dir, f"resources_memory{suffix}.png"))
 
     # 2) CPU utilization + cumulative CPU time
     fig, axes = plt.subplots(1, 2, figsize=(11, 4))
@@ -118,32 +117,34 @@ def plot_resources(results_dir: Path, out_dir: Path) -> list[Path]:
     _grouped(axes[1], M("cpu_total_s"), "CPU seconds",
              "cumulative user+system CPU time")
     fig.tight_layout()
-    paths.append(_save(fig, out_dir, "resources_cpu.png"))
+    paths.append(_save(fig, out_dir, f"resources_cpu{suffix}.png"))
 
     # 3) CPU seconds per 1k transitions
     fig, ax = plt.subplots(figsize=(6.5, 4))
     _grouped(ax, M("cpu_s_per_1k"), "CPU s / 1k transitions",
              "CPU cost per 1,000 individual transitions")
     fig.tight_layout()
-    paths.append(_save(fig, out_dir, "resources_cpu_per_1k.png"))
+    paths.append(_save(fig, out_dir, f"resources_cpu_per_1k{suffix}.png"))
 
-    # 4) GPU telemetry (only when available; workload device is cpu)
+    # 4) GPU telemetry (only when available in THIS side's rows)
     gpu_rows = [r for r in rows
                 if r["extra"]["resources"].get("gpu", {}).get("available")]
+    telemetry_name = (f"resources_gpu{suffix}.png" if not suffix
+                      else f"resources_telemetry{suffix}.png")
     if gpu_rows:
         fig, axes = plt.subplots(1, 2, figsize=(11, 4))
         g = lambda r, k: r["extra"]["resources"]["gpu"].get(k)  # noqa: E731
         _grouped(axes[0], lambda r: g(r, "util_avg_pct"), "util %",
-                 "GPU utilization (device-level; workload device=cpu)")
+                 f"GPU utilization (device-level; workload device={workload_device})")
         _grouped(axes[1], lambda r: g(r, "mem_peak_bytes"), "MiB",
                  "peak GPU memory (device-level)", scale=1 / 2**20)
         fig.tight_layout()
-        paths.append(_save(fig, out_dir, "resources_gpu.png"))
+        paths.append(_save(fig, out_dir, telemetry_name))
     else:
-        print("[fig] resources_gpu.png skipped: no GPU telemetry "
-              "(workload device=cpu)")
+        print(f"[fig] {telemetry_name} skipped: no GPU telemetry "
+              f"(workload device={workload_device})")
 
-    # 5) energy (only when reliable telemetry exists)
+    # 5) energy (only when reliable telemetry exists in THIS side)
     energy_rows = [r for r in rows
                    if r["extra"]["resources"].get("energy", {}).get("available")]
     if energy_rows:
@@ -152,18 +153,18 @@ def plot_resources(results_dir: Path, out_dir: Path) -> list[Path]:
                  .get("gpu_joules"), "joules",
                  "GPU energy (NVML integration; GPU-only, not system)")
         fig.tight_layout()
-        paths.append(_save(fig, out_dir, "resources_energy.png"))
+        paths.append(_save(fig, out_dir, f"resources_energy{suffix}.png"))
     else:
         reason = rows[0]["extra"]["resources"].get("energy", {}).get(
             "reason", "no reliable telemetry")
-        print(f"[fig] resources_energy.png skipped: {reason}")
+        print(f"[fig] resources_energy{suffix}.png skipped: {reason}")
 
     # 6) end-to-end wall-clock
     fig, ax = plt.subplots(figsize=(6.5, 4))
     _grouped(ax, M("wall_s"), "seconds",
              "end-to-end wall time for the fixed workload")
     fig.tight_layout()
-    paths.append(_save(fig, out_dir, "resources_wall.png"))
+    paths.append(_save(fig, out_dir, f"resources_wall{suffix}.png"))
 
     # 7) phase wall-times (from the reused runners' artifacts)
     fig, axes = plt.subplots(1, len(workloads),
@@ -188,8 +189,27 @@ def plot_resources(results_dir: Path, out_dir: Path) -> list[Path]:
         ax.legend(fontsize=8)
         ax.grid(axis="y", alpha=0.3)
     fig.tight_layout()
-    paths.append(_save(fig, out_dir, "resources_phases.png"))
+    paths.append(_save(fig, out_dir, f"resources_phases{suffix}.png"))
 
+    return paths
+
+
+def plot_resources(results_dir: Path, out_dir: Path,
+                   suffix: str = "") -> list[Path]:
+    """Resource-consumption figures (experiment R), both device sides.
+
+    Renders ``resources{suffix}.jsonl`` (CPU side with the default
+    ``suffix=""``; existing figure names unchanged), then — only when no
+    explicit suffix is given — auto-detects ``resources_gpu.jsonl`` and
+    renders the GPU side with ``suffix="_gpu"``. Statistics/telemetry
+    availability are always evaluated within one side, never combined.
+    """
+    paths = _plot_resource_file(results_dir / f"resources{suffix}.jsonl",
+                                out_dir, suffix)
+    if not suffix:
+        gpu_file = results_dir / "resources_gpu.jsonl"
+        if gpu_file.exists():
+            paths += _plot_resource_file(gpu_file, out_dir, "_gpu")
     return paths
 
 

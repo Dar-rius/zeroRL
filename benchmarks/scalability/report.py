@@ -40,6 +40,28 @@ def _warn(msg: str) -> None:
     print(f"[report] WARNING: {msg}", file=sys.stderr)
 
 
+def _device(row: dict) -> str:
+    """Device side of a result row (config wins, then environment)."""
+    dev = ((row.get("config") or {}).get("device")
+           or (row.get("environment") or {}).get("device"))
+    return dev or "cpu"
+
+
+def _load_sides(results_dir: Path, exp: str) -> dict[str, list[dict]]:
+    """STRICT per-experiment file list (never glob): ``exp{X}.jsonl`` first,
+    then the optional ``exp{X}_gpu.jsonl``; missing files are silently
+    skipped. Rows are split by their own device value — sides other than
+    ``cpu``/``cuda`` are keyed by the value itself."""
+    sides: dict[str, list[dict]] = {}
+    for name in (f"exp{exp}.jsonl", f"exp{exp}_gpu.jsonl"):
+        file = results_dir / name
+        if not file.exists():
+            continue
+        for row in load_flat(file):
+            sides.setdefault(_device(row), []).append(row)
+    return sides
+
+
 def _fmt(value: float | None, digits: int = 1) -> str:
     if value is None:
         return "—"
@@ -104,7 +126,7 @@ def _section_method() -> list[str]:
     ]
 
 
-def _exp_a_table(rows: list[dict]) -> tuple[str, dict[str, list]]:
+def _exp_a_table(rows: list[dict], suffix: str = "") -> tuple[str, dict[str, list]]:
     cells = aggregate_cells(rows, "A")
     curve_by_fw = {}
     lines = []
@@ -135,13 +157,13 @@ def _exp_a_table(rows: list[dict]) -> tuple[str, dict[str, list]]:
                 str(row["n_pairs"]),
             ])
     lines.append(_table(header, body))
-    lines += ["", "![throughput](figures/expA_throughput.png)", "",
-              "![speedup](figures/expA_speedup.png)", "",
-              "![efficiency](figures/expA_efficiency.png)", ""]
+    lines += ["", f"![throughput](figures/expA{suffix}_throughput.png)", "",
+              f"![speedup](figures/expA{suffix}_speedup.png)", "",
+              f"![efficiency](figures/expA{suffix}_efficiency.png)", ""]
     return "\n".join(lines), curve_by_fw
 
 
-def _exp_b_table(rows: list[dict]) -> tuple[str, dict[str, list]]:
+def _exp_b_table(rows: list[dict], suffix: str = "") -> tuple[str, dict[str, list]]:
     cells = aggregate_cells(rows, "B", point_key="num_workers")
     curve_by_fw: dict[str, list] = {}
     header = ["framework", "W", "throughput (trans/s)", "mean time (s)",
@@ -179,13 +201,14 @@ def _exp_b_table(rows: list[dict]) -> tuple[str, dict[str, list]]:
         for _, fw, _n, w, err in b_unsup:
             lines.append(f"- {fw} W={w}: {err}")
         lines.append("")
-    lines += ["![throughput](figures/expB_throughput.png)", "",
-              "![speedup](figures/expB_speedup.png)", "",
-              "![efficiency](figures/expB_efficiency.png)", ""]
+    lines += [f"![throughput](figures/expB{suffix}_throughput.png)", "",
+              f"![speedup](figures/expB{suffix}_speedup.png)", "",
+              f"![efficiency](figures/expB{suffix}_efficiency.png)", ""]
     return "\n".join(lines), curve_by_fw
 
 
-def _exp_ppo_table(rows: list[dict], experiment: str) -> tuple[str, dict[str, list]]:
+def _exp_ppo_table(rows: list[dict], experiment: str,
+                   suffix: str = "") -> tuple[str, dict[str, list]]:
     cells = aggregate_cells(rows, experiment)
     returns = return_stats_by_point(rows, experiment)
     header = ["framework", "N", "updates", "throughput (trans/s)",
@@ -224,9 +247,9 @@ def _exp_ppo_table(rows: list[dict], experiment: str) -> tuple[str, dict[str, li
                 str(cell["n_ok"]),
             ])
     lines = [_table(header, body), "",
-             f"![throughput](figures/exp{experiment}_throughput.png)", ""]
+             f"![throughput](figures/exp{experiment}{suffix}_throughput.png)", ""]
     if returns:
-        lines += [f"![returns](figures/exp{experiment}_returns.png)", ""]
+        lines += [f"![returns](figures/exp{experiment}{suffix}_returns.png)", ""]
     return "\n".join(lines), curve_by_fw
 
 
@@ -310,7 +333,8 @@ def _findings(curves: dict[str, dict[str, dict[str, list]]],
     return lines
 
 
-def _integrity(rows: list[dict]) -> list[str]:
+def _integrity(rows: list[dict],
+               side_counts: list[tuple[str, int]] | None = None) -> list[str]:
     summary = integrity_summary(rows)
     lines = ["## Data integrity", "",
              _table(["experiment", "ok", "failed", "unsupported"],
@@ -329,7 +353,13 @@ def _integrity(rows: list[dict]) -> list[str]:
         lines += [f"- exp {e} {fw} N={n} rep={r}: {err}"
                   for e, fw, n, r, err in summary["failed"]]
         lines.append("")
-    lines += [f"Total rows: {summary['n_rows']}.", ""]
+    n_other = 0
+    if side_counts:
+        for dev, n in side_counts:
+            n_other += n
+            label = "GPU" if dev == "cuda" else dev
+            lines += [f"{label} rows: {n} (device={dev})", ""]
+    lines += [f"Total rows: {summary['n_rows'] + n_other}.", ""]
     return lines
 
 
@@ -346,15 +376,23 @@ def _hyperparams(rows: list[dict]) -> list[str]:
 
 def generate_report(results_dir: Path, out_path: Path) -> Path:
     WARNINGS.clear()
-    rows: list[dict] = []
+    sides_by_exp: dict[str, dict[str, list[dict]]] = {}
+    rows: list[dict] = []                      # CPU side (drives findings etc.)
+    other_rows: dict[str, list[dict]] = {}     # non-cpu sides, keyed by device
     for exp in ("A", "B", "C", "D"):
         file = results_dir / f"exp{exp}.jsonl"
-        if file.exists():
-            rows.extend(load_flat(file))
-        else:
+        if not file.exists():
             _warn(f"{file.name} missing — section skipped")
-    if not rows:
+        sides = _load_sides(results_dir, exp)
+        sides_by_exp[exp] = sides
+        rows.extend(sides.get("cpu", []))
+        for dev, dev_rows in sides.items():
+            if dev != "cpu":
+                other_rows.setdefault(dev, []).extend(dev_rows)
+    n_other = sum(len(v) for v in other_rows.values())
+    if not rows and not n_other:
         raise SystemExit(f"no result rows found under {results_dir}")
+    total = len(rows) + n_other
 
     curves: dict[str, dict[str, dict[str, list]]] = {
         "A": {}, "B": {}, "C": {}, "D": {},
@@ -363,31 +401,53 @@ def generate_report(results_dir: Path, out_path: Path) -> Path:
         "# Scalability benchmark report",
         "",
         f"Generated: {datetime.now(timezone.utc).isoformat()} · "
-        f"rows: {len(rows)} · figures in `figures/`",
+        f"rows: {total} · figures in `figures/`",
         "",
-        *(_section_env(rows)),
+        *(_section_env(rows or [r for rs in other_rows.values() for r in rs])),
         *(_section_method()),
     ]
 
-    if (results_dir / "expA.jsonl").exists():
-        table, curves["A"] = _exp_a_table(rows)
-        lines += ["## Experiment A — environment scaling (collection)", "",
-                  table, ""]
-    if (results_dir / "expB.jsonl").exists():
-        table, curves["B"] = _exp_b_table(rows)
-        lines += ["## Experiment B — worker scaling (collection, N=8)", "",
-                  table, ""]
-    for exp in ("C", "D"):
-        if not (results_dir / f"exp{exp}.jsonl").exists():
-            continue
-        title = ("fixed 2048 steps/env per rollout"
-                 if exp == "C" else "fixed global rollout of 2048")
-        table, curves[exp] = _exp_ppo_table(rows, exp)
-        lines += [f"## Experiment {exp} — PPO training protocol ({title})", "",
-                  table, ""]
+    titles = {
+        "A": "## Experiment A — environment scaling (collection)",
+        "B": "## Experiment B — worker scaling (collection, N=8)",
+        "C": ("## Experiment C — PPO training protocol "
+              "(fixed 2048 steps/env per rollout)"),
+        "D": ("## Experiment D — PPO training protocol "
+              "(fixed global rollout of 2048)"),
+    }
+    for exp in ("A", "B", "C", "D"):
+        sides = sides_by_exp[exp]
+        gpu_sides = {d: rs for d, rs in sides.items() if d != "cpu"}
+        # Existing CPU section first (byte-identical for CPU-only dirs).
+        if (results_dir / f"exp{exp}.jsonl").exists() and (
+                sides.get("cpu") or not gpu_sides):
+            if exp == "A":
+                table, curves["A"] = _exp_a_table(sides.get("cpu", []))
+            elif exp == "B":
+                table, curves["B"] = _exp_b_table(sides.get("cpu", []))
+            else:
+                table, curves[exp] = _exp_ppo_table(sides.get("cpu", []), exp)
+            lines += [titles[exp], "", table, ""]
+        # Sibling section(s) for every non-cpu side — same renderer, own
+        # rows, `_gpu` figure infix; never mixed with the CPU statistics.
+        for dev, dev_rows in gpu_sides.items():
+            label = "GPU" if dev == "cuda" else dev
+            lines += [
+                f"## Experiment {exp} — {label} (device={dev})", "",
+                f"Rows recorded with device={dev}; every statistic in this "
+                "section is computed on this side only and never combined "
+                "with CPU rows.", "",
+            ]
+            if exp == "A":
+                table, _ = _exp_a_table(dev_rows, suffix="_gpu")
+            elif exp == "B":
+                table, _ = _exp_b_table(dev_rows, suffix="_gpu")
+            else:
+                table, _ = _exp_ppo_table(dev_rows, exp, suffix="_gpu")
+            lines += [table, ""]
 
     lines += _findings(curves, rows)
-    lines += _integrity(rows)
+    lines += _integrity(rows, [(d, len(rs)) for d, rs in other_rows.items()])
     lines += _hyperparams(rows)
     lines += ["---",
               "See `README.md` (reproduction), `INSPECTION.md` "
