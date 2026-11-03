@@ -41,6 +41,86 @@ def _pm2(vals, digits: int = 1) -> str:
     return f"{m:,.{digits}f} ± {s:,.{digits}f}"
 
 
+# -- memory-measurement v2 (nested bytes block) -----------------------------
+
+def _nested_memory(r: dict) -> dict | None:
+    """The v2 nested memory block, or None for v1 rows (never coerced)."""
+    mem = (r.get("extra", {}).get("resources", {}) or {}).get("memory") or {}
+    return mem if isinstance(mem.get("rss"), dict) else None
+
+
+def _mem_mib(r: dict, metric: str, field: str) -> float | None:
+    """One row's metric value in MiB; None when absent/unavailable (v1)."""
+    mem = _nested_memory(r)
+    if mem is None:
+        return None
+    if metric != "rss":
+        if (mem.get("availability") or {}).get(f"{metric}_available") is False:
+            return None
+    v = (mem.get(metric) or {}).get(field)
+    return None if v is None else v / 2**20
+
+
+def _measure_peak_rss_mib(r: dict) -> float | None:
+    mbp = (r.get("extra", {}).get("resources", {}) or {}).get(
+        "memory_by_phase") or {}
+    v = ((mbp.get("measure") or {}).get("rss") or {}).get("peak_bytes")
+    return None if v is None else v / 2**20
+
+
+def _memory_subsections(ok: list[dict]) -> list[str]:
+    """`### Memory (RSS / PSS / USS) — {workload}` tables (v2 rows only).
+
+    Rendered ONLY when at least one ok row carries the nested bytes block;
+    v1 rows within a mixed file show `—` (never 0). Cells = mean ± std in
+    MiB over that framework's non-missing rows; `n` = framework row count.
+    """
+    if not any(_nested_memory(r) for r in ok):
+        return []
+    out = [
+        "_Memory note: raw values are bytes (v2; v1 rows/sample files "
+        "used KiB); averages are time-weighted (trapezoidal); summed RSS "
+        "may double-count shared pages — PSS/USS are the attributable "
+        "views; v1 rows show — (never 0)._", "",
+    ]
+
+    def _fw_table(headers: list[str], ok_rows: list[dict],
+                  getters) -> str:
+        body: list[list[str]] = []
+        for fw in FRAMEWORK_ORDER:
+            rs = [r for r in ok_rows if r["framework"] == fw]
+            if not rs:
+                continue
+            body.append([fw] + [_pm2([g(r) for r in rs]) for g in getters]
+                        + [str(len(rs))])
+        return _table(headers, body)
+
+    for wl in ("collect", "ppo"):
+        wl_rows = [r for r in ok if r["config"]["workload"] == wl]
+        if not wl_rows:
+            continue
+        out += [f"### Memory (RSS / PSS / USS) — {wl}", "",
+                "**Peak (end-to-end)**", ""]
+        out.append(_fw_table(
+            ["framework", "rss (MiB)", "pss (MiB)", "uss (MiB)",
+             "peak rss — measure phase (MiB)", "n"],
+            wl_rows,
+            [lambda r: _mem_mib(r, "rss", "peak_bytes"),
+             lambda r: _mem_mib(r, "pss", "peak_bytes"),
+             lambda r: _mem_mib(r, "uss", "peak_bytes"),
+             _measure_peak_rss_mib]))
+        out += ["", "**Average (end-to-end, time-weighted)**", ""]
+        out.append(_fw_table(
+            ["framework", "rss (MiB)", "pss (MiB)", "uss (MiB)", "n"],
+            wl_rows,
+            [lambda r: _mem_mib(r, "rss", "average_bytes"),
+             lambda r: _mem_mib(r, "pss", "average_bytes"),
+             lambda r: _mem_mib(r, "uss", "average_bytes")]))
+        out.append("")
+    return out
+
+
+
 def _resources_table(ok: list[dict]) -> str:
     """Workload×framework table over one side's ok rows (device-homogeneous)."""
     header = ["workload", "framework", "wall (s)", "cpu util avg (%)",
@@ -99,6 +179,7 @@ def _section_resources(results_dir: Path) -> list[str]:
         "- Raw per-run rows: `results/resources.jsonl` (validation runs "
         "kept separately in `resources_validation.*`).", "",
     ]
+    out += _memory_subsections(ok)
     return out
 
 
@@ -134,6 +215,7 @@ def _section_resources_gpu(results_dir: Path) -> list[str]:
         f"- Energy (device side cuda): {'available — ' + str(energy.get('scope', '')) if energy.get('available') else 'unavailable — ' + str(energy.get('reason', ''))}.",
         "- Raw per-run rows: `results/resources_gpu.jsonl`.", "",
     ]
+    out += _memory_subsections(ok)
     return out
 
 
