@@ -265,6 +265,75 @@ class TestSerializationAndAggregation:
         json.loads(out.read_text().strip().splitlines()[-1])
 
 
+class TestResourcesTwoSidedReport:
+    """CPU report renders byte-pure; GPU side is an additive sibling section."""
+
+    @staticmethod
+    def _mk_res_row(device: str, rep: int) -> dict:
+        from benchmarks.scalability.results_schema import make_row
+
+        return make_row(
+            framework="zeroRL", experiment="R", mode="sync", num_envs=2,
+            num_workers=1, protocol="collect", rep=rep, seed=1000 + rep,
+            status="ok",
+            phases={"init_seconds": 0.1, "warmup_seconds": 1.0,
+                    "measure_seconds": 10.0, "boundary_seconds": 0.1},
+            transitions={"warmup_target": 16_000, "warmup_actual": 16_000,
+                         "measure_target": 100_000, "measured": 100_000,
+                         "exact": True},
+            metrics={"wall_s": 12.0, "init_seconds": 0.1,
+                     "measure_seconds": 10.0, "throughput": 10000.0,
+                     "cpu_util_avg_pct": 100.0, "cpu_util_peak_pct": 150.0,
+                     "cpu_total_s": 8.0, "cpu_s_per_1k": 0.08,
+                     "rss_peak_kib": 100000, "rss_avg_kib": 90000,
+                     "uss_peak_kib": 80000},
+            config={"workload": "collect", "env_id": "LunarLander-v3",
+                    "device": device, "interval_s": 0.2,
+                    "budget": {"warmup": 16000, "measure": 100000},
+                    "num_envs": 2, "seed_schedule": "1000 + rep"},
+            extra={"resources": {"gpu": {"available": False, "reason": "t"},
+                                 "energy": {"available": False,
+                                            "reason": "t"}},
+                   "hardware": {}, "samples_file": None},
+            error=None, device=device,
+        )
+
+    def test_report_two_sided(self, tmp_path) -> None:
+        from benchmarks.resources.report import main
+        from benchmarks.scalability.results_schema import append_row
+
+        d = tmp_path / "results"
+        d.mkdir()
+        for rep in (0, 1):
+            append_row(d / "resources.jsonl", self._mk_res_row("cpu", rep))
+        assert main(["--results-dir", str(d),
+                     "--out", str(tmp_path / "R1.md")]) == 0
+        t1 = (tmp_path / "R1.md").read_text()
+        assert "## Resource consumption (experiment R)" in t1
+        assert "— GPU" not in t1
+
+        for rep in (0, 1):
+            append_row(d / "resources_gpu.jsonl",
+                       self._mk_res_row("cuda", rep))
+        assert main(["--results-dir", str(d),
+                     "--out", str(tmp_path / "R2.md")]) == 0
+        t2 = (tmp_path / "R2.md").read_text()
+        assert "## Resource consumption — GPU (device=cuda)" in t2
+
+        # CPU-side table unchanged: slice R2's CPU section (both headings are
+        # asserted present above) and compare; the GPU sibling section adds
+        # exactly one aggregated `| collect |` row.
+        cpu1 = [ln for ln in t1.splitlines() if ln.startswith("| collect |")]
+        cpu2_body = t2.split("## Resource consumption (experiment R)",
+                             1)[1].split("## Resource consumption — GPU", 1)[0]
+        cpu2 = [ln for ln in cpu2_body.splitlines()
+                if ln.startswith("| collect |")]
+        assert cpu1 == cpu2
+        n_r2 = len([ln for ln in t2.splitlines()
+                    if ln.startswith("| collect |")])
+        assert n_r2 == len(cpu1) + 1
+
+
 def test_monitor_interval_validation() -> None:
     with pytest.raises(ValueError):
         ResourceMonitor(interval=0.0, gpu=None)

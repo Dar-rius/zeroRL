@@ -1411,7 +1411,8 @@ def _mk_row(framework: str, experiment: str, *, num_envs: int = 1,
             measured: int = 100_000, measure_s: float = 10.0,
             exact: bool = True, mode: str = "sync",
             protocol: str = "collection", error: str | None = None,
-            return_last100: float | None = None) -> dict:
+            return_last100: float | None = None,
+            device: str = "cpu") -> dict:
     phases = {"init_seconds": 0.1, "warmup_seconds": 1.0,
               "measure_seconds": measure_s}
     if experiment in ("C", "D"):
@@ -1429,8 +1430,8 @@ def _mk_row(framework: str, experiment: str, *, num_envs: int = 1,
                      "measure_target": measured, "measured": measured,
                      "exact": exact},
         metrics=metrics, config={"env_id": "LunarLander-v3",
-                                 "updates": 128},
-        error=error,
+                                 "updates": 128, "device": device},
+        error=error, device=device,
     )
 
 
@@ -1599,6 +1600,75 @@ class TestPlotsAndReport:
             assert heading in text, heading
         assert "All ok rows recorded an exact transition budget." in text
         assert "unsupported: multi-process not supported" in text
+
+    @staticmethod
+    def _append_gpu_a(results) -> None:
+        from benchmarks.scalability.results_schema import append_row
+
+        for rep in (0, 1):
+            append_row(results / "expA_gpu.jsonl",
+                       _mk_row("zeroRL", "A", num_envs=1, rep=rep,
+                               measure_s=50.0, device="cuda"))
+
+    @staticmethod
+    def _findings_block(text: str) -> str:
+        return text.split("## Findings", 1)[1].split("## Data integrity", 1)[0]
+
+    def test_report_cpu_only_has_no_gpu_section(self, tmp_path) -> None:
+        from benchmarks.scalability.report import generate_report
+
+        results = tmp_path / "results"
+        results.mkdir()
+        self._write_results(results)
+        text = generate_report(results, tmp_path / "REPORT.md").read_text()
+        assert "## Experiment A — environment scaling" in text
+        assert "— GPU" not in text
+
+    def test_report_renders_gpu_side_after_cpu(self, tmp_path) -> None:
+        from benchmarks.scalability.report import generate_report
+
+        results = tmp_path / "results"
+        results.mkdir()
+        self._write_results(results)
+        cpu_only = generate_report(results, tmp_path / "CPU.md").read_text()
+        self._append_gpu_a(results)
+        text = generate_report(results, tmp_path / "BOTH.md").read_text()
+
+        cpu_head = "## Experiment A — environment scaling"
+        gpu_head = "## Experiment A — GPU (device=cuda)"
+        assert text.index(cpu_head) < text.index(gpu_head)
+        assert "figures/expA_gpu_throughput.png" in text
+        assert "GPU rows: 2 (device=cuda)" in text
+        assert text.count(cpu_head) == 1
+        assert self._findings_block(text) == self._findings_block(cpu_only)
+
+    def test_generate_all_includes_gpu_figures(self, tmp_path) -> None:
+        pytest.importorskip("matplotlib")
+        from benchmarks.scalability.plots import generate_all
+
+        results = tmp_path / "results"
+        results.mkdir()
+        self._write_results(results)
+        self._append_gpu_a(results)
+        paths = generate_all(results, tmp_path / "figs")
+        assert len(paths) == 13
+        names = {p.name for p in paths}
+        for name in ("expA_gpu_throughput.png", "expA_gpu_speedup.png",
+                     "expA_gpu_efficiency.png", "expA_throughput.png"):
+            assert name in names, name
+
+    def test_report_gpu_only_dir(self, tmp_path) -> None:
+        from benchmarks.scalability.report import generate_report
+        from benchmarks.scalability.results_schema import append_row
+
+        results = tmp_path / "results"
+        results.mkdir()
+        append_row(results / "expA_gpu.jsonl",
+                   _mk_row("zeroRL", "A", num_envs=1, rep=0,
+                           measure_s=50.0, device="cuda"))
+        text = generate_report(results, tmp_path / "REPORT.md").read_text()
+        assert "## Experiment A — GPU (device=cuda)" in text
+        assert "## Experiment A — environment scaling" not in text
 
 
 class TestCLIErrorRecording:
