@@ -24,8 +24,18 @@ Conventions (documented because they affect interpretation):
   ``interval`` seconds of CPU time.
 - Memory: RSS/PSS/USS are summed across live tree processes each sample
   (summed RSS can double-count shared pages — PSS/USS are also recorded).
+  UNITS: raw samples (``samples/*.jsonl``) are BYTES since memory-
+  measurement v2 — v1 sample files used KiB. Aggregates expose canonical
+  ``memory`` blocks in bytes (time-weighted averages) plus legacy flat
+  ``*_kib`` fields derived as ``bytes // 1024``; MiB/GiB appear only in
+  report/plots. A sample whose ``full_ok < n_procs`` is partial: its
+  PSS/USS values are excluded from those metrics' series (never
+  zero-filled) and counted in ``availability.*_missing_samples``.
 - The monitor window is the FULL runner call (init + training); the
-  artifact's phase wall-times are recorded alongside for separation.
+  artifact's phase wall-times are recorded alongside for separation and,
+  when present, aggregated into ``memory_by_phase`` (per-phase time-
+  weighted memory over cumulative phase bounds relative to the first
+  sample).
 - GPU: workload device is CPU (dev-box sm_61 cannot run these CUDA
   builds); NVML provides device telemetry only. Energy is unavailable on
   this host (NVML power unsupported, no RAPL) and is recorded as such —
@@ -182,6 +192,94 @@ def integrate_power_mw(times_s: list[float], power_mw: list[float]) -> float:
 # process-tree monitor
 # ---------------------------------------------------------------------------
 
+def _time_weighted_mean(times: list[float],
+                        vals: list[float]) -> float | None:
+    """Trapezoidal time-weighted mean of a (already filtered) series.
+
+    ``sum((v[i]+v[i+1])/2 * (t[i+1]-t[i])) / (t[-1]-t[0])`` — irregular
+    gaps are handled naturally. A single sample yields that value; an
+    empty series yields ``None``. Missing samples are excluded from the
+    series upstream, NEVER zero-filled.
+    """
+    if not vals:
+        return None
+    if len(vals) == 1:
+        return float(vals[0])
+    span = times[-1] - times[0]
+    if span <= 0:
+        return float(vals[0])
+    acc = 0.0
+    for i in range(1, len(vals)):
+        acc += (vals[i] + vals[i - 1]) / 2.0 * (times[i] - times[i - 1])
+    return acc / span
+
+
+def _metric_valid(sample: dict[str, Any], key: str) -> bool:
+    """A sample contributes to ``key``'s series iff present AND complete.
+
+    ``rss`` is always present (memory_info fallback still yields it).
+    ``pss``/``uss`` require a FULL sample (``full_ok >= n_procs``): partial
+    samples are excluded, not zero-filled. Samples without the v2
+    ``full_ok`` field (hand-made/legacy) count as present.
+    """
+    if sample.get(key) is None:
+        return False
+    if key == "rss":
+        return True
+    full_ok = sample.get("full_ok")
+    if full_ok is None:
+        return True
+    return full_ok >= sample.get("n_procs", full_ok)
+
+
+def _metric_block(samples: list[dict[str, Any]], key: str) -> dict[str, Any]:
+    """{initial, average(time-weighted), peak(max of aggregate series),
+    final} in BYTES for one metric over a sample slice."""
+    series = [(s["t"], s[key]) for s in samples if _metric_valid(s, key)]
+    if not series:
+        return {"initial_bytes": None, "average_bytes": None,
+                "peak_bytes": None, "final_bytes": None}
+    times = [t for t, _ in series]
+    vals = [v for _, v in series]
+    twa = _time_weighted_mean(times, vals)
+    return {
+        "initial_bytes": vals[0],
+        "average_bytes": round(twa) if twa is not None else None,
+        # peak = max over the AGGREGATE time series (never per-proc sums)
+        "peak_bytes": max(vals),
+        "final_bytes": vals[-1],
+    }
+
+
+def _availability(samples: list[dict[str, Any]]) -> dict[str, Any]:
+    out: dict[str, Any] = {"backend": "psutil.memory_full_info"}
+    for key in ("pss", "uss"):
+        missing = sum(1 for s in samples if not _metric_valid(s, key))
+        out[f"{key}_available"] = bool(samples) and missing == 0
+        out[f"{key}_missing_samples"] = missing
+    return out
+
+
+_PHASE_ORDER = ("init", "warmup", "boundary", "measure")
+
+
+def phase_bounds_from(phases: dict[str, float]) -> list[tuple[str, float]]:
+    """Cumulative (name, end_seconds) bounds from artifact phase durations.
+
+    Order: init → warmup → boundary → measure; zero/absent phases are
+    skipped (ppo artifacts only carry init + measure).
+    """
+    bounds: list[tuple[str, float]] = []
+    end = 0.0
+    for name in _PHASE_ORDER:
+        dur = phases.get(f"{name}_seconds")
+        if dur is None or dur <= 0:
+            continue
+        end += float(dur)
+        bounds.append((name, round(end, 6)))
+    return bounds
+
+
 def aggregate_samples(
     samples: list[dict[str, Any]],
     *,
@@ -189,8 +287,18 @@ def aggregate_samples(
     interval_s: float,
     gpu_backend_name: str | None,
     energy_note: str,
+    phase_bounds: list[tuple[str, float]] | None = None,
 ) -> dict[str, Any]:
-    """Pure aggregation of recorded samples (unit-testable)."""
+    """Pure aggregation of recorded samples (unit-testable).
+
+    Raw sample ``rss/pss/uss`` are BYTES (v2; v1 sample files were KiB).
+    Legacy flat ``*_kib`` fields are derived as ``bytes // 1024`` from the
+    same byte values (averages = time-weighted bytes // 1024). The
+    canonical nested block lives under the returned ``"memory"`` key
+    alongside the flat fields; ``phase_bounds`` (relative to the first
+    sample) additionally yields ``"memory_by_phase"`` — omitted entirely
+    when no bounds are given (failed runs).
+    """
     cpu_pcts = [s["cpu_pct"] for s in samples if s.get("cpu_pct") is not None]
     user_s = sum(s.get("d_user", 0.0) for s in samples)
     sys_s = sum(s.get("d_sys", 0.0) for s in samples)
@@ -205,16 +313,23 @@ def aggregate_samples(
         "accounting": "sum over live process-tree processes per sample "
                       "(summed RSS may double-count shared pages; PSS/USS "
                       "recorded alongside)",
+        "units": "bytes (raw samples; *_kib fields = bytes // 1024)",
         "n_procs_avg": round(statistics.fmean(
             [s.get("n_procs", 1) for s in samples]), 2) if samples else 0,
     }
+    # canonical nested block: bytes + time-weighted averages + availability
     for key in ("rss", "pss", "uss"):
-        vals = [s[key] for s in samples if s.get(key) is not None]
-        if vals:
-            mem[f"{key}_init_kib"] = vals[0]
-            mem[f"{key}_final_kib"] = vals[-1]
-            mem[f"{key}_avg_kib"] = round(statistics.fmean(vals), 1)
-            mem[f"{key}_peak_kib"] = max(vals)
+        mem[key] = _metric_block(samples, key)
+    mem["availability"] = _availability(samples)
+    # legacy flat fields, byte-compatible: bytes // 1024
+    for key in ("rss", "pss", "uss"):
+        blk = mem[key]
+        if blk["initial_bytes"] is not None:
+            mem[f"{key}_init_kib"] = blk["initial_bytes"] // 1024
+            mem[f"{key}_final_kib"] = blk["final_bytes"] // 1024
+            mem[f"{key}_peak_kib"] = blk["peak_bytes"] // 1024
+            # NOTE: avg = kib-of-time-weighted-bytes (v1 was arithmetic-of-kib)
+            mem[f"{key}_avg_kib"] = blk["average_bytes"] // 1024
 
     gpu_samples = [s["gpu"] for s in samples if s.get("gpu")]
     if gpu_backend_name and gpu_samples:
@@ -256,7 +371,7 @@ def aggregate_samples(
                   "cpu_joules": None, "system_joules": None,
                   "reason": energy_note}
 
-    return {
+    result = {
         "window_seconds": round(duration_s, 3),
         "cpu": {
             "user_s": round(user_s, 3),
@@ -280,6 +395,28 @@ def aggregate_samples(
             "gpu_backend": gpu_backend_name,
         },
     }
+
+    # phase-specific memory: slices of the SAME aggregate series between
+    # cumulative bounds (relative to the first sample); the tail beyond the
+    # last bound stays out of phases but inside the end-to-end block above.
+    if phase_bounds:
+        t0 = samples[0]["t"] if samples else 0.0
+        by_phase: dict[str, Any] = {}
+        start = 0.0
+        for i, (name, end) in enumerate(phase_bounds):
+            first = i == 0
+            sl = [s for s in samples
+                  if (s["t"] - t0) <= end
+                  and ((s["t"] - t0) >= start if first
+                       else (s["t"] - t0) > start)]
+            entry: dict[str, Any] = {"window_seconds": round(end - start, 3)}
+            for key in ("rss", "pss", "uss"):
+                entry[key] = _metric_block(sl, key)
+            by_phase[name] = entry
+            start = end
+        result["memory_by_phase"] = by_phase
+
+    return result
 
 
 class ResourceMonitor:
@@ -334,6 +471,7 @@ class ResourceMonitor:
         d_user = d_sys = 0.0
         rss = pss = uss = 0
         n = 0
+        full_ok = 0
         for p in self._procs():
             try:
                 ct = p.cpu_times()
@@ -354,7 +492,9 @@ class ResourceMonitor:
                 rss += getattr(mi, "rss", 0)
                 pss += getattr(mi, "pss", 0)
                 uss += getattr(mi, "uss", 0)
+                full_ok += 1   # only full-info procs make PSS/USS complete
             except psutil.Error:
+                # fallback: RSS only — this proc does NOT count in full_ok
                 try:
                     rss += p.memory_info().rss
                 except psutil.Error:
@@ -362,8 +502,9 @@ class ResourceMonitor:
         sample: dict[str, Any] = {
             "t": now, "n_procs": n,
             "d_user": d_user, "d_sys": d_sys,
-            # psutil reports bytes; record KiB to match the field names
-            "rss": rss // 1024, "pss": pss // 1024, "uss": uss // 1024,
+            # memory-measurement v2: raw samples are BYTES (v1 files used KiB)
+            "rss": rss, "pss": pss, "uss": uss,
+            "full_ok": full_ok,
         }
         prev_samples = self._samples
         if prev_samples:
@@ -394,7 +535,10 @@ class ResourceMonitor:
         """Raw per-interval samples recorded between start() and stop()."""
         return list(self._samples)
 
-    def stop(self) -> dict[str, Any]:
+    def stop(self, *, phase_bounds: list[tuple[str, float]] | None = None
+             ) -> dict[str, Any]:
+        """Final sample + aggregation; ``phase_bounds`` (see
+        :func:`phase_bounds_from`) adds ``memory_by_phase`` when given."""
         self._stop.set()
         if self._thread is not None:
             self._thread.join(timeout=self.interval * 4 + 1.0)
@@ -406,6 +550,7 @@ class ResourceMonitor:
             interval_s=self.interval,
             gpu_backend_name=self.gpu.name if self.gpu else None,
             energy_note=self.energy_note,
+            phase_bounds=phase_bounds,
         )
 
 
@@ -451,7 +596,11 @@ def run_resource_workload(
     With ``write_samples=True`` (default) the RAW per-interval samples are
     persisted under ``<out-dir>/samples/`` so aggregated numbers stay
     auditable; the repo-relative path is stored as ``extra.samples_file``.
-    The CLI flag ``--no-samples`` disables the dump.
+    The CLI flag ``--no-samples`` disables the dump. Raw sample
+    ``rss/pss/uss`` are BYTES (v2 — v1 sample files used KiB); on success
+    ``extra.resources`` carries the nested ``memory`` block (+legacy
+    ``*_kib`` fields) and ``memory_by_phase`` from the artifact phases —
+    both omitted from the ``memory``'s phase key on failed runs.
     """
     from benchmarks.scalability.collection import run_collection
     from benchmarks.scalability.ppo_protocols import run_ppo_training
@@ -487,7 +636,10 @@ def run_resource_workload(
                   else "failed")
         err = traceback.format_exc()
     wall_s = time.perf_counter() - t0
-    stats = mon.stop()
+    # phase memory: cumulative artifact-phase bounds relative to the first
+    # sample; failed runs (art is None) get NO memory_by_phase.
+    bounds = phase_bounds_from(art["phases"]) if art is not None else None
+    stats = mon.stop(phase_bounds=bounds)
 
     # raw per-sample dump: auditable raw measurements next to the rows
     samples_rel: str | None = None

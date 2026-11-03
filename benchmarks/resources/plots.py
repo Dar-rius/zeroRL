@@ -13,6 +13,7 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -44,6 +45,165 @@ def _resource_cells(path: Path) -> dict[str, dict[str, list[dict]]]:
         wl = r["config"]["workload"]
         cells.setdefault(wl, {}).setdefault(r["framework"], []).append(r)
     return cells
+
+
+# -- memory-measurement v2 (nested bytes block) -----------------------------
+
+_MEM_COLORS = {"rss": "tab:blue", "pss": "tab:orange", "uss": "tab:green"}
+
+
+def _nested_memory(r: dict) -> dict | None:
+    """v2 nested block, or None for v1 rows (their samples are never read)."""
+    mem = (r.get("extra", {}).get("resources", {}) or {}).get("memory") or {}
+    return mem if isinstance(mem.get("rss"), dict) else None
+
+
+def _mem_mib(r: dict, metric: str, field: str) -> float | None:
+    mem = _nested_memory(r)
+    if mem is None:
+        return None
+    if metric != "rss" and (mem.get("availability") or {}).get(
+            f"{metric}_available") is False:
+        return None
+    v = (mem.get(metric) or {}).get(field)
+    return None if v is None else v / 2**20
+
+
+def _memory_bar_figure(cells: dict, workloads: list[str], fws: list[str],
+                       out_dir: Path, suffix: str, *, field: str,
+                       fname: str, title: str) -> list[Path]:
+    """Grouped bars: per-workload subplots, framework groups × RSS/PSS/USS
+    bars in MiB, yerr = std across reps; unavailable metrics are skipped
+    (never drawn as zeros)."""
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    metrics = ("rss", "pss", "uss")
+    present = [m for m in metrics
+               if any(_mem_mib(r, m, field) is not None
+                      for wl in workloads
+                      for fw in fws
+                      for r in cells[wl].get(fw, []))]
+    if not present:
+        print(f"[fig] {fname}{suffix}.png skipped: no v2 nested "
+              "memory block in rows")
+        return []
+    width = 0.8 / len(present)
+    fig, axes = plt.subplots(1, len(workloads),
+                             figsize=(5.0 * len(workloads), 4), squeeze=False)
+    for ax, wl in zip(axes[0], workloads):
+        xs = np.arange(len(fws))
+        labelled: set[str] = set()
+        for j, metric in enumerate(present):
+            for i, fw in enumerate(fws):
+                vals = [v for r in cells[wl].get(fw, [])
+                        if (v := _mem_mib(r, metric, field)) is not None]
+                if not vals:
+                    continue   # skip bar: nothing valid for this cell
+                mean = float(np.mean(vals))
+                std = float(np.std(vals, ddof=1)) if len(vals) > 1 else 0.0
+                lbl = metric.upper() if metric not in labelled else None
+                labelled.add(metric)
+                ax.bar(xs[i] - 0.4 + width * (j + 0.5), mean, width,
+                       yerr=std, capsize=3, color=_MEM_COLORS[metric],
+                       label=lbl)
+        ax.set_xticks(xs)
+        ax.set_xticklabels(fws)
+        ax.set_ylabel("MiB")
+        ax.set_title(f"{title} — {wl}", fontsize=9)
+        ax.legend(fontsize=8)
+        ax.grid(axis="y", alpha=0.3)
+    fig.tight_layout()
+    return [_save(fig, out_dir, f"{fname}{suffix}.png")]
+
+
+def _memory_timeseries_figure(res_file: Path, rows: list[dict],
+                              workloads: list[str], fws: list[str],
+                              out_dir: Path, suffix: str) -> list[Path]:
+    """Grid of (workload × framework) panels: RSS/PSS/USS in MiB vs seconds
+    from per-run raw sample files. ONLY rows with BOTH the v2 nested block
+    and a resolvable ``extra.samples_file`` contribute (v1 rows/files are
+    never read; v1 KiB files lack ``full_ok`` and are rejected)."""
+    import matplotlib.pyplot as plt
+
+    fname = f"resources_memory_timeseries{suffix}.png"
+    skipped = 0
+    series: dict[tuple[str, str], list[list[dict]]] = {}
+    for r in rows:
+        rel = r.get("extra", {}).get("samples_file")
+        if _nested_memory(r) is None or not rel:
+            skipped += 1
+            continue
+        wl, fw = r["config"]["workload"], r["framework"]
+        path = res_file.parent / rel   # paths are relative to the results dir
+        if not path.exists():
+            print(f"[fig] {fname}: skipped {wl}/{fw} rep={r.get('rep')} — "
+                  f"samples file missing ({rel})")
+            continue
+        lines = path.read_text(encoding="utf-8").splitlines()
+        try:
+            first = json.loads(lines[0]) if lines else {}
+        except json.JSONDecodeError:
+            first = {}
+        if "full_ok" not in first:
+            print(f"[fig] {fname}: skipped {wl}/{fw} rep={r.get('rep')} — "
+                  "v1 (KiB) sample file without full_ok")
+            continue
+        try:
+            samples = [json.loads(x) for x in lines]
+        except json.JSONDecodeError:
+            print(f"[fig] {fname}: skipped {wl}/{fw} rep={r.get('rep')} — "
+                  "unreadable sample file")
+            continue
+        series.setdefault((wl, fw), []).append(samples)
+    if skipped:
+        print(f"[fig] {fname}: {skipped} row(s) skipped (no v2 memory "
+              "block or samples_file)")
+    if not series:
+        print(f"[fig] {fname} skipped: no v2 raw samples")
+        return []
+
+    fig, axes = plt.subplots(
+        len(workloads), len(fws),
+        figsize=(4.3 * len(fws), 3.2 * len(workloads)),
+        squeeze=False, sharex=True)
+    for ri, wl in enumerate(workloads):
+        for ci, fw in enumerate(fws):
+            ax = axes[ri][ci]
+            runs = series.get((wl, fw), [])
+            if not runs:
+                ax.text(0.5, 0.5, "no v2 samples", ha="center", va="center",
+                        transform=ax.transAxes, fontsize=8, color="gray")
+            else:
+                labelled: set[str] = set()
+                for samples in runs:
+                    if not samples:
+                        continue
+                    base = samples[0]["t"]
+                    for metric in ("rss", "pss", "uss"):
+                        pts = [(s["t"] - base, s[metric] / 2 ** 20)
+                               for s in samples
+                               if s.get(metric) is not None]
+                        if not pts:
+                            continue
+                        lbl = (metric.upper() if metric not in labelled
+                               else None)
+                        labelled.add(metric)
+                        ax.plot([p[0] for p in pts], [p[1] for p in pts],
+                                color=_MEM_COLORS[metric], alpha=0.6,
+                                linewidth=1.0, label=lbl)
+                ax.legend(fontsize=7)
+            if ri == len(workloads) - 1:
+                ax.set_xlabel("seconds")
+            if ci == 0:
+                ax.set_ylabel("MiB")
+            ax.set_title(f"{wl} · {fw}", fontsize=8)
+            ax.grid(alpha=0.3)
+    fig.suptitle("process-tree memory over time (v2 raw samples, bytes → MiB)",
+                 fontsize=10)
+    fig.tight_layout()
+    return [_save(fig, out_dir, fname)]
+
 
 
 def _plot_resource_file(res_file: Path, out_dir: Path,
@@ -109,6 +269,19 @@ def _plot_resource_file(res_file: Path, out_dir: Path,
     fig.suptitle("System memory — sum of tree RSS (shared pages may repeat)", fontsize=10)
     fig.tight_layout()
     paths.append(_save(fig, out_dir, f"resources_memory{suffix}.png"))
+
+    # 1b) memory-measurement v2 (additive; legacy figure above untouched):
+    # peak / time-weighted average bars + raw-sample time-series panels
+    paths += _memory_bar_figure(cells, workloads, fws, out_dir, suffix,
+                                field="peak_bytes",
+                                fname="resources_memory_peak",
+                                title="peak memory (e2e)")
+    paths += _memory_bar_figure(cells, workloads, fws, out_dir, suffix,
+                                field="average_bytes",
+                                fname="resources_memory_avg",
+                                title="average memory (e2e, time-weighted)")
+    paths += _memory_timeseries_figure(res_file, rows, workloads, fws,
+                                       out_dir, suffix)
 
     # 2) CPU utilization + cumulative CPU time
     fig, axes = plt.subplots(1, 2, figsize=(11, 4))
